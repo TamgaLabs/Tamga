@@ -1,23 +1,21 @@
 package project
 
 import (
+	"database/sql"
 	"errors"
 	"net/http"
 	"time"
 
 	"github.com/TamgaLabs/Tamga/internal/database"
 	"github.com/gin-gonic/gin"
-	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgtype"
-	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 type Handler struct {
 	queries *database.Queries
 }
 
-func NewHandler(pool *pgxpool.Pool) *Handler {
-	return &Handler{queries: database.New(pool)}
+func NewHandler(db *sql.DB) *Handler {
+	return &Handler{queries: database.New(db)}
 }
 
 type CreateProjectRequest struct {
@@ -41,19 +39,17 @@ type ProjectResponse struct {
 
 func toProject(p database.Project) ProjectResponse {
 	return ProjectResponse{
-		ID:          p.ID.String(),
+		ID:          p.ID,
 		Name:        p.Name,
 		Description: p.Description,
-		UserID:      p.UserID.String(),
-		CreatedAt:   p.CreatedAt.Time,
-		UpdatedAt:   p.UpdatedAt.Time,
+		UserID:      p.UserID,
+		CreatedAt:   p.CreatedAt,
+		UpdatedAt:   p.UpdatedAt,
 	}
 }
 
-func userID(c *gin.Context) pgtype.UUID {
-	var uid pgtype.UUID
-	uid.Scan(c.MustGet("user_id").(string))
-	return uid
+func userID(c *gin.Context) string {
+	return c.MustGet("user_id").(string)
 }
 
 func (h *Handler) Create(c *gin.Context) {
@@ -91,18 +87,14 @@ func (h *Handler) List(c *gin.Context) {
 }
 
 func (h *Handler) Get(c *gin.Context) {
-	var id pgtype.UUID
-	if err := id.Scan(c.Param("projectId")); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid project id"})
-		return
-	}
+	id := c.Param("projectId")
 
 	project, err := h.queries.GetProjectByID(c.Request.Context(), database.GetProjectByIDParams{
 		ID:     id,
 		UserID: userID(c),
 	})
 	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
+		if errors.Is(err, sql.ErrNoRows) {
 			c.JSON(http.StatusNotFound, gin.H{"error": "project not found"})
 			return
 		}
@@ -120,11 +112,7 @@ func (h *Handler) Update(c *gin.Context) {
 		return
 	}
 
-	var id pgtype.UUID
-	if err := id.Scan(c.Param("projectId")); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid project id"})
-		return
-	}
+	id := c.Param("projectId")
 
 	project, err := h.queries.UpdateProject(c.Request.Context(), database.UpdateProjectParams{
 		ID:          id,
@@ -133,7 +121,7 @@ func (h *Handler) Update(c *gin.Context) {
 		UserID:      userID(c),
 	})
 	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
+		if errors.Is(err, sql.ErrNoRows) {
 			c.JSON(http.StatusNotFound, gin.H{"error": "project not found"})
 			return
 		}
@@ -145,18 +133,14 @@ func (h *Handler) Update(c *gin.Context) {
 }
 
 func (h *Handler) Delete(c *gin.Context) {
-	var id pgtype.UUID
-	if err := id.Scan(c.Param("projectId")); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid project id"})
-		return
-	}
+	id := c.Param("projectId")
 
 	_, err := h.queries.DeleteProject(c.Request.Context(), database.DeleteProjectParams{
 		ID:     id,
 		UserID: userID(c),
 	})
 	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
+		if errors.Is(err, sql.ErrNoRows) {
 			c.JSON(http.StatusNotFound, gin.H{"error": "project not found"})
 			return
 		}

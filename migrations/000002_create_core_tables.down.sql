@@ -1,4 +1,0 @@
-DROP TABLE IF EXISTS git_repositories;
-DROP TABLE IF EXISTS env_vars;
-DROP TABLE IF EXISTS domains;
-DROP TABLE IF EXISTS projects;

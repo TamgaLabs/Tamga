@@ -1,15 +1,13 @@
 package deployments
 
 import (
+	"database/sql"
 	"errors"
 	"net/http"
 	"time"
 
 	"github.com/TamgaLabs/Tamga/internal/database"
 	"github.com/gin-gonic/gin"
-	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgtype"
-	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 type Handler struct {
@@ -17,9 +15,9 @@ type Handler struct {
 	service *Service
 }
 
-func NewHandler(pool *pgxpool.Pool, service *Service) *Handler {
+func NewHandler(db *sql.DB, service *Service) *Handler {
 	return &Handler{
-		queries: database.New(pool),
+		queries: database.New(db),
 		service: service,
 	}
 }
@@ -47,29 +45,25 @@ type DeploymentLogResponse struct {
 
 func toDeployment(d database.Deployment) DeploymentResponse {
 	return DeploymentResponse{
-		ID:            d.ID.String(),
-		ProjectID:     d.ProjectID.String(),
+		ID:            d.ID,
+		ProjectID:     d.ProjectID,
 		Status:        d.Status,
 		CommitSHA:     d.CommitSha,
 		CommitMessage: d.CommitMessage,
 		ImageTag:      d.ImageTag,
 		ContainerID:   d.ContainerID,
 		Domain:        d.Domain,
-		CreatedAt:     d.CreatedAt.Time,
-		UpdatedAt:     d.UpdatedAt.Time,
+		CreatedAt:     d.CreatedAt,
+		UpdatedAt:     d.UpdatedAt,
 	}
 }
 
-func userID(c *gin.Context) pgtype.UUID {
-	var uid pgtype.UUID
-	uid.Scan(c.MustGet("user_id").(string))
-	return uid
+func userID(c *gin.Context) string {
+	return c.MustGet("user_id").(string)
 }
 
-func projectID(c *gin.Context) pgtype.UUID {
-	var pid pgtype.UUID
-	pid.Scan(c.Param("projectId"))
-	return pid
+func projectID(c *gin.Context) string {
+	return c.Param("projectId")
 }
 
 func (h *Handler) Create(c *gin.Context) {
@@ -109,18 +103,14 @@ func (h *Handler) List(c *gin.Context) {
 }
 
 func (h *Handler) Get(c *gin.Context) {
-	var id pgtype.UUID
-	if err := id.Scan(c.Param("id")); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid deployment id"})
-		return
-	}
+	id := c.Param("id")
 
 	deployment, err := h.queries.GetDeploymentByID(c.Request.Context(), database.GetDeploymentByIDParams{
 		ID:     id,
 		UserID: userID(c),
 	})
 	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
+		if errors.Is(err, sql.ErrNoRows) {
 			c.JSON(http.StatusNotFound, gin.H{"error": "deployment not found"})
 			return
 		}
@@ -132,12 +122,7 @@ func (h *Handler) Get(c *gin.Context) {
 }
 
 func (h *Handler) Restart(c *gin.Context) {
-	var id pgtype.UUID
-	if err := id.Scan(c.Param("id")); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid deployment id"})
-		return
-	}
-
+	id := c.Param("id")
 	uid := userID(c)
 
 	deployment, err := h.queries.GetDeploymentByID(c.Request.Context(), database.GetDeploymentByIDParams{
@@ -145,7 +130,7 @@ func (h *Handler) Restart(c *gin.Context) {
 		UserID: uid,
 	})
 	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
+		if errors.Is(err, sql.ErrNoRows) {
 			c.JSON(http.StatusNotFound, gin.H{"error": "deployment not found"})
 			return
 		}
@@ -163,18 +148,14 @@ func (h *Handler) Restart(c *gin.Context) {
 }
 
 func (h *Handler) Logs(c *gin.Context) {
-	var id pgtype.UUID
-	if err := id.Scan(c.Param("id")); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid deployment id"})
-		return
-	}
+	id := c.Param("id")
 
 	_, err := h.queries.GetDeploymentByID(c.Request.Context(), database.GetDeploymentByIDParams{
 		ID:     id,
 		UserID: userID(c),
 	})
 	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
+		if errors.Is(err, sql.ErrNoRows) {
 			c.JSON(http.StatusNotFound, gin.H{"error": "deployment not found"})
 			return
 		}
@@ -191,11 +172,11 @@ func (h *Handler) Logs(c *gin.Context) {
 	resp := make([]DeploymentLogResponse, len(logs))
 	for i, l := range logs {
 		resp[i] = DeploymentLogResponse{
-			ID:           l.ID.String(),
-			DeploymentID: l.DeploymentID.String(),
+			ID:           l.ID,
+			DeploymentID: l.DeploymentID,
 			Stream:       l.Stream,
 			Message:      l.Message,
-			CreatedAt:    l.CreatedAt.Time,
+			CreatedAt:    l.CreatedAt,
 		}
 	}
 	c.JSON(http.StatusOK, resp)

@@ -1,14 +1,12 @@
 package logs
 
 import (
+	"database/sql"
 	"errors"
 	"net/http"
 
 	"github.com/TamgaLabs/Tamga/internal/database"
 	"github.com/gin-gonic/gin"
-	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgtype"
-	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 type Handler struct {
@@ -16,31 +14,23 @@ type Handler struct {
 	streamer *Streamer
 }
 
-func NewHandler(pool *pgxpool.Pool, streamer *Streamer) *Handler {
+func NewHandler(db *sql.DB, streamer *Streamer) *Handler {
 	return &Handler{
-		queries:  database.New(pool),
+		queries:  database.New(db),
 		streamer: streamer,
 	}
 }
 
 func (h *Handler) StreamLogs(c *gin.Context) {
-	var id pgtype.UUID
-	if err := id.Scan(c.Param("id")); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid deployment id"})
-		return
-	}
+	id := c.Param("id")
+	uid := c.MustGet("user_id").(string)
 
-	rawID, _ := c.Get("user_id")
-	var uid pgtype.UUID
-	uid.Scan(rawID.(string))
-
-	// Verify deployment exists and belongs to user
 	_, err := h.queries.GetDeploymentByID(c.Request.Context(), database.GetDeploymentByIDParams{
 		ID:     id,
 		UserID: uid,
 	})
 	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
+		if errors.Is(err, sql.ErrNoRows) {
 			c.JSON(http.StatusNotFound, gin.H{"error": "deployment not found"})
 			return
 		}

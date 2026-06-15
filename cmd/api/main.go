@@ -26,14 +26,14 @@ import (
 func main() {
 	cfg := config.Load()
 
-	db, err := database.Connect(cfg.DatabaseURL)
+	db, err := database.Connect(cfg.DBPath)
 	if err != nil {
 		log.Fatalf("failed to connect to database: %v", err)
 	}
 	defer db.Close()
 
-	if err := database.Migrate(cfg.DatabaseURL); err != nil {
-		log.Fatalf("failed to run migrations: %v", err)
+	if err := database.InitSchema(db); err != nil {
+		log.Fatalf("failed to initialize schema: %v", err)
 	}
 
 	docker, err := dockerclient.NewClient()

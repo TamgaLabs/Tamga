@@ -1,16 +1,14 @@
 package auth
 
 import (
+	"database/sql"
 	"errors"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/TamgaLabs/Tamga/internal/database"
 	"github.com/gin-gonic/gin"
-	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgconn"
-	"github.com/jackc/pgx/v5/pgtype"
-	"github.com/jackc/pgx/v5/pgxpool"
 	"golang.org/x/crypto/bcrypt"
 )
 
@@ -19,9 +17,9 @@ type Handler struct {
 	jwtSecret string
 }
 
-func NewHandler(pool *pgxpool.Pool, jwtSecret string) *Handler {
+func NewHandler(db *sql.DB, jwtSecret string) *Handler {
 	return &Handler{
-		queries:   database.New(pool),
+		queries:   database.New(db),
 		jwtSecret: jwtSecret,
 	}
 }
@@ -68,8 +66,7 @@ func (h *Handler) Register(c *gin.Context) {
 		PasswordHash: string(hash),
 	})
 	if err != nil {
-		var pgErr *pgconn.PgError
-		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
+		if strings.Contains(err.Error(), "UNIQUE constraint failed") {
 			c.JSON(http.StatusConflict, gin.H{"error": "email already registered"})
 			return
 		}
@@ -77,7 +74,7 @@ func (h *Handler) Register(c *gin.Context) {
 		return
 	}
 
-	token, err := GenerateToken(user.ID.String(), user.Email, h.jwtSecret)
+	token, err := GenerateToken(user.ID, user.Email, h.jwtSecret)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to generate token"})
 		return
@@ -85,7 +82,7 @@ func (h *Handler) Register(c *gin.Context) {
 
 	c.JSON(http.StatusCreated, AuthResponse{
 		Token: token,
-		User:  UserResponse{ID: user.ID.String(), Name: user.Name, Email: user.Email, CreatedAt: user.CreatedAt.Time},
+		User:  UserResponse{ID: user.ID, Name: user.Name, Email: user.Email, CreatedAt: user.CreatedAt},
 	})
 }
 
@@ -98,7 +95,7 @@ func (h *Handler) Login(c *gin.Context) {
 
 	user, err := h.queries.GetUserByEmail(c.Request.Context(), req.Email)
 	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
+		if errors.Is(err, sql.ErrNoRows) {
 			c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid email or password"})
 			return
 		}
@@ -111,7 +108,7 @@ func (h *Handler) Login(c *gin.Context) {
 		return
 	}
 
-	token, err := GenerateToken(user.ID.String(), user.Email, h.jwtSecret)
+	token, err := GenerateToken(user.ID, user.Email, h.jwtSecret)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to generate token"})
 		return
@@ -119,26 +116,20 @@ func (h *Handler) Login(c *gin.Context) {
 
 	c.JSON(http.StatusOK, AuthResponse{
 		Token: token,
-		User:  UserResponse{ID: user.ID.String(), Name: user.Name, Email: user.Email, CreatedAt: user.CreatedAt.Time},
+		User:  UserResponse{ID: user.ID, Name: user.Name, Email: user.Email, CreatedAt: user.CreatedAt},
 	})
 }
 
 func (h *Handler) Me(c *gin.Context) {
 	rawID := c.MustGet("user_id").(string)
 
-	var id pgtype.UUID
-	if err := id.Scan(rawID); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "invalid user id"})
-		return
-	}
-
-	user, err := h.queries.GetUserByID(c.Request.Context(), id)
+	user, err := h.queries.GetUserByID(c.Request.Context(), rawID)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to fetch user"})
 		return
 	}
 
 	c.JSON(http.StatusOK, UserResponse{
-		ID: user.ID.String(), Name: user.Name, Email: user.Email, CreatedAt: user.CreatedAt.Time,
+		ID: user.ID, Name: user.Name, Email: user.Email, CreatedAt: user.CreatedAt,
 	})
 }

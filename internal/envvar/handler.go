@@ -1,23 +1,21 @@
 package envvar
 
 import (
+	"database/sql"
 	"errors"
 	"net/http"
 	"time"
 
 	"github.com/TamgaLabs/Tamga/internal/database"
 	"github.com/gin-gonic/gin"
-	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgtype"
-	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 type Handler struct {
 	queries *database.Queries
 }
 
-func NewHandler(pool *pgxpool.Pool) *Handler {
-	return &Handler{queries: database.New(pool)}
+func NewHandler(db *sql.DB) *Handler {
+	return &Handler{queries: database.New(db)}
 }
 
 type CreateEnvVarRequest struct {
@@ -41,25 +39,21 @@ type EnvVarResponse struct {
 
 func toEnvVar(e database.EnvVar) EnvVarResponse {
 	return EnvVarResponse{
-		ID:        e.ID.String(),
-		ProjectID: e.ProjectID.String(),
+		ID:        e.ID,
+		ProjectID: e.ProjectID,
 		Key:       e.Key,
 		Value:     e.Value,
-		CreatedAt: e.CreatedAt.Time,
-		UpdatedAt: e.UpdatedAt.Time,
+		CreatedAt: e.CreatedAt,
+		UpdatedAt: e.UpdatedAt,
 	}
 }
 
-func userID(c *gin.Context) pgtype.UUID {
-	var uid pgtype.UUID
-	uid.Scan(c.MustGet("user_id").(string))
-	return uid
+func userID(c *gin.Context) string {
+	return c.MustGet("user_id").(string)
 }
 
-func projectID(c *gin.Context) pgtype.UUID {
-	var pid pgtype.UUID
-	pid.Scan(c.Param("projectId"))
-	return pid
+func projectID(c *gin.Context) string {
+	return c.Param("projectId")
 }
 
 func (h *Handler) Create(c *gin.Context) {
@@ -106,11 +100,7 @@ func (h *Handler) Update(c *gin.Context) {
 		return
 	}
 
-	var id pgtype.UUID
-	if err := id.Scan(c.Param("id")); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid env var id"})
-		return
-	}
+	id := c.Param("id")
 
 	envVar, err := h.queries.UpdateEnvVar(c.Request.Context(), database.UpdateEnvVarParams{
 		ID:    id,
@@ -118,7 +108,7 @@ func (h *Handler) Update(c *gin.Context) {
 		Value: req.Value,
 	})
 	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
+		if errors.Is(err, sql.ErrNoRows) {
 			c.JSON(http.StatusNotFound, gin.H{"error": "env var not found"})
 			return
 		}
@@ -130,15 +120,11 @@ func (h *Handler) Update(c *gin.Context) {
 }
 
 func (h *Handler) Delete(c *gin.Context) {
-	var id pgtype.UUID
-	if err := id.Scan(c.Param("id")); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid env var id"})
-		return
-	}
+	id := c.Param("id")
 
 	_, err := h.queries.DeleteEnvVar(c.Request.Context(), id)
 	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
+		if errors.Is(err, sql.ErrNoRows) {
 			c.JSON(http.StatusNotFound, gin.H{"error": "env var not found"})
 			return
 		}

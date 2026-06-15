@@ -7,9 +7,9 @@ import (
 )
 
 type Config struct {
-	Port        int    `mapstructure:"port"`
-	DatabaseURL string `mapstructure:"database_url"`
-	JWTSecret   string `mapstructure:"jwt_secret"`
+	Port      int    `mapstructure:"port"`
+	DBPath    string `mapstructure:"db_path"`
+	JWTSecret string `mapstructure:"jwt_secret"`
 }
 
 func Load() *Config {
@@ -19,7 +19,7 @@ func Load() *Config {
 	v.AutomaticEnv()
 
 	v.SetDefault("port", 8080)
-	v.SetDefault("database_url", "postgres://tamga:tamga@localhost:5432/tamga?sslmode=disable")
+	v.SetDefault("db_path", "./data/tamga.db")
 	v.SetDefault("jwt_secret", "super-secret-key-change-in-production")
 
 	_ = v.ReadInConfig()

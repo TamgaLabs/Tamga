@@ -9,7 +9,6 @@ import (
 	"github.com/TamgaLabs/Tamga/internal/database"
 	dockerclient "github.com/TamgaLabs/Tamga/internal/docker"
 	"github.com/gorilla/websocket"
-	"github.com/jackc/pgx/v5/pgtype"
 )
 
 type LogMessage struct {
@@ -28,7 +27,7 @@ func NewStreamer(queries *database.Queries, docker *dockerclient.Client) *Stream
 	return &Streamer{queries: queries, docker: docker}
 }
 
-func (s *Streamer) StreamDeploymentLogs(ctx context.Context, deploymentID pgtype.UUID, conn *websocket.Conn) {
+func (s *Streamer) StreamDeploymentLogs(ctx context.Context, deploymentID string, conn *websocket.Conn) {
 	defer conn.Close()
 
 	logs, err := s.queries.ListDeploymentLogs(ctx, deploymentID)
@@ -38,7 +37,7 @@ func (s *Streamer) StreamDeploymentLogs(ctx context.Context, deploymentID pgtype
 				Type:      "log",
 				Stream:    l.Stream,
 				Message:   l.Message,
-				Timestamp: l.CreatedAt.Time,
+				Timestamp: l.CreatedAt,
 			}
 			if err := writeJSON(conn, msg); err != nil {
 				return
@@ -46,10 +45,7 @@ func (s *Streamer) StreamDeploymentLogs(ctx context.Context, deploymentID pgtype
 		}
 	}
 
-	deployment, err := s.queries.GetDeploymentByID(ctx, database.GetDeploymentByIDParams{
-		ID:     deploymentID,
-		UserID: pgtype.UUID{},
-	})
+	deployment, err := s.queries.GetDeploymentByIDNoAuth(ctx, deploymentID)
 	if err != nil || deployment.ContainerID == "" {
 		writeJSON(conn, LogMessage{
 			Type:      "status",

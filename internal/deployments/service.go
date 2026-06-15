@@ -13,7 +13,6 @@ import (
 	"github.com/TamgaLabs/Tamga/internal/proxy"
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/network"
-	"github.com/jackc/pgx/v5/pgtype"
 )
 
 type Service struct {
@@ -33,13 +32,13 @@ func NewService(queries *database.Queries, docker *dockerclient.Client, workDir,
 }
 
 type DeployParams struct {
-	DeploymentID pgtype.UUID
-	ProjectID    pgtype.UUID
-	UserID       pgtype.UUID
+	DeploymentID string
+	ProjectID    string
+	UserID       string
 }
 
 func (s *Service) Deploy(ctx context.Context, p DeployParams) {
-	log.Printf("deployment %s: starting", p.DeploymentID.String())
+	log.Printf("deployment %s: starting", p.DeploymentID)
 
 	s.logLine(ctx, p.DeploymentID, "stdout", "Starting deployment...")
 
@@ -107,7 +106,7 @@ func (s *Service) Deploy(ctx context.Context, p DeployParams) {
 	if err := s.docker.BuildImage(ctx, dockerclient.BuildOptions{
 		BuildContext: buildCtx,
 		Tag:          imageTag,
-		Labels:       map[string]string{"tamga.project": p.ProjectID.String()},
+		Labels:       map[string]string{"tamga.project": p.ProjectID},
 	}, logWriter); err != nil {
 		s.fail(ctx, p.DeploymentID, "Build failed: "+err.Error())
 		return
@@ -145,14 +144,14 @@ func (s *Service) Deploy(ctx context.Context, p DeployParams) {
 	env := buildEnv(envVars, internalPort)
 
 	traefikLabels := proxy.Labels{
-		"tamga.project":    p.ProjectID.String(),
-		"tamga.deployment": p.DeploymentID.String(),
+		"tamga.project":    p.ProjectID,
+		"tamga.deployment": p.DeploymentID,
 	}
 	if domain != "" {
 		for k, v := range proxy.GenerateLabels(proxy.TraefikConfig{
 			Domain:       domain,
 			InternalPort: internalPort,
-			ProjectName:  p.ProjectID.String(),
+			ProjectName:  p.ProjectID,
 		}) {
 			traefikLabels[k] = v
 		}
@@ -200,15 +199,14 @@ func (s *Service) Deploy(ctx context.Context, p DeployParams) {
 	}
 }
 
-func (s *Service) stopExistingContainers(ctx context.Context, projectID pgtype.UUID) {
+func (s *Service) stopExistingContainers(ctx context.Context, projectID string) {
 	containers, err := s.docker.ListContainers(ctx)
 	if err != nil {
 		log.Printf("failed to list containers: %v", err)
 		return
 	}
-	pid := projectID.String()
 	for _, c := range containers {
-		if c.Labels["tamga.project"] == pid {
+		if c.Labels["tamga.project"] == projectID {
 			timeout := 5 * time.Second
 			s.docker.StopContainer(ctx, c.ID, &timeout)
 			s.docker.RemoveContainer(ctx, c.ID, true)
@@ -216,16 +214,16 @@ func (s *Service) stopExistingContainers(ctx context.Context, projectID pgtype.U
 	}
 }
 
-func (s *Service) updateStatus(ctx context.Context, id pgtype.UUID, status string) {
+func (s *Service) updateStatus(ctx context.Context, id string, status string) {
 	if _, err := s.queries.UpdateDeploymentStatus(ctx, database.UpdateDeploymentStatusParams{
 		ID:     id,
 		Status: status,
 	}); err != nil {
-		log.Printf("failed to update deployment %s status: %v", id.String(), err)
+		log.Printf("failed to update deployment %s status: %v", id, err)
 	}
 }
 
-func (s *Service) logLine(ctx context.Context, deploymentID pgtype.UUID, stream, message string) {
+func (s *Service) logLine(ctx context.Context, deploymentID string, stream, message string) {
 	for _, line := range strings.Split(message, "\n") {
 		if trimmed := strings.TrimSpace(line); trimmed != "" {
 			s.queries.CreateDeploymentLog(ctx, database.CreateDeploymentLogParams{
@@ -237,8 +235,8 @@ func (s *Service) logLine(ctx context.Context, deploymentID pgtype.UUID, stream,
 	}
 }
 
-func (s *Service) fail(ctx context.Context, deploymentID pgtype.UUID, msg string) {
-	log.Printf("deployment %s: %s", deploymentID.String(), msg)
+func (s *Service) fail(ctx context.Context, deploymentID string, msg string) {
+	log.Printf("deployment %s: %s", deploymentID, msg)
 	s.logLine(ctx, deploymentID, "stderr", "ERROR: "+msg)
 	s.updateStatus(ctx, deploymentID, "failed")
 }
@@ -252,12 +250,11 @@ func (w *buildLogWriter) Write(p []byte) (int, error) {
 	return len(p), nil
 }
 
-func shortID(id pgtype.UUID) string {
-	s := id.String()
-	if len(s) > 8 {
-		return s[:8]
+func shortID(id string) string {
+	if len(id) > 8 {
+		return id[:8]
 	}
-	return s
+	return id
 }
 
 func shortCloneID(commit string) string {
