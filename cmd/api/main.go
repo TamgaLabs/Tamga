@@ -11,49 +11,39 @@ import (
 	"time"
 
 	"github.com/TamgaLabs/Tamga/internal/api"
-	"github.com/TamgaLabs/Tamga/internal/auth"
+	"github.com/TamgaLabs/Tamga/internal/feature/auth"
+	"github.com/TamgaLabs/Tamga/internal/feature/project"
 	"github.com/TamgaLabs/Tamga/internal/config"
-	"github.com/TamgaLabs/Tamga/internal/database"
-	"github.com/TamgaLabs/Tamga/internal/deployments"
-	dockerclient "github.com/TamgaLabs/Tamga/internal/docker"
-	"github.com/TamgaLabs/Tamga/internal/domain"
-	"github.com/TamgaLabs/Tamga/internal/envvar"
-	"github.com/TamgaLabs/Tamga/internal/git"
-	"github.com/TamgaLabs/Tamga/internal/logs"
-	"github.com/TamgaLabs/Tamga/internal/project"
+	"github.com/TamgaLabs/Tamga/internal/db"
 )
 
 func main() {
 	cfg := config.Load()
 
-	db, err := database.Connect(cfg.DBPath)
+	database, err := db.Connect(cfg.DBPath)
 	if err != nil {
 		log.Fatalf("failed to connect to database: %v", err)
 	}
-	defer db.Close()
+	sqlDB, err := database.DB()
+	if err != nil {
+		log.Fatalf("failed to get underlying DB: %v", err)
+	}
+	defer sqlDB.Close()
 
-	if err := database.InitSchema(db); err != nil {
+	if err := database.AutoMigrate(
+		&auth.User{},
+		&project.Project{},
+	); err != nil {
 		log.Fatalf("failed to initialize schema: %v", err)
 	}
+	log.Println("database schema initialized")
 
-	docker, err := dockerclient.NewClient()
-	if err != nil {
-		log.Fatalf("failed to create docker client: %v", err)
-	}
-	defer docker.Close()
-
-	queries := database.New(db)
-	deploySvc := deployments.NewService(queries, docker, "/tmp/tamga-builds", "tamga")
-	logStreamer := logs.NewStreamer(queries, docker)
+	authRepo := auth.NewRepository(database)
+	projectRepo := project.NewRepository(database)
 
 	handlers := &api.Handlers{
-		Auth:       auth.NewHandler(db, cfg.JWTSecret),
-		Project:    project.NewHandler(db),
-		Domain:     domain.NewHandler(db),
-		EnvVar:     envvar.NewHandler(db),
-		Git:        git.NewHandler(db),
-		Deployment: deployments.NewHandler(db, deploySvc),
-		Logs:       logs.NewHandler(db, logStreamer),
+		Auth:    auth.NewHandler(authRepo, cfg.JWTSecret),
+		Project: project.NewHandler(projectRepo),
 	}
 
 	router := api.SetupRouter(handlers, cfg.JWTSecret)

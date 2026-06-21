@@ -1,21 +1,20 @@
 package project
 
 import (
-	"database/sql"
 	"errors"
 	"net/http"
 	"time"
 
-	"github.com/TamgaLabs/Tamga/internal/database"
 	"github.com/gin-gonic/gin"
+	"gorm.io/gorm"
 )
 
 type Handler struct {
-	queries *database.Queries
+	repo *Repository
 }
 
-func NewHandler(db *sql.DB) *Handler {
-	return &Handler{queries: database.New(db)}
+func NewHandler(repo *Repository) *Handler {
+	return &Handler{repo: repo}
 }
 
 type CreateProjectRequest struct {
@@ -37,7 +36,7 @@ type ProjectResponse struct {
 	UpdatedAt   time.Time `json:"updated_at"`
 }
 
-func toProject(p database.Project) ProjectResponse {
+func toProject(p *Project) ProjectResponse {
 	return ProjectResponse{
 		ID:          p.ID,
 		Name:        p.Name,
@@ -59,21 +58,21 @@ func (h *Handler) Create(c *gin.Context) {
 		return
 	}
 
-	project, err := h.queries.CreateProject(c.Request.Context(), database.CreateProjectParams{
+	p := &Project{
 		Name:        req.Name,
 		Description: req.Description,
 		UserID:      userID(c),
-	})
-	if err != nil {
+	}
+	if err := h.repo.Create(c.Request.Context(), p); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to create project"})
 		return
 	}
 
-	c.JSON(http.StatusCreated, toProject(project))
+	c.JSON(http.StatusCreated, toProject(p))
 }
 
 func (h *Handler) List(c *gin.Context) {
-	projects, err := h.queries.ListProjectsByUser(c.Request.Context(), userID(c))
+	projects, err := h.repo.ListByUser(c.Request.Context(), userID(c))
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to list projects"})
 		return
@@ -81,7 +80,7 @@ func (h *Handler) List(c *gin.Context) {
 
 	resp := make([]ProjectResponse, len(projects))
 	for i, p := range projects {
-		resp[i] = toProject(p)
+		resp[i] = toProject(&p)
 	}
 	c.JSON(http.StatusOK, resp)
 }
@@ -89,12 +88,9 @@ func (h *Handler) List(c *gin.Context) {
 func (h *Handler) Get(c *gin.Context) {
 	id := c.Param("projectId")
 
-	project, err := h.queries.GetProjectByID(c.Request.Context(), database.GetProjectByIDParams{
-		ID:     id,
-		UserID: userID(c),
-	})
+	project, err := h.repo.GetByID(c.Request.Context(), id, userID(c))
 	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
 			c.JSON(http.StatusNotFound, gin.H{"error": "project not found"})
 			return
 		}
@@ -114,18 +110,24 @@ func (h *Handler) Update(c *gin.Context) {
 
 	id := c.Param("projectId")
 
-	project, err := h.queries.UpdateProject(c.Request.Context(), database.UpdateProjectParams{
+	p := &Project{
 		ID:          id,
 		Name:        req.Name,
 		Description: req.Description,
 		UserID:      userID(c),
-	})
-	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
+	}
+	if err := h.repo.Update(c.Request.Context(), p); err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
 			c.JSON(http.StatusNotFound, gin.H{"error": "project not found"})
 			return
 		}
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to update project"})
+		return
+	}
+
+	project, err := h.repo.GetByID(c.Request.Context(), id, userID(c))
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to fetch project"})
 		return
 	}
 
@@ -135,12 +137,8 @@ func (h *Handler) Update(c *gin.Context) {
 func (h *Handler) Delete(c *gin.Context) {
 	id := c.Param("projectId")
 
-	_, err := h.queries.DeleteProject(c.Request.Context(), database.DeleteProjectParams{
-		ID:     id,
-		UserID: userID(c),
-	})
-	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
+	if err := h.repo.Delete(c.Request.Context(), id, userID(c)); err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
 			c.JSON(http.StatusNotFound, gin.H{"error": "project not found"})
 			return
 		}

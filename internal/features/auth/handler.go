@@ -1,27 +1,23 @@
 package auth
 
 import (
-	"database/sql"
 	"errors"
 	"net/http"
 	"strings"
 	"time"
 
-	"github.com/TamgaLabs/Tamga/internal/database"
 	"github.com/gin-gonic/gin"
 	"golang.org/x/crypto/bcrypt"
+	"gorm.io/gorm"
 )
 
 type Handler struct {
-	queries   *database.Queries
+	repo      *Repository
 	jwtSecret string
 }
 
-func NewHandler(db *sql.DB, jwtSecret string) *Handler {
-	return &Handler{
-		queries:   database.New(db),
-		jwtSecret: jwtSecret,
-	}
+func NewHandler(repo *Repository, jwtSecret string) *Handler {
+	return &Handler{repo: repo, jwtSecret: jwtSecret}
 }
 
 type RegisterRequest struct {
@@ -60,12 +56,12 @@ func (h *Handler) Register(c *gin.Context) {
 		return
 	}
 
-	user, err := h.queries.CreateUser(c.Request.Context(), database.CreateUserParams{
+	user := &User{
 		Name:         req.Name,
 		Email:        req.Email,
 		PasswordHash: string(hash),
-	})
-	if err != nil {
+	}
+	if err := h.repo.Create(c.Request.Context(), user); err != nil {
 		if strings.Contains(err.Error(), "UNIQUE constraint failed") {
 			c.JSON(http.StatusConflict, gin.H{"error": "email already registered"})
 			return
@@ -93,9 +89,9 @@ func (h *Handler) Login(c *gin.Context) {
 		return
 	}
 
-	user, err := h.queries.GetUserByEmail(c.Request.Context(), req.Email)
+	user, err := h.repo.GetByEmail(c.Request.Context(), req.Email)
 	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
 			c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid email or password"})
 			return
 		}
@@ -123,7 +119,7 @@ func (h *Handler) Login(c *gin.Context) {
 func (h *Handler) Me(c *gin.Context) {
 	rawID := c.MustGet("user_id").(string)
 
-	user, err := h.queries.GetUserByID(c.Request.Context(), rawID)
+	user, err := h.repo.GetByID(c.Request.Context(), rawID)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to fetch user"})
 		return
