@@ -1,7 +1,6 @@
 # Go
 go.work
 go.work.sum
-*.exe
 *.exe~
 *.dll
 *.so
@@ -35,3 +34,11 @@ Thumbs.db
 
 # Build
 bin/
+api
+*.exe
+
+# Data
+data/
+
+# Next.js cache
+.next_old/

@@ -1,0 +1,10 @@
+FROM node:22-alpine
+RUN apk add --no-cache git openssh curl
+
+# opencode CLI install
+RUN npm install -g @opencode/cli
+
+WORKDIR /agent
+COPY agent-server/ ./
+EXPOSE 9000
+CMD ["node", "server.js"]
