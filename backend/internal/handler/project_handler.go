@@ -45,15 +45,13 @@ func (h *ProjectHandler) Get(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(project)
 }
 
-type createProjectRequest struct {
-	Name    string `json:"name"`
-	RepoURL string `json:"repo_url"`
-	Branch  string `json:"branch,omitempty"`
-	Domain  string `json:"domain"`
-}
-
 func (h *ProjectHandler) Create(w http.ResponseWriter, r *http.Request) {
-	var req createProjectRequest
+	var req struct {
+		Name    string `json:"name"`
+		RepoURL string `json:"repo_url"`
+		Branch  string `json:"branch,omitempty"`
+		Domain  string `json:"domain"`
+	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "invalid request body", http.StatusBadRequest)
 		return
@@ -74,6 +72,25 @@ func (h *ProjectHandler) Create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.WriteHeader(http.StatusCreated)
+	json.NewEncoder(w).Encode(project)
+}
+
+func (h *ProjectHandler) Update(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
+	if err != nil {
+		http.Error(w, "invalid id", http.StatusBadRequest)
+		return
+	}
+	var req service.UpdateProjectRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "invalid request body", http.StatusBadRequest)
+		return
+	}
+	project, err := h.svc.Update(r.Context(), id, req)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
 	json.NewEncoder(w).Encode(project)
 }
 
@@ -115,4 +132,78 @@ func (h *ProjectHandler) Logs(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	json.NewEncoder(w).Encode(map[string]string{"logs": logs})
+}
+
+func (h *ProjectHandler) ListDeployments(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
+	if err != nil {
+		http.Error(w, "invalid id", http.StatusBadRequest)
+		return
+	}
+	deployments, err := h.svc.GetDeployments(r.Context(), id)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	if deployments == nil {
+		deployments = []*domain.Deployment{}
+	}
+	json.NewEncoder(w).Encode(deployments)
+}
+
+func (h *ProjectHandler) ListEnvVars(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
+	if err != nil {
+		http.Error(w, "invalid id", http.StatusBadRequest)
+		return
+	}
+	envVars, err := h.svc.ListEnvVars(r.Context(), id)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	if envVars == nil {
+		envVars = []*domain.EnvVar{}
+	}
+	json.NewEncoder(w).Encode(envVars)
+}
+
+func (h *ProjectHandler) CreateEnvVar(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
+	if err != nil {
+		http.Error(w, "invalid id", http.StatusBadRequest)
+		return
+	}
+	var req struct {
+		Key   string `json:"key"`
+		Value string `json:"value"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "invalid request body", http.StatusBadRequest)
+		return
+	}
+	if req.Key == "" {
+		http.Error(w, "key is required", http.StatusBadRequest)
+		return
+	}
+	ev, err := h.svc.CreateEnvVar(r.Context(), id, req.Key, req.Value)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	w.WriteHeader(http.StatusCreated)
+	json.NewEncoder(w).Encode(ev)
+}
+
+func (h *ProjectHandler) DeleteEnvVar(w http.ResponseWriter, r *http.Request) {
+	vid, err := strconv.ParseInt(chi.URLParam(r, "envVarId"), 10, 64)
+	if err != nil {
+		http.Error(w, "invalid env var id", http.StatusBadRequest)
+		return
+	}
+	if err := h.svc.DeleteEnvVar(r.Context(), vid); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }

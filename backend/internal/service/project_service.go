@@ -234,6 +234,9 @@ func (s *ProjectService) Delete(ctx context.Context, id int64) error {
 	if err := s.db.DeleteDeploymentsByProject(id); err != nil {
 		slog.Warn("delete deployments error", "project_id", id, "error", err)
 	}
+	if err := s.db.DeleteEnvVarsByProject(id); err != nil {
+		slog.Warn("delete env vars error", "project_id", id, "error", err)
+	}
 
 	if err := s.db.DeleteProject(id); err != nil {
 		return fmt.Errorf("delete project: %w", err)
@@ -263,6 +266,56 @@ func (s *ProjectService) Restart(ctx context.Context, id int64) error {
 		return fmt.Errorf("start container: %w", err)
 	}
 	return nil
+}
+
+type UpdateProjectRequest struct {
+	Name   *string `json:"name,omitempty"`
+	Domain *string `json:"domain,omitempty"`
+	Branch *string `json:"branch,omitempty"`
+}
+
+func (s *ProjectService) Update(ctx context.Context, id int64, req UpdateProjectRequest) (*domain.Project, error) {
+	project, err := s.db.FindProject(id)
+	if err != nil {
+		return nil, fmt.Errorf("find project: %w", err)
+	}
+	if req.Name != nil {
+		project.Name = *req.Name
+	}
+	if req.Domain != nil {
+		project.Domain = *req.Domain
+	}
+	if req.Branch != nil {
+		project.Branch = *req.Branch
+	}
+	if err := s.db.UpdateProject(project); err != nil {
+		return nil, fmt.Errorf("update project: %w", err)
+	}
+	return project, nil
+}
+
+func (s *ProjectService) GetDeployments(ctx context.Context, id int64) ([]*domain.Deployment, error) {
+	return s.db.ListDeployments(id)
+}
+
+func (s *ProjectService) ListEnvVars(ctx context.Context, projectID int64) ([]*domain.EnvVar, error) {
+	return s.db.ListEnvVars(projectID)
+}
+
+func (s *ProjectService) CreateEnvVar(ctx context.Context, projectID int64, key, value string) (*domain.EnvVar, error) {
+	ev := &domain.EnvVar{
+		ProjectID: projectID,
+		Key:       key,
+		Value:     value,
+	}
+	if err := s.db.CreateEnvVar(ev); err != nil {
+		return nil, fmt.Errorf("create env var: %w", err)
+	}
+	return ev, nil
+}
+
+func (s *ProjectService) DeleteEnvVar(ctx context.Context, id int64) error {
+	return s.db.DeleteEnvVar(id)
 }
 
 func (s *ProjectService) Logs(ctx context.Context, id int64) (string, error) {

@@ -41,6 +41,25 @@ export type Project = {
   updated_at: string;
 };
 
+export type Deployment = {
+  id: number;
+  project_id: number;
+  status: string;
+  commit_sha?: string;
+  logs?: string;
+  created_at: string;
+  updated_at: string;
+};
+
+export type EnvVar = {
+  id: number;
+  project_id: number;
+  key: string;
+  value: string;
+  created_at: string;
+  updated_at: string;
+};
+
 export type AgentTask = {
   id: string;
   project_id: number;
@@ -80,6 +99,23 @@ export const restartProject = (id: number) =>
   api<void>(`/projects/${id}/restart`, { method: "POST" });
 export const getProjectLogs = (id: number) =>
   api<{ logs: string }>(`/projects/${id}/logs`);
+export const updateProject = (id: number, data: Partial<Project>) =>
+  api<Project>(`/projects/${id}`, { method: "PUT", body: JSON.stringify(data) });
+
+// Deployments
+export const listDeployments = (projectId: number) =>
+  api<Deployment[]>(`/projects/${projectId}/deployments`);
+
+// Env Vars
+export const listEnvVars = (projectId: number) =>
+  api<EnvVar[]>(`/projects/${projectId}/env-vars`);
+export const createEnvVar = (projectId: number, key: string, value: string) =>
+  api<EnvVar>(`/projects/${projectId}/env-vars`, {
+    method: "POST",
+    body: JSON.stringify({ key, value }),
+  });
+export const deleteEnvVar = (projectId: number, envVarId: number) =>
+  api<void>(`/projects/${projectId}/env-vars/${envVarId}`, { method: "DELETE" });
 
 // Agent
 export const chatWithAgent = (projectId: number, message: string) =>
