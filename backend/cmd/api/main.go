@@ -48,6 +48,10 @@ func main() {
 	projectService := service.NewProjectService(db, dockerClient, caddyClient, cfg)
 	agentService := service.NewAgentService(db, dockerClient, cfg)
 
+	if err := setupCaddyRoutes(caddyClient, cfg); err != nil {
+		slog.Warn("caddy route setup", "error", err)
+	}
+
 	systemHandler := handler.NewSystemHandler()
 	authHandler := handler.NewAuthHandler(authService)
 	projectHandler := handler.NewProjectHandler(projectService)
@@ -85,4 +89,26 @@ func main() {
 	}
 
 	slog.Info("server stopped")
+}
+
+func setupCaddyRoutes(c *caddyrepo.Client, cfg config.Config) error {
+	if cfg.Domain == "" || cfg.Domain == "localhost" {
+		slog.Info("skipping caddy route setup (localhost)")
+		return nil
+	}
+
+	// Register frontend route: DOMAIN → frontend:3000
+	if err := c.AddRoute(cfg.Domain, "frontend:3000"); err != nil {
+		return fmt.Errorf("frontend route: %w", err)
+	}
+	slog.Info("caddy route added", "domain", cfg.Domain, "upstream", "frontend:3000")
+
+	// Register backend route: api.DOMAIN → backend:8080
+	apiDomain := "api." + cfg.Domain
+	if err := c.AddRoute(apiDomain, "backend:8080"); err != nil {
+		return fmt.Errorf("backend route: %w", err)
+	}
+	slog.Info("caddy route added", "domain", apiDomain, "upstream", "backend:8080")
+
+	return nil
 }

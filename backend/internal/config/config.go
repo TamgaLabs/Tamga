@@ -12,6 +12,7 @@ type Config struct {
 	JWTSecret     string
 	DBPath        string
 	CaddyAdminURL string
+	CaddyEmail    string
 	DataDir       string
 	Port          int
 	ReadTimeout   time.Duration
@@ -25,6 +26,7 @@ func Load() Config {
 		JWTSecret:     getEnv("JWT_SECRET", "change-me-in-production"),
 		DBPath:        getEnv("DB_PATH", "./data/tamga.db"),
 		CaddyAdminURL: getEnv("CADDY_ADMIN_URL", "http://localhost:2019"),
+		CaddyEmail:    getEnv("CADDY_EMAIL", "admin@example.com"),
 		DataDir:       getEnv("DATA_DIR", "./data"),
 		Port:          getEnvInt("PORT", 8080),
 		ReadTimeout:   time.Second * 10,

@@ -1,6 +1,7 @@
 .PHONY: setup up down logs test build clean
 
-DOMAIN ?= localhost
+-include .env
+export
 
 setup:
 	@test -f .env || cp .env.example .env
@@ -11,26 +12,33 @@ build:
 	docker build -t tamga-frontend -f deploy/Dockerfile.frontend .
 	docker build -t tamga-agent -f deploy/Dockerfile.agent .
 
-up: build
+network:
 	docker network inspect tamga-net >/dev/null 2>&1 || docker network create tamga-net
+
+up: network build
 	docker run -d --name tamga-caddy \
 		--network tamga-net \
 		-p 80:80 -p 443:443 -p 2019:2019 \
-		-v /var/run/docker.sock:/var/run/docker.sock:ro \
 		-v caddy_data:/data \
+		-v ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro \
 		-e DOMAIN=$(DOMAIN) \
-		caddy:2-alpine \
-		caddy run --config /etc/caddy/Caddyfile --adapter caddyfile
+		-e CADDY_EMAIL=$(CADDY_EMAIL) \
+		caddy:2-alpine
 	docker run -d --name tamga-backend \
 		--network tamga-net \
+		-p 8080:8080 \
 		-v /var/run/docker.sock:/var/run/docker.sock:ro \
 		-v tamga_data:/data \
 		--env-file .env \
 		tamga-backend
 	docker run -d --name tamga-frontend \
 		--network tamga-net \
+		-p 3000:3000 \
 		--env-file .env \
 		tamga-frontend
+	@echo "Frontend: http://$(DOMAIN):3000"
+	@echo "API:      http://api.$(DOMAIN):8080"
+	@echo "Caddy admin: http://localhost:2019"
 
 down:
 	-docker rm -f tamga-caddy tamga-backend tamga-frontend 2>/dev/null
@@ -48,5 +56,5 @@ run-backend:
 	go run ./backend/cmd/api/
 
 clean: down
-	docker network rm tamga-net 2>/dev/null; true
-	docker volume rm caddy_data tamga_data 2>/dev/null; true
+	-docker network rm tamga-net 2>/dev/null
+	-docker volume rm caddy_data tamga_data 2>/dev/null
