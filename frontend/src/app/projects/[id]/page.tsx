@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import { useParams, useRouter } from "next/navigation";
 import {
   getProject,
@@ -12,9 +12,12 @@ import {
   listEnvVars,
   createEnvVar,
   deleteEnvVar,
+  chatWithAgent,
+  getTask,
   type Project,
   type Deployment,
   type EnvVar,
+  type AgentTask,
 } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { Button } from "@/components/ui/button";
@@ -322,25 +325,52 @@ function SettingsTab({ project, onUpdate }: { project: Project; onUpdate: () => 
 }
 
 function AgentTab({ project }: { project: Project }) {
-  const [messages, setMessages] = useState<{ role: "user" | "agent"; content: string; diff?: string }[]>([]);
+  const [messages, setMessages] = useState<{ role: "user" | "agent"; content: string; taskId?: string }[]>([]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
+  const [selectedDiff, setSelectedDiff] = useState<string | null>(null);
+  const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  const startPolling = (taskId: string) => {
+    if (pollingRef.current) clearInterval(pollingRef.current);
+    pollingRef.current = setInterval(async () => {
+      try {
+        const task: AgentTask = await getTask(project.id, taskId);
+        if (task.status === "completed" || task.status === "failed") {
+          if (pollingRef.current) clearInterval(pollingRef.current);
+          setMessages((prev) =>
+            prev.map((m) =>
+              m.taskId === taskId
+                ? { ...m, role: "agent", content: task.response || "(no response)", taskId }
+                : m
+            )
+          );
+          if (task.diff) setSelectedDiff(task.diff);
+          setLoading(false);
+        }
+      } catch {}
+    }, 2000);
+  };
 
   const handleSend = async () => {
-    if (!input.trim()) return;
+    if (!input.trim() || loading) return;
     const msg = input.trim();
     setInput("");
-    setMessages((prev) => [...prev, { role: "user", content: msg }]);
+    const taskId = await chatWithAgent(project.id, msg).then((r) => r.task_id);
+    setMessages((prev) => [
+      ...prev,
+      { role: "user", content: msg },
+      { role: "agent", content: "Processing...", taskId },
+    ]);
     setLoading(true);
-
-    setTimeout(() => {
-      setMessages((prev) => [
-        ...prev,
-        { role: "agent", content: "Agent chat coming in Phase 4.", diff: "" },
-      ]);
-      setLoading(false);
-    }, 500);
+    startPolling(taskId);
   };
+
+  useEffect(() => {
+    return () => {
+      if (pollingRef.current) clearInterval(pollingRef.current);
+    };
+  }, []);
 
   return (
     <div className="flex gap-4 h-[60vh]">
@@ -356,14 +386,6 @@ function AgentTab({ project }: { project: Project }) {
             {messages.map((m, i) => (
               <div key={i} className={`text-sm ${m.role === "user" ? "text-blue-400" : "text-green-400"}`}>
                 <span className="font-bold">{m.role === "user" ? "You" : "Agent"}:</span> {m.content}
-                {m.diff !== undefined && (
-                  <button
-                    className="ml-2 text-xs text-neutral-500 hover:text-white"
-                    onClick={() => alert("Diff panel coming in Phase 4")}
-                  >
-                    [diff]
-                  </button>
-                )}
               </div>
             ))}
             {loading && <p className="text-sm text-neutral-500">Agent is thinking...</p>}
@@ -385,8 +407,12 @@ function AgentTab({ project }: { project: Project }) {
         <CardHeader>
           <CardTitle className="text-sm">Diff</CardTitle>
         </CardHeader>
-        <CardContent className="flex-1 text-xs text-neutral-500">
-          Select a diff from the chat to view changes.
+        <CardContent className="flex-1 text-xs overflow-auto">
+          {selectedDiff ? (
+            <pre className="text-green-400 font-mono whitespace-pre-wrap">{selectedDiff}</pre>
+          ) : (
+            <span className="text-neutral-500">Waiting for changes...</span>
+          )}
         </CardContent>
       </Card>
     </div>

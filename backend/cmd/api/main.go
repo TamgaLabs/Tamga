@@ -46,13 +46,15 @@ func main() {
 	caddyClient := caddyrepo.New(cfg.CaddyAdminURL)
 
 	projectService := service.NewProjectService(db, dockerClient, caddyClient, cfg)
+	agentService := service.NewAgentService(db, dockerClient, cfg)
 
 	systemHandler := handler.NewSystemHandler()
 	authHandler := handler.NewAuthHandler(authService)
 	projectHandler := handler.NewProjectHandler(projectService)
+	agentHandler := handler.NewAgentHandler(agentService)
 	authMiddleware := handler.AuthMiddleware(authService)
 
-	r := router.New(authHandler, systemHandler, projectHandler, authMiddleware)
+	r := router.New(authHandler, systemHandler, projectHandler, agentHandler, authMiddleware)
 
 	srv := &http.Server{
 		Addr:         fmt.Sprintf(":%d", cfg.Port),

@@ -14,6 +14,7 @@ func New(
 	authHandler *handler.AuthHandler,
 	systemHandler *handler.SystemHandler,
 	projectHandler *handler.ProjectHandler,
+	agentHandler *handler.AgentHandler,
 	authMiddleware func(http.Handler) http.Handler,
 ) *chi.Mux {
 	r := chi.NewRouter()
@@ -49,6 +50,8 @@ func New(
 			r.Get("/projects/{id}/env-vars", projectHandler.ListEnvVars)
 			r.Post("/projects/{id}/env-vars", projectHandler.CreateEnvVar)
 			r.Delete("/projects/{id}/env-vars/{envVarId}", projectHandler.DeleteEnvVar)
+			r.Post("/projects/{id}/agent/chat", agentHandler.Chat)
+			r.Get("/projects/{id}/agent/tasks/{taskId}", agentHandler.GetTask)
 		})
 	})
 
