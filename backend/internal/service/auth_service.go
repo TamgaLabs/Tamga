@@ -71,6 +71,25 @@ func (s *AuthService) ValidateToken(tokenStr string) (int64, error) {
 	return int64(userID), nil
 }
 
+func (s *AuthService) AutoSetup() error {
+	if s.cfg.AdminPassword == "" {
+		return nil
+	}
+	exists, err := s.db.HasUsers()
+	if err != nil {
+		return fmt.Errorf("check users: %w", err)
+	}
+	if exists {
+		return nil
+	}
+	hash, err := bcrypt.GenerateFromPassword([]byte(s.cfg.AdminPassword), bcrypt.DefaultCost)
+	if err != nil {
+		return fmt.Errorf("hash password: %w", err)
+	}
+	_, err = s.db.CreateUser(string(hash))
+	return err
+}
+
 func (s *AuthService) IsSetup() (bool, error) {
 	return s.db.HasUsers()
 }
