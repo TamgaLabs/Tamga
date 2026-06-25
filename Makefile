@@ -26,18 +26,16 @@ up: network build
 		caddy:2-alpine
 	docker run -d --name tamga-backend \
 		--network tamga-net \
-		-p 8080:8080 \
 		-v /var/run/docker.sock:/var/run/docker.sock:ro \
 		-v tamga_data:/data \
 		--env-file .env \
 		tamga-backend
 	docker run -d --name tamga-frontend \
 		--network tamga-net \
-		-p 3000:3000 \
 		--env-file .env \
 		tamga-frontend
-	@echo "Frontend: http://$(DOMAIN):3000"
-	@echo "API:      http://api.$(DOMAIN):8080"
+	@echo "Frontend: https://$(DOMAIN)"
+	@echo "API:      https://api.$(DOMAIN)"
 	@echo "Caddy admin: http://localhost:2019"
 
 down:
