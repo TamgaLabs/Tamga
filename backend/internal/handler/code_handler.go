@@ -212,6 +212,60 @@ func (h *CodeHandler) WriteFile(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 }
 
+func (h *CodeHandler) ChatStream(w http.ResponseWriter, r *http.Request) {
+	pid, err := strconv.ParseInt(chi.URLParam(r, "projectID"), 10, 64)
+	if err != nil {
+		http.Error(w, "invalid project id", http.StatusBadRequest)
+		return
+	}
+	var req struct {
+		Message   string        `json:"message"`
+		Messages  []interface{} `json:"messages"`
+		SessionID *string       `json:"session_id,omitempty"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	message := req.Message
+	if message == "" && len(req.Messages) > 0 {
+		lastMsg := req.Messages[len(req.Messages)-1]
+		if m, ok := lastMsg.(map[string]interface{}); ok {
+			if c, ok := m["content"].(string); ok {
+				message = c
+			}
+		}
+	}
+	if message == "" {
+		http.Error(w, "message is required", http.StatusBadRequest)
+		return
+	}
+
+	write := sseWriter(w)
+
+	if pid == 0 {
+		events, err := h.agentSvc.ChatStreamForDir(r.Context(), "system", h.cfg.SystemCodeDir, message, req.SessionID)
+		if err != nil {
+			write(fmt.Sprintf(`{"type":"text","text":%s}`, jsonEncodeStr(err.Error())))
+			return
+		}
+		for event := range events {
+			write(event)
+		}
+		return
+	}
+
+	events, err := h.agentSvc.ChatStream(r.Context(), pid, message, req.SessionID)
+	if err != nil {
+		write(fmt.Sprintf(`{"type":"text","text":%s}`, jsonEncodeStr(err.Error())))
+		return
+	}
+	for event := range events {
+		write(event)
+	}
+}
+
 func (h *CodeHandler) Chat(w http.ResponseWriter, r *http.Request) {
 	pid, err := strconv.ParseInt(chi.URLParam(r, "projectID"), 10, 64)
 	if err != nil {

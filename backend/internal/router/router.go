@@ -55,11 +55,13 @@ func New(
 			r.Post("/projects/{id}/env-vars", projectHandler.CreateEnvVar)
 			r.Delete("/projects/{id}/env-vars/{envVarId}", projectHandler.DeleteEnvVar)
 			r.Post("/projects/{id}/agent/chat", agentHandler.Chat)
+			r.Post("/projects/{id}/agent/chat/stream", agentHandler.ChatStream)
 			r.Get("/projects/{id}/agent/tasks", agentHandler.ListTasks)
 			r.Get("/projects/{id}/agent/tasks/{taskId}", agentHandler.GetTask)
 
 			// Code agent routes
 			r.Post("/code/{projectID}/agent/chat", codeHandler.Chat)
+			r.Post("/code/{projectID}/agent/chat/stream", codeHandler.ChatStream)
 			r.Get("/code/{projectID}/agent/tasks", codeHandler.ListTasks)
 			r.Get("/code/{projectID}/agent/tasks/{taskId}", codeHandler.GetTask)
 			r.Get("/code/{projectID}/agent/status", codeHandler.AgentStatus)

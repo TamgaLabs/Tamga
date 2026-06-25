@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log/slog"
 	"sync"
@@ -135,6 +136,193 @@ func (s *AgentService) resolveProviderForProject(ctx context.Context, projectID 
 		return nil, fmt.Errorf("find project: %w", err)
 	}
 	return s.providerSvc.ResolveProvider(safeDeref(project.AgentProviderID))
+}
+
+func (s *AgentService) ChatStream(ctx context.Context, projectID int64, message string, sessionID *string) (<-chan string, error) {
+	events := make(chan string, 64)
+
+	project, err := s.db.FindProject(projectID)
+	if err != nil {
+		close(events)
+		return nil, fmt.Errorf("find project: %w", err)
+	}
+	if project.Status != domain.ProjectStatusRunning {
+		close(events)
+		return nil, fmt.Errorf("project is not running")
+	}
+
+	sid, err := s.getOrCreateSession(ctx, projectID, safeDeref(sessionID), message)
+	if err != nil {
+		close(events)
+		return nil, fmt.Errorf("resolve session: %w", err)
+	}
+
+	taskID := uuid.New().String()
+	task := &domain.AgentTask{
+		ID:        taskID,
+		ProjectID: projectID,
+		SessionID: &sid,
+		Message:   message,
+		Status:    domain.AgentTaskStatusPending,
+	}
+	if err := s.db.CreateAgentTask(task); err != nil {
+		close(events)
+		return nil, fmt.Errorf("create agent task: %w", err)
+	}
+
+	provider, err := s.resolveProviderForProject(ctx, projectID)
+	if err != nil {
+		close(events)
+		return nil, fmt.Errorf("resolve provider: %w", err)
+	}
+
+	containerName := fmt.Sprintf("agent-%d", projectID)
+	bridge := s.providerSvc.BuildBridge(provider, containerName)
+
+	if provider.Type == domain.ProviderTypeDocker {
+		if err := s.ensureContainerRunning(ctx, containerName, nil); err != nil {
+			slog.Error("ensure agent container running failed", "container", containerName, "error", err)
+		}
+		s.trackActivity(containerName)
+		s.startIdleWatcher()
+	}
+
+	projectDir := fmt.Sprintf("%s/projects/%d", s.cfg.DataDir, projectID)
+
+	go func() {
+		defer close(events)
+
+		if err := bridge.ForwardTask(context.Background(), taskID, message, projectDir); err != nil {
+			slog.Error("forward task to agent failed", "task_id", taskID, "error", err)
+			events <- `{"type":"text","text":"Error: Failed to forward task to agent"}`
+			return
+		}
+
+		pollCtx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+		defer cancel()
+
+		ticker := time.NewTicker(500 * time.Millisecond)
+		defer ticker.Stop()
+
+		for {
+			select {
+			case <-pollCtx.Done():
+				events <- `{"type":"text","text":"Error: Task timed out"}`
+				s.db.CreateAgentTask(&domain.AgentTask{
+					ID:        taskID,
+					ProjectID: projectID,
+					SessionID: &sid,
+					Message:   message,
+					Status:    domain.AgentTaskStatusFailed,
+				})
+				return
+			case <-ticker.C:
+				polledTask, err := s.GetTask(pollCtx, projectID, taskID)
+				if err != nil {
+					continue
+				}
+
+				if polledTask.Status == domain.AgentTaskStatusCompleted || polledTask.Status == domain.AgentTaskStatusFailed {
+					if polledTask.Response != "" {
+						events <- fmt.Sprintf(`{"type":"text","text":%s}`, jsonEncode(polledTask.Response))
+					}
+					events <- fmt.Sprintf(`{"type":"finish","finishReason":"stop","usage":{"promptTokens":0,"completionTokens":0}}`, taskID, jsonEncode(polledTask.Diff))
+					return
+				}
+			}
+		}
+	}()
+
+	return events, nil
+}
+
+func jsonEncode(s string) string {
+	b, _ := json.Marshal(s)
+	return string(b)
+}
+
+func (s *AgentService) ChatStreamForDir(ctx context.Context, dirID, dirPath, message string, sessionID *string) (<-chan string, error) {
+	events := make(chan string, 64)
+
+	if s.docker == nil {
+		close(events)
+		return nil, fmt.Errorf("docker daemon not available")
+	}
+
+	sid, err := s.getOrCreateSession(ctx, 0, safeDeref(sessionID), message)
+	if err != nil {
+		close(events)
+		return nil, fmt.Errorf("resolve session: %w", err)
+	}
+
+	taskID := uuid.New().String()
+	task := &domain.AgentTask{
+		ID:        taskID,
+		ProjectID: 0,
+		SessionID: &sid,
+		Message:   message,
+		Status:    domain.AgentTaskStatusPending,
+	}
+	if err := s.db.CreateAgentTask(task); err != nil {
+		close(events)
+		return nil, fmt.Errorf("create agent task: %w", err)
+	}
+
+	containerName := fmt.Sprintf("agent-%s", dirID)
+	mounts := []string{fmt.Sprintf("%s:/workspace/%s", dirPath, dirID)}
+
+	if err := s.ensureContainerRunning(ctx, containerName, mounts); err != nil {
+		slog.Error("ensure agent container running failed", "container", containerName, "error", err)
+	}
+
+	s.trackActivity(containerName)
+	s.startIdleWatcher()
+
+	provider, err := s.providerSvc.ResolveProvider("")
+	if err != nil {
+		close(events)
+		return nil, fmt.Errorf("resolve default provider: %w", err)
+	}
+	bridge := s.providerSvc.BuildBridge(provider, containerName)
+	containerDir := fmt.Sprintf("/workspace/%s", dirID)
+
+	go func() {
+		defer close(events)
+
+		if err := bridge.ForwardTask(context.Background(), taskID, message, containerDir); err != nil {
+			slog.Error("forward task to dir agent failed", "task_id", taskID, "error", err)
+			events <- `{"type":"text","text":"Error: Failed to forward task to agent"}`
+			return
+		}
+
+		pollCtx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+		defer cancel()
+
+		ticker := time.NewTicker(500 * time.Millisecond)
+		defer ticker.Stop()
+
+		for {
+			select {
+			case <-pollCtx.Done():
+				events <- `{"type":"text","text":"Error: Task timed out"}`
+				return
+			case <-ticker.C:
+				polledTask, err := s.GetTaskForDir(pollCtx, dirID, taskID)
+				if err != nil {
+					continue
+				}
+				if polledTask.Status == domain.AgentTaskStatusCompleted || polledTask.Status == domain.AgentTaskStatusFailed {
+					if polledTask.Response != "" {
+						events <- fmt.Sprintf(`{"type":"text","text":%s}`, jsonEncode(polledTask.Response))
+					}
+					events <- fmt.Sprintf(`{"type":"finish","finishReason":"stop","usage":{"promptTokens":0,"completionTokens":0}}`, taskID, jsonEncode(polledTask.Diff))
+					return
+				}
+			}
+		}
+	}()
+
+	return events, nil
 }
 
 func (s *AgentService) Chat(ctx context.Context, projectID int64, message string, sessionID *string) (*domain.AgentTask, error) {
