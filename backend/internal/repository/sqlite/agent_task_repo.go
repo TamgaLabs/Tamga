@@ -20,7 +20,7 @@ func (db *DB) CreateAgentTask(t *domain.AgentTask) error {
 func (db *DB) FindAgentTask(id string) (*domain.AgentTask, error) {
 	t := &domain.AgentTask{}
 	err := db.QueryRow(
-		"SELECT id, project_id, message, status, response, diff, created_at, completed_at FROM agent_tasks WHERE id = ?", id,
+		"SELECT id, project_id, message, status, COALESCE(response,''), COALESCE(diff,''), created_at, completed_at FROM agent_tasks WHERE id = ?", id,
 	).Scan(&t.ID, &t.ProjectID, &t.Message, &t.Status, &t.Response, &t.Diff, &t.CreatedAt, &t.CompletedAt)
 	if err != nil {
 		return nil, fmt.Errorf("find agent task: %w", err)
@@ -30,7 +30,7 @@ func (db *DB) FindAgentTask(id string) (*domain.AgentTask, error) {
 
 func (db *DB) ListAgentTasks(projectID int64) ([]*domain.AgentTask, error) {
 	rows, err := db.Query(
-		"SELECT id, project_id, message, status, response, diff, created_at, completed_at FROM agent_tasks WHERE project_id = ? ORDER BY created_at DESC LIMIT 50",
+		"SELECT id, project_id, message, status, COALESCE(response,''), COALESCE(diff,''), created_at, completed_at FROM agent_tasks WHERE project_id = ? ORDER BY created_at DESC LIMIT 50",
 		projectID,
 	)
 	if err != nil {
