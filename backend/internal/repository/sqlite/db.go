@@ -30,6 +30,10 @@ func Open(path string) (*DB, error) {
 }
 
 func (db *DB) Migrate() error {
+	if _, err := db.Exec(`CREATE TABLE IF NOT EXISTS schema_migrations (filename TEXT PRIMARY KEY, applied_at TEXT NOT NULL DEFAULT (datetime('now')))`); err != nil {
+		return fmt.Errorf("create schema_migrations table: %w", err)
+	}
+
 	entries, err := migrationsFS.ReadDir("migrations")
 	if err != nil {
 		return fmt.Errorf("read migrations: %w", err)
@@ -43,7 +47,42 @@ func (db *DB) Migrate() error {
 	}
 	sort.Strings(upFiles)
 
+	rows, err := db.Query("SELECT filename FROM schema_migrations ORDER BY filename")
+	if err != nil {
+		return fmt.Errorf("query schema_migrations: %w", err)
+	}
+	defer rows.Close()
+
+	applied := make(map[string]bool)
+	for rows.Next() {
+		var name string
+		if err := rows.Scan(&name); err != nil {
+			return fmt.Errorf("scan schema_migrations: %w", err)
+		}
+		applied[name] = true
+	}
+	rows.Close()
+
+	var tableCount int
+	if err := db.QueryRow("SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name NOT IN ('schema_migrations')").Scan(&tableCount); err != nil {
+		return fmt.Errorf("count tables: %w", err)
+	}
+
+	// Legacy DB: has tables but no tracking records
+	if tableCount > 0 && len(applied) == 0 {
+		slog.Info("existing database without migration tracking, marking all current migrations as applied")
+		for _, f := range upFiles {
+			if _, err := db.Exec("INSERT OR IGNORE INTO schema_migrations (filename) VALUES (?)", f); err != nil {
+				return fmt.Errorf("record migration %s: %w", f, err)
+			}
+		}
+		return nil
+	}
+
 	for _, f := range upFiles {
+		if applied[f] {
+			continue
+		}
 		slog.Info("running migration", "file", f)
 		content, err := migrationsFS.ReadFile("migrations/" + f)
 		if err != nil {
@@ -52,6 +91,10 @@ func (db *DB) Migrate() error {
 		if _, err := db.Exec(string(content)); err != nil {
 			return fmt.Errorf("exec %s: %w", f, err)
 		}
+		if _, err := db.Exec("INSERT INTO schema_migrations (filename) VALUES (?)", f); err != nil {
+			return fmt.Errorf("record migration %s: %w", f, err)
+		}
 	}
+
 	return nil
 }
