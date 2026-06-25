@@ -1,5 +1,14 @@
 {
 	admin :2019
 	email {$CADDY_EMAIL:admin@example.com}
-	acme_daemon 5m
+}
+
+{$DOMAIN:localhost} {
+	@api path /api/*
+	handle @api {
+		reverse_proxy tamga-backend:8080
+	}
+	handle {
+		reverse_proxy tamga-frontend:3000
+	}
 }

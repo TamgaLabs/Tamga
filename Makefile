@@ -20,7 +20,8 @@ network:
 
 up: network build
 	@test -f .env || cp .env.example .env
-	docker run -d --name tamga-caddy \
+	$(eval SYSTEM_CODE_DIR := $(shell pwd))
+	docker run -d --name caddy \
 		--network tamga-net \
 		-p 80:80 -p 443:443 -p 2019:2019 \
 		-v caddy_data:/data \
@@ -32,19 +33,21 @@ up: network build
 		--network tamga-net \
 		-v /var/run/docker.sock:/var/run/docker.sock:ro \
 		-v tamga_data:/data \
+		-v $(SYSTEM_CODE_DIR):$(SYSTEM_CODE_DIR):ro \
+		-e SYSTEM_CODE_DIR=$(SYSTEM_CODE_DIR) \
 		--env-file .env \
 		tamga-backend
 	docker run -d --name tamga-frontend \
 		--network tamga-net \
 		--env-file .env \
+		-e PORT=3000 \
 		tamga-frontend
 	@echo ""
-	@URL_SCHEME=$$( [ "$(DOMAIN)" = "localhost" ] && echo "http" || echo "https" ); \
-	echo "Frontend: $$URL_SCHEME://$(DOMAIN)"; \
-	echo "API:      $$URL_SCHEME://api.$(DOMAIN)"
+	@echo "Frontend: https://$(DOMAIN)"; \
+	echo "API:      https://$(DOMAIN)/api"
 
 down:
-	-docker rm -f tamga-caddy tamga-backend tamga-frontend 2>/dev/null
+	-docker rm -f caddy tamga-backend tamga-frontend 2>/dev/null
 
 logs:
 	@docker logs -f tamga-backend 2>&1 || true
