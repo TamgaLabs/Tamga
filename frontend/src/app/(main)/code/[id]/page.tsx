@@ -40,6 +40,7 @@ export default function CodeIDEPage() {
   const [expandedDirs, setExpandedDirs] = useState<Set<string>>(new Set());
   const [agentRunning, setAgentRunning] = useState(false);
   const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const healthRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   useEffect(() => {
     if (!authLoading && !user) router.replace("/login");
@@ -50,7 +51,7 @@ export default function CodeIDEPage() {
     getFileTree(projectId).then(setFiles).catch(console.error);
   }, [projectId, user]);
 
-  // Check agent status on mount
+  // Check agent status on mount and poll every 10s
   const checkAgentStatus = useCallback(() => {
     if (!user) return;
     getCodeAgentStatus(projectId).then((s) => setAgentRunning(s.running)).catch(console.error);
@@ -58,6 +59,10 @@ export default function CodeIDEPage() {
 
   useEffect(() => {
     checkAgentStatus();
+    healthRef.current = setInterval(checkAgentStatus, 10000);
+    return () => {
+      if (healthRef.current) clearInterval(healthRef.current);
+    };
   }, [checkAgentStatus]);
 
   // Load chat history on mount
@@ -232,6 +237,7 @@ export default function CodeIDEPage() {
   useEffect(() => {
     return () => {
       if (pollingRef.current) clearInterval(pollingRef.current);
+      if (healthRef.current) clearInterval(healthRef.current);
     };
   }, []);
 

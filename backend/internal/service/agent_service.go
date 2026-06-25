@@ -46,7 +46,16 @@ func (s *AgentService) ensureContainerRunning(ctx context.Context, containerName
 	}
 	if s.docker.ContainerExists(ctx, containerName) {
 		if err := s.docker.StartContainer(ctx, containerName); err != nil {
-			return fmt.Errorf("start existing agent container: %w", err)
+			slog.Warn("failed to start existing agent container, recreating", "container", containerName, "error", err)
+			s.docker.RemoveContainer(ctx, containerName)
+			if _, err := s.docker.CreateContainerOpts(ctx, containerName, agentImage, nil, "tamga-net", mounts); err != nil {
+				return fmt.Errorf("recreate agent container: %w", err)
+			}
+			if err := s.docker.StartContainer(ctx, containerName); err != nil {
+				return fmt.Errorf("start recreated agent container: %w", err)
+			}
+			slog.Info("agent container recreated and started", "container", containerName)
+			return nil
 		}
 		slog.Info("agent container restarted", "container", containerName)
 		return nil
