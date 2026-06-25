@@ -7,6 +7,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
+	"github.com/TamgaLabs/Tamga/backend/internal/domain"
 	"github.com/TamgaLabs/Tamga/backend/internal/service"
 )
 
@@ -66,4 +67,23 @@ func (h *AgentHandler) GetTask(w http.ResponseWriter, r *http.Request) {
 	}
 
 	json.NewEncoder(w).Encode(task)
+}
+
+func (h *AgentHandler) ListTasks(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
+	if err != nil {
+		http.Error(w, "invalid id", http.StatusBadRequest)
+		return
+	}
+
+	tasks, err := h.svc.ListTasks(r.Context(), id)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	if tasks == nil {
+		tasks = []*domain.AgentTask{}
+	}
+
+	json.NewEncoder(w).Encode(tasks)
 }
