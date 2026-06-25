@@ -12,9 +12,17 @@ const (
 	ProjectStatusError    ProjectStatus = "error"
 )
 
+type SourceType string
+
+const (
+	SourceTypeLocal  SourceType = "local"
+	SourceTypeRemote SourceType = "remote"
+)
+
 type Project struct {
 	ID          int64         `json:"id"`
 	Name        string        `json:"name"`
+	SourceType  SourceType    `json:"source_type"`
 	RepoURL     string        `json:"repo_url"`
 	Branch      string        `json:"branch"`
 	Domain      string        `json:"domain"`

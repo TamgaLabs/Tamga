@@ -47,25 +47,34 @@ func (h *ProjectHandler) Get(w http.ResponseWriter, r *http.Request) {
 
 func (h *ProjectHandler) Create(w http.ResponseWriter, r *http.Request) {
 	var req struct {
-		Name    string `json:"name"`
-		RepoURL string `json:"repo_url"`
-		Branch  string `json:"branch,omitempty"`
-		Domain  string `json:"domain"`
+		Name       string            `json:"name"`
+		SourceType domain.SourceType `json:"source_type"`
+		RepoURL    string            `json:"repo_url"`
+		Branch     string            `json:"branch,omitempty"`
+		Domain     string            `json:"domain"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "invalid request body", http.StatusBadRequest)
 		return
 	}
-	if req.Name == "" || req.RepoURL == "" || req.Domain == "" {
-		http.Error(w, "name, repo_url, and domain are required", http.StatusBadRequest)
+	if req.Name == "" || req.Domain == "" {
+		http.Error(w, "name and domain are required", http.StatusBadRequest)
+		return
+	}
+	if req.SourceType == "" {
+		req.SourceType = domain.SourceTypeRemote
+	}
+	if req.SourceType == domain.SourceTypeRemote && req.RepoURL == "" {
+		http.Error(w, "repo_url is required for remote source", http.StatusBadRequest)
 		return
 	}
 
 	project, err := h.svc.Create(r.Context(), service.CreateProjectRequest{
-		Name:    req.Name,
-		RepoURL: req.RepoURL,
-		Branch:  req.Branch,
-		Domain:  req.Domain,
+		Name:       req.Name,
+		SourceType: req.SourceType,
+		RepoURL:    req.RepoURL,
+		Branch:     req.Branch,
+		Domain:     req.Domain,
 	})
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)

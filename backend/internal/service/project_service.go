@@ -37,23 +37,28 @@ func (s *ProjectService) requireDocker() error {
 }
 
 type CreateProjectRequest struct {
-	Name    string `json:"name"`
-	RepoURL string `json:"repo_url"`
-	Branch  string `json:"branch,omitempty"`
-	Domain  string `json:"domain"`
+	Name       string            `json:"name"`
+	SourceType domain.SourceType `json:"source_type"`
+	RepoURL    string            `json:"repo_url"`
+	Branch     string            `json:"branch,omitempty"`
+	Domain     string            `json:"domain"`
 }
 
 func (s *ProjectService) Create(ctx context.Context, req CreateProjectRequest) (*domain.Project, error) {
+	if req.SourceType == "" {
+		req.SourceType = domain.SourceTypeRemote
+	}
 	if req.Branch == "" {
 		req.Branch = "main"
 	}
 
 	project := &domain.Project{
-		Name:    req.Name,
-		RepoURL: req.RepoURL,
-		Branch:  req.Branch,
-		Domain:  req.Domain,
-		Status:  domain.ProjectStatusCreated,
+		Name:       req.Name,
+		SourceType: req.SourceType,
+		RepoURL:    req.RepoURL,
+		Branch:     req.Branch,
+		Domain:     req.Domain,
+		Status:     domain.ProjectStatusCreated,
 	}
 
 	if err := s.db.CreateProject(project); err != nil {
@@ -78,13 +83,25 @@ func (s *ProjectService) deploy(ctx context.Context, project *domain.Project) er
 	}
 	workDir := filepath.Join(s.cfg.DataDir, "projects", fmt.Sprintf("%d", project.ID))
 
-	// 1. Clone
+	// 1. Prepare source
 	project.Status = domain.ProjectStatusCloning
 	s.db.UpdateProject(project)
-	if err := s.cloneRepo(ctx, project.RepoURL, project.Branch, workDir); err != nil {
-		return fmt.Errorf("clone: %w", err)
+	switch project.SourceType {
+	case domain.SourceTypeLocal:
+		if err := s.initRepo(ctx, workDir); err != nil {
+			return fmt.Errorf("init repo: %w", err)
+		}
+		slog.Info("local repo initialized", "project_id", project.ID)
+	default:
+		if err := s.cloneRepo(ctx, project.RepoURL, project.Branch, workDir); err != nil {
+			slog.Warn("clone failed, falling back to init", "project_id", project.ID, "error", err)
+			if err := s.initRepo(ctx, workDir); err != nil {
+				return fmt.Errorf("init repo after failed clone: %w", err)
+			}
+		} else {
+			slog.Info("repo cloned", "project_id", project.ID)
+		}
 	}
-	slog.Info("repo cloned", "project_id", project.ID)
 
 	// 2. Build
 	project.Status = domain.ProjectStatusBuilding
@@ -134,6 +151,22 @@ func (s *ProjectService) deploy(ctx context.Context, project *domain.Project) er
 	}
 	s.db.CreateDeployment(deployment)
 
+	return nil
+}
+
+func (s *ProjectService) initRepo(ctx context.Context, workDir string) error {
+	if err := os.RemoveAll(workDir); err != nil {
+		return fmt.Errorf("clean workdir: %w", err)
+	}
+	if err := os.MkdirAll(workDir, 0755); err != nil {
+		return fmt.Errorf("mkdir workdir: %w", err)
+	}
+	cmd := exec.CommandContext(ctx, "git", "init", workDir)
+	cmd.Stdout = io.Discard
+	cmd.Stderr = io.Discard
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("git init: %w", err)
+	}
 	return nil
 }
 
@@ -269,9 +302,11 @@ func (s *ProjectService) Restart(ctx context.Context, id int64) error {
 }
 
 type UpdateProjectRequest struct {
-	Name   *string `json:"name,omitempty"`
-	Domain *string `json:"domain,omitempty"`
-	Branch *string `json:"branch,omitempty"`
+	Name       *string            `json:"name,omitempty"`
+	SourceType *domain.SourceType `json:"source_type,omitempty"`
+	RepoURL    *string            `json:"repo_url,omitempty"`
+	Domain     *string            `json:"domain,omitempty"`
+	Branch     *string            `json:"branch,omitempty"`
 }
 
 func (s *ProjectService) Update(ctx context.Context, id int64, req UpdateProjectRequest) (*domain.Project, error) {
@@ -281,6 +316,12 @@ func (s *ProjectService) Update(ctx context.Context, id int64, req UpdateProject
 	}
 	if req.Name != nil {
 		project.Name = *req.Name
+	}
+	if req.SourceType != nil {
+		project.SourceType = *req.SourceType
+	}
+	if req.RepoURL != nil {
+		project.RepoURL = *req.RepoURL
 	}
 	if req.Domain != nil {
 		project.Domain = *req.Domain
