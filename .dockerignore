@@ -3,6 +3,13 @@
 *.md
 .env
 .env.example
+data/
 frontend/node_modules
 frontend/.next
-data/
+frontend/.next_old
+frontend/tsconfig.tsbuildinfo
+node_modules
+api
+bin/
+.DS_Store
+Thumbs.db

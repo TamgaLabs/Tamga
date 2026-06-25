@@ -1,12 +1,14 @@
 FROM golang:1.26-alpine AS builder
+RUN apk add --no-cache git
 WORKDIR /src
-COPY backend/go.mod backend/go.sum ./
+COPY go.mod go.sum ./
 RUN go mod download
-COPY backend/ .
-RUN CGO_ENABLED=0 go build -o /api ./cmd/api/
+COPY backend/ ./backend/
+RUN CGO_ENABLED=0 go build -ldflags="-s -w" -o /api ./backend/cmd/api/
 
 FROM alpine:3.21
-RUN apk add --no-cache ca-certificates git openssh
+RUN apk add --no-cache ca-certificates git openssh-client tzdata && \
+    rm -rf /var/cache/apk/*
 COPY --from=builder /api /usr/local/bin/api
 EXPOSE 8080
 CMD ["api"]

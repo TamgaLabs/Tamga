@@ -1,8 +1,7 @@
 const http = require("http");
-const { execSync, exec } = require("child_process");
+const { exec } = require("child_process");
 const fs = require("fs");
 const path = require("path");
-const crypto = require("crypto");
 
 const PORT = 9000;
 const DATA_DIR = "/data";
