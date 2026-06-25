@@ -21,7 +21,12 @@ import {
   type EnvVar,
   type FileEntry,
 } from "@/lib/api";
+import {
+  listAgentProviders,
+  type AgentProvider,
+} from "@/lib/api";
 import { useAuth } from "@/lib/auth";
+import { useTheme } from "@/lib/theme";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -91,20 +96,20 @@ export default function ProjectDetailPage() {
       <div className="flex items-center justify-between mb-6">
         <div>
           <h1 className="text-2xl font-bold">{project.name}</h1>
-          <p className="text-sm text-neutral-400 mt-1">{project.repo_url}</p>
+          <p className="text-sm text-muted-foreground mt-1">{project.repo_url}</p>
         </div>
         <Badge variant={statusVariant[project.status] || "default"}>{project.status}</Badge>
       </div>
 
-      <div className="flex gap-1 mb-6 border-b border-neutral-800 items-center">
+      <div className="flex gap-1 mb-6 border-b border-border items-center">
         {tabs.map((t) => (
           <button
             key={t.id}
             onClick={() => setTab(t.id)}
             className={`px-4 py-2 text-sm font-medium transition-colors ${
               tab === t.id
-                ? "border-b-2 border-white text-white"
-                : "text-neutral-500 hover:text-neutral-300"
+                ? "border-b-2 border-foreground text-foreground"
+                : "text-muted-foreground hover:text-card-foreground"
             }`}
           >
             {t.label}
@@ -113,7 +118,7 @@ export default function ProjectDetailPage() {
         <div className="ml-auto">
           <Button
             size="sm"
-            className="bg-blue-600 hover:bg-blue-700 text-white"
+            className="bg-accent text-accent-foreground hover:bg-accent/90"
             onClick={() => router.push(`/code/${project.id}`)}
           >
             Code
@@ -154,10 +159,10 @@ function OverviewTab({ project, onUpdate }: { project: Project; onUpdate: () => 
         <CardHeader>
           <CardTitle className="text-sm">Details</CardTitle>
         </CardHeader>
-        <CardContent className="text-sm space-y-2 text-neutral-400">
+        <CardContent className="text-sm space-y-2 text-muted-foreground">
           <div className="flex justify-between">
             <span>Domain</span>
-            <span className="text-blue-400">{project.domain || "-"}</span>
+            <span className="text-accent">{project.domain || "-"}</span>
           </div>
           <div className="flex justify-between">
             <span>Branch</span>
@@ -201,7 +206,7 @@ function OverviewTab({ project, onUpdate }: { project: Project; onUpdate: () => 
             <Button variant="ghost" size="sm" onClick={() => setShowLogs(false)}>Close</Button>
           </CardHeader>
           <CardContent>
-            <pre className="bg-black rounded p-4 text-xs text-green-400 overflow-auto max-h-80 font-mono whitespace-pre-wrap">
+            <pre className="bg-code-block rounded p-4 text-xs text-success overflow-auto max-h-80 font-mono whitespace-pre-wrap">
               {logs || "(no output)"}
             </pre>
           </CardContent>
@@ -214,21 +219,21 @@ function OverviewTab({ project, onUpdate }: { project: Project; onUpdate: () => 
         </CardHeader>
         <CardContent>
           {deployments.length === 0 ? (
-            <p className="text-sm text-neutral-500">No deployments yet.</p>
+            <p className="text-sm text-muted-foreground">No deployments yet.</p>
           ) : (
             <div className="text-sm space-y-2">
               {deployments.map((d) => (
-                <div key={d.id} className="flex items-center justify-between py-1 border-b border-neutral-800 last:border-0">
+                <div key={d.id} className="flex items-center justify-between py-1 border-b border-border last:border-0">
                   <div className="flex items-center gap-2">
                     <Badge variant={d.status === "success" ? "success" : d.status === "failed" ? "error" : "warning"}>
                       {d.status}
                     </Badge>
-                    <span className="text-neutral-400">
+                    <span className="text-muted-foreground">
                       {new Date(d.created_at).toLocaleString()}
                     </span>
                   </div>
                   {d.commit_sha && (
-                    <span className="font-mono text-xs text-neutral-500">{d.commit_sha.slice(0, 7)}</span>
+                    <span className="font-mono text-xs text-muted-foreground">{d.commit_sha.slice(0, 7)}</span>
                   )}
                 </div>
               ))}
@@ -253,9 +258,20 @@ function ProjectSettingsTab({ project, onUpdate }: { project: Project; onUpdate:
   const [editName, setEditName] = useState(project.name);
   const [editDomain, setEditDomain] = useState(project.domain);
   const [editBranch, setEditBranch] = useState(project.branch);
+  const [providers, setProviders] = useState<AgentProvider[]>([]);
+  const [editProviderId, setEditProviderId] = useState(project.agent_provider_id || "");
+
+  useEffect(() => {
+    listAgentProviders().then(setProviders).catch(console.error);
+  }, []);
 
   const handleSaveProject = async () => {
-    await updateProject(project.id, { name: editName, domain: editDomain, branch: editBranch } as Partial<Project>);
+    await updateProject(project.id, {
+      name: editName,
+      domain: editDomain,
+      branch: editBranch,
+      agent_provider_id: editProviderId || null,
+    } as any);
     onUpdate();
   };
 
@@ -267,16 +283,29 @@ function ProjectSettingsTab({ project, onUpdate }: { project: Project; onUpdate:
         </CardHeader>
         <CardContent className="space-y-3">
           <div>
-            <label className="text-xs text-neutral-500 block mb-1">Name</label>
+            <label className="text-xs text-muted-foreground block mb-1">Name</label>
             <Input value={editName} onChange={(e) => setEditName(e.target.value)} />
           </div>
           <div>
-            <label className="text-xs text-neutral-500 block mb-1">Domain</label>
+            <label className="text-xs text-muted-foreground block mb-1">Domain</label>
             <Input value={editDomain} onChange={(e) => setEditDomain(e.target.value)} />
           </div>
           <div>
-            <label className="text-xs text-neutral-500 block mb-1">Branch</label>
+            <label className="text-xs text-muted-foreground block mb-1">Branch</label>
             <Input value={editBranch} onChange={(e) => setEditBranch(e.target.value)} />
+          </div>
+          <div>
+            <label className="text-xs text-muted-foreground block mb-1">Agent Provider</label>
+            <select
+              className="w-full h-9 rounded-md border border-border bg-card px-3 text-sm"
+              value={editProviderId}
+              onChange={(e) => setEditProviderId(e.target.value)}
+            >
+              <option value="">Default (builtin-opencode)</option>
+              {providers.map((p) => (
+                <option key={p.id} value={p.id}>{p.name} ({p.provider_type})</option>
+              ))}
+            </select>
           </div>
           <Button size="sm" onClick={handleSaveProject}>Save</Button>
         </CardContent>
@@ -315,19 +344,19 @@ function EnvironmentTab({ projectId }: { projectId: number }) {
         </CardHeader>
         <CardContent className="space-y-3">
           {envVars.length === 0 && (
-            <p className="text-sm text-neutral-500">No environment variables configured.</p>
+            <p className="text-sm text-muted-foreground">No environment variables configured.</p>
           )}
           {envVars.map((ev) => (
             <div key={ev.id} className="flex items-center gap-2 text-sm">
-              <span className="font-mono text-blue-400 min-w-24">{ev.key}</span>
-              <span className="text-neutral-400">=</span>
-              <span className="font-mono text-neutral-300 flex-1 truncate">{ev.value}</span>
-              <Button variant="ghost" size="sm" className="text-red-400" onClick={() => handleDeleteEnvVar(ev.id)}>
+              <span className="font-mono text-accent min-w-24">{ev.key}</span>
+              <span className="text-muted-foreground">=</span>
+              <span className="font-mono text-card-foreground flex-1 truncate">{ev.value}</span>
+              <Button variant="ghost" size="sm" className="text-destructive" onClick={() => handleDeleteEnvVar(ev.id)}>
                 &times;
               </Button>
             </div>
           ))}
-          <div className="flex gap-2 pt-2 border-t border-neutral-800">
+          <div className="flex gap-2 pt-2 border-t border-border">
             <Input
               placeholder="KEY"
               className="font-mono text-xs flex-1"
@@ -349,6 +378,7 @@ function EnvironmentTab({ projectId }: { projectId: number }) {
 }
 
 function CodeTab({ projectId }: { projectId: number }) {
+  const { theme } = useTheme();
   const [files, setFiles] = useState<FileEntry[]>([]);
   const [currentPath, setCurrentPath] = useState("");
   const [content, setContent] = useState("");
@@ -421,8 +451,8 @@ function CodeTab({ projectId }: { projectId: number }) {
           return (
             <div key={entry.path}>
               <div
-                className={`flex items-center gap-1 px-2 py-0.5 text-xs cursor-pointer rounded hover:bg-neutral-800 ${
-                  currentPath === entry.path ? "bg-neutral-800 text-blue-400" : "text-neutral-400"
+                className={`flex items-center gap-1 px-2 py-0.5 text-xs cursor-pointer rounded hover:bg-muted ${
+                  currentPath === entry.path ? "bg-muted text-accent" : "text-muted-foreground"
                 }`}
                 style={{ paddingLeft: `${12 + depth * 12}px` }}
                 onClick={() => {
@@ -457,21 +487,21 @@ function CodeTab({ projectId }: { projectId: number }) {
 
   return (
     <div className="flex gap-4 h-[70vh]">
-      <div className="w-56 bg-neutral-900 border border-neutral-800 rounded overflow-auto flex-shrink-0">
-        <div className="p-2 text-xs font-semibold text-neutral-500 uppercase border-b border-neutral-800">Files</div>
+      <div className="w-56 bg-card border border-border rounded overflow-auto flex-shrink-0">
+        <div className="p-2 text-xs font-semibold text-muted-foreground uppercase border-b border-border">Files</div>
         <div className="py-1">{buildTree(files)}</div>
       </div>
-      <div className="flex-1 flex flex-col border border-neutral-800 rounded overflow-hidden">
+      <div className="flex-1 flex flex-col border border-border rounded overflow-hidden">
         {currentPath ? (
           <>
-            <div className="flex items-center justify-between px-3 py-1.5 border-b border-neutral-800 bg-neutral-900">
-              <span className="text-xs text-neutral-300 font-mono">{currentPath}</span>
+            <div className="flex items-center justify-between px-3 py-1.5 border-b border-border bg-card">
+              <span className="text-xs text-card-foreground font-mono">{currentPath}</span>
               {dirty && <Button size="sm" variant="outline" onClick={handleSave}>Save</Button>}
             </div>
             <div className="flex-1">
               <MonacoEditor
                 language={detectLanguage(currentPath)}
-                theme="vs-dark"
+                theme={theme === "dark" ? "vs-dark" : "vs"}
                 value={content}
                 onChange={(v) => {
                   setContent(v || "");
@@ -482,7 +512,7 @@ function CodeTab({ projectId }: { projectId: number }) {
             </div>
           </>
         ) : (
-          <div className="flex-1 flex items-center justify-center text-sm text-neutral-500">Select a file to edit</div>
+          <div className="flex-1 flex items-center justify-center text-sm text-muted-foreground">Select a file to edit</div>
         )}
       </div>
     </div>

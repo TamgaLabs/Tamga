@@ -98,15 +98,15 @@ export default function ContainerDetailPage() {
       </Button>
 
       {loading ? (
-        <p className="text-neutral-400">Loading...</p>
+        <p className="text-muted-foreground">Loading...</p>
       ) : !container ? (
-        <p className="text-neutral-500">Container not found.</p>
+        <p className="text-muted-foreground">Container not found.</p>
       ) : (
         <>
           <div className="flex items-center justify-between mb-6">
             <div>
               <h1 className="text-2xl font-bold font-mono">{container.Name?.replace(/^\//, "") || id.slice(0, 12)}</h1>
-              <p className="text-sm text-neutral-400 mt-1">{container.Config?.Image}</p>
+              <p className="text-sm text-muted-foreground mt-1">{container.Config?.Image}</p>
             </div>
             <div className="flex gap-2">
               {container.State?.Status === "running" && (
@@ -120,15 +120,15 @@ export default function ContainerDetailPage() {
             </div>
           </div>
 
-          <div className="flex gap-1 mb-6 border-b border-neutral-800">
+          <div className="flex gap-1 mb-6 border-b border-border">
             {tabs.map((t) => (
               <button
                 key={t.id}
                 onClick={() => setTab(t.id)}
                 className={`px-4 py-2 text-sm font-medium transition-colors ${
                   tab === t.id
-                    ? "border-b-2 border-white text-white"
-                    : "text-neutral-500 hover:text-neutral-300"
+                    ? "border-b-2 border-foreground text-foreground"
+                    : "text-muted-foreground hover:text-card-foreground"
                 }`}
               >
                 {t.label}
@@ -142,7 +142,7 @@ export default function ContainerDetailPage() {
                 <CardTitle className="text-sm">Container Config</CardTitle>
               </CardHeader>
               <CardContent>
-                <pre className="bg-black rounded p-4 text-xs text-green-400 overflow-auto max-h-[70vh] font-mono whitespace-pre-wrap">
+                <pre className="bg-code-block rounded p-4 text-xs text-success overflow-auto max-h-[70vh] font-mono whitespace-pre-wrap">
                   {JSON.stringify(container, null, 2)}
                 </pre>
               </CardContent>
@@ -156,7 +156,7 @@ export default function ContainerDetailPage() {
                 <Button variant="ghost" size="sm" onClick={fetchLogs}>Refresh</Button>
               </CardHeader>
               <CardContent>
-                <pre className="bg-black rounded p-4 text-xs text-green-400 overflow-auto max-h-[70vh] font-mono whitespace-pre-wrap">
+                <pre className="bg-code-block rounded p-4 text-xs text-success overflow-auto max-h-[70vh] font-mono whitespace-pre-wrap">
                   {logs || "(no output)"}
                 </pre>
               </CardContent>
@@ -185,7 +185,7 @@ export default function ContainerDetailPage() {
                   {stats ? (
                     <div>
                       <div className="text-2xl font-bold">{stats.mem.percent.toFixed(1)}%</div>
-                      <p className="text-xs text-neutral-400 mt-1">
+                      <p className="text-xs text-muted-foreground mt-1">
                         {(stats.mem.usage / 1024 / 1024).toFixed(0)}MB / {(stats.mem.limit / 1024 / 1024).toFixed(0)}MB
                       </p>
                     </div>
@@ -200,7 +200,7 @@ export default function ContainerDetailPage() {
                 </CardHeader>
                 <CardContent>
                   {stats ? (
-                    <div className="text-xs space-y-1 text-neutral-400">
+                    <div className="text-xs space-y-1 text-muted-foreground">
                       <p>RX: {(stats.net.rx_bytes / 1024).toFixed(1)}KB</p>
                       <p>TX: {(stats.net.tx_bytes / 1024).toFixed(1)}KB</p>
                       <p>RX packets: {stats.net.rx_packets}</p>

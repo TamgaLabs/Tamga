@@ -1,24 +1,24 @@
 # Tamga — Agent Guidelines
 
-## Proje Özeti
+## Project Summary
 
-Tamga, bir Git repo URL'si vererek otomatik deploy yapmayı sağlayan, kendi kendini host eden bir DevOps panelidir. Caddy reverse proxy, Docker container orchestration ve AI agent entegrasyonu ile çalışır.
+Tamga is a self-hosted DevOps panel that auto-deploys from a Git repo URL. It uses Caddy reverse proxy, Docker container orchestration, and AI agent integration.
 
 ## Tech Stack
 
-| Bileşen | Teknoloji |
-|---------|-----------|
+| Component | Technology |
+|-----------|-----------|
 | Backend | Go 1.26+, Chi router |
 | Frontend | Next.js 15+, shadcn/ui, Tailwind CSS, Monaco Editor |
 | Database | SQLite (via modernc.org/sqlite) |
 | Migration | golang-migrate (embed) |
-| Reverse Proxy | Caddy (Admin API ile dinamik config) |
-| Container | Docker SDK (docker-compose yok) |
+| Reverse Proxy | Caddy (dynamic config via Admin API) |
+| Container | Docker SDK (no docker-compose) |
 | Auth | JWT (golang-jwt) |
-| Agent | opencode server modu (container içinde) |
+| Agent | opencode server mode (inside container) |
 | Code Editor | @monaco-editor/react |
 
-## Dizin Yapısı
+## Directory Structure
 
 ```
 /
@@ -33,8 +33,8 @@ Tamga, bir Git repo URL'si vererek otomatik deploy yapmayı sağlayan, kendi ken
 │   │       ├── project_handler.go
 │   │       ├── agent_handler.go
 │   │       ├── system_handler.go
-│   │       ├── container_handler.go   ← Docker container management
-│   │       └── code_handler.go        ← Code IDE (file tree, read/write, agent)
+│   │       ├── container_handler.go
+│   │       └── code_handler.go
 │   ├── migrations/         # SQL migration files (embed)
 │   ├── go.mod
 │   └── go.sum
@@ -46,7 +46,7 @@ Tamga, bir Git repo URL'si vererek otomatik deploy yapmayı sağlayan, kendi ken
 │   │   └── (main)/         # Authenticated pages with sidebar
 │   │       ├── layout.tsx  # Sidebar wrapper
 │   │       ├── dashboard/  # Project list + create
-│   │       ├── projects/[id]/  # Project detail (4 tabs: Overview/Settings/Agent/Code)
+│   │       ├── projects/[id]/  # Project detail (4 tabs)
 │   │       ├── containers/ # Docker container list + detail
 │   │       ├── code/       # Code IDE (Monaco + Agent Chat + Diff)
 │   │       └── settings/   # System info
@@ -61,82 +61,76 @@ Tamga, bir Git repo URL'si vererek otomatik deploy yapmayı sağlayan, kendi ken
 └── Makefile
 ```
 
-## Sayfa Yapısı
+## Page Structure
 
 ```
-/                    → redirect to /dashboard
-/dashboard           → Project grid
-/dashboard/new       → Create project form
-/projects/[id]       → Project detail:
-    Overview         →   Status, domain, logs, deployments
-    Settings         →   Name, domain, branch, env vars
-    Agent            →   Chat + Diff panel
-    Code             →   Monaco Editor + file tree
+/                    -> redirect to /dashboard
+/dashboard           -> Project grid
+/dashboard/new       -> Create project form
+/projects/[id]       -> Project detail:
+    Overview         ->   Status, domain, logs, deployments
+    Settings         ->   Name, domain, branch, env vars
+    Agent            ->   Chat + Diff panel
+    Code             ->   Monaco Editor + file tree
 
-/containers          → Docker container list + filters
-/containers/[id]     → Container detail: Inspect, Logs, Stats, Actions
+/containers          -> Docker container list + filters
+/containers/[id]     -> Container detail: Inspect, Logs, Stats, Actions
 
-/code                → Codebase list (projects + system toggle)
-/code/[id]           → Code IDE: file tree + Monaco Editor + Agent Chat + Diff
+/code                -> Codebase list (projects + system toggle)
+/code/[id]           -> Code IDE: file tree + Monaco + Agent Chat + Diff
 
-/settings            → System info (Docker, CPU, memory, etc.)
+/settings            -> System info (Docker, CPU, memory, etc.)
 ```
 
-## Mimari İlkeler
+## Architecture Principles
 
 ### Go (Backend)
-- **Domain Driven Design** — domain katmanı dışa bağımlılık içermez, saf Go
-- **Chi router** kullan (idiomatic, net/http compatible)
-- **Gereksiz soyutlama yok** — ihtiyaç olmayan yere interface ekleme
-- **Service layer** iş mantığını içerir, handler'lar sadece HTTP taşıyıcısıdır
-- **Repository pattern** veri erişimini soyutlar ama her repository için interface şart değil
-- **Testler** `_test.go` ile bitişik, `testing` package + `httptest`
+- **Domain Driven Design** — domain layer has zero external dependencies, pure Go
+- **Chi router** — idiomatic, net/http compatible
+- **No unnecessary abstraction** — don't add interfaces where not needed
+- **Service layer** holds business logic; handlers are just HTTP carriers
+- **Repository pattern** abstracts data access, but interfaces are optional per repo
+- **Tests** use `_test.go` naming, `testing` package + `httptest`
 
 ### Frontend
-- **Next.js App Router** kullan
-- **Route groups**: `(auth)` login/setup, `(main)` authenticated pages
-- **shadcn/ui** komponentleri `components/ui/` altında
-- API çağrıları için `lib/api.ts`
-- Monaco Editor için `@monaco-editor/react` (dynamic import, ssr: false)
-- Client components sadece interaktivite gereken yerde
+- **Next.js App Router**
+- **Route groups**: `(auth)` for login/setup, `(main)` for authenticated pages
+- **shadcn/ui** components under `components/ui/`
+- API calls via `lib/api.ts`
+- Monaco Editor via `@monaco-editor/react` (dynamic import, ssr: false)
+- Client components only where interactivity is needed
 
-### Genel
-- **Monorepo** — backend/ ve frontend/ aynı repo
-- **Docker-only runtime** — docker-compose kullanma, Docker SDK ile yönet
-- **Caddy** reverse proxy, backend admin API ile dinamik route ekler
-- **.env** üzerinden konfigürasyon (domain, auth secret, db path, system code dir)
-- **Tek kullanıcılı** sistem, JWT auth
-- **SYSTEM_CODE_DIR** (Makefile ile mount edilir) → agent container'ı system koduna erişir
+### General
+- **Monorepo** — backend/ and frontend/ in the same repo
+- **Docker-only runtime** — no docker-compose, managed via Docker SDK
+- **Caddy** reverse proxy, adds dynamic routes via backend Admin API
+- **.env** for configuration (domain, auth secret, db path, system code dir)
+- **Single-user** system, JWT auth
+- **SYSTEM_CODE_DIR** (mounted via Makefile) -> agent container accesses system code
 
-## Kod Yazım Kuralları
+## Code Style
 
 ### Go
 
 ```go
-// Handler — sadece HTTP işleri, her yeni endpoint için yeni handler dosyası
+// Handler — HTTP only, one file per endpoint group
 func (h *ContainerHandler) List(w http.ResponseWriter, r *http.Request) {
     if !h.requireDocker(w) { return }
     containers, err := h.docker.ListContainers(r.Context())
     ...
 }
-
-// Docker client wrapper — repository/docker/client.go
-// Her yeni Docker API çağrısı buraya eklenir
-func (c *Client) ListContainers(ctx context.Context) ([]ContainerInfo, error)
-func (c *Client) InspectContainer(ctx context.Context, id string) (types.ContainerJSON, error)
-func (c *Client) ContainerStats(ctx context.Context, id string) (*container.Stats, error)
 ```
 
-- Hata yönetimi: `fmt.Errorf("context: %w", err)` ile wrap et
-- Log: `slog` standard library
+- Error wrapping: `fmt.Errorf("context: %w", err)`
+- Logging: `slog` standard library
 - Config: `os.Getenv` + struct
-- SQL: Raw SQL + `database/sql` (orm yok)
+- SQL: Raw SQL + `database/sql` (no ORM)
 - Docker v28.5.2 API: `system.Info`, `container.Stats`, `container.UpdateConfig`
 
 ### TypeScript/React
 
 ```typescript
-// API client — tek bir api<T>() fonksiyonu
+// API client — single api<T>() function
 export const listContainers = () => api<ContainerInfo[]>("/system/containers");
 
 // Component — shadcn/ui pattern
@@ -144,18 +138,18 @@ export function Sidebar() { ... }
 ```
 
 - Monaco Editor: `import dynamic from "next/dynamic"; const Editor = dynamic(() => import("@monaco-editor/react"), { ssr: false });`
-- Dil tespiti: dosya uzantısına göre `detectLanguage(path)` fonksiyonu
+- Language detection: `detectLanguage(path)` based on file extension
 
-## Container İsimlendirme
+## Container Naming
 
-| Container | Amaç | Network |
-|-----------|------|---------|
+| Container | Purpose | Network |
+|-----------|---------|---------|
 | `caddy` | Reverse proxy | tamga-net |
 | `tamga-backend` | API server | tamga-net |
 | `tamga-frontend` | Next.js UI | tamga-net |
-| `project-{id}` | Kullanıcı projeleri | tamga-net |
-| `agent-{id}` | Proje agent'ları | tamga-net (port 9000) |
-| `agent-system` | System code agent'ı | tamga-net (port 9001) |
+| `project-{id}` | User projects | tamga-net |
+| `agent-{id}` | Project agents | tamga-net (port 9000) |
+| `agent-system` | System code agent | tamga-net (port 9001) |
 
 ## API Routes (Auth Required)
 
@@ -211,16 +205,16 @@ chore(deploy): mount SYSTEM_CODE_DIR in Makefile
 ## Common Commands
 
 ```bash
-make setup           # .env oluştur, bağımlılıkları kontrol et
-make up              # Tüm sistemi ayağa kaldır (Docker)
-make down            # Durdur
-make logs            # Logları izle
-make test            # Testleri çalıştır
+make setup           # Create .env, check dependencies
+make up              # Start all services (Docker)
+make down            # Stop
+make logs            # Tail logs
+make test            # Run tests
 make frontend-dev    # Frontend dev server
 ```
 
-## Dil
+## Language
 
-- Kod içi yorumlar ve commit mesajları İngilizce
-- Kullanıcıya hitap eden UI metinleri İngilizce (ileride i18n eklenebilir)
-- Agent yanıtları kullanıcının dilinde
+- Code comments and commit messages in English
+- UI text in English (i18n can be added later)
+- Agent responses in the user's language

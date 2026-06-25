@@ -36,7 +36,7 @@ export default function LoginPage() {
         <CardContent>
           <form onSubmit={handleSubmit} className="space-y-4">
             <div className="space-y-2">
-              <label className="text-sm text-neutral-400">Password</label>
+              <label className="text-sm text-muted-foreground">Password</label>
               <Input
                 type="password"
                 value={password}
@@ -45,7 +45,7 @@ export default function LoginPage() {
                 required
               />
             </div>
-            {error && <p className="text-sm text-red-400">{error}</p>}
+            {error && <p className="text-sm text-destructive">{error}</p>}
             <Button type="submit" className="w-full">
               Login
             </Button>

@@ -45,9 +45,9 @@ export default function DashboardPage() {
       </div>
 
       {loading ? (
-        <div className="text-neutral-500 text-center py-20">Loading...</div>
+        <div className="text-muted-foreground text-center py-20">Loading...</div>
       ) : projects.length === 0 ? (
-        <div className="text-neutral-500 text-center py-20">
+        <div className="text-muted-foreground text-center py-20">
           <p className="text-lg mb-2">No projects yet</p>
           <p className="text-sm">Create your first project to get started</p>
         </div>
@@ -56,7 +56,7 @@ export default function DashboardPage() {
           {projects.map((p) => (
             <Card
               key={p.id}
-              className="cursor-pointer hover:border-neutral-500 transition-colors"
+              className="cursor-pointer hover:border-muted-foreground transition-colors"
               onClick={() => router.push(`/projects/${p.id}`)}
             >
               <CardHeader>
@@ -66,9 +66,9 @@ export default function DashboardPage() {
                 </div>
               </CardHeader>
               <CardContent>
-                <div className="space-y-1 text-sm text-neutral-400">
+                <div className="space-y-1 text-sm text-muted-foreground">
                   <p className="truncate">{p.repo_url}</p>
-                  {p.domain && <p className="text-blue-400">{p.domain}</p>}
+                  {p.domain && <p className="text-accent">{p.domain}</p>}
                 </div>
               </CardContent>
             </Card>

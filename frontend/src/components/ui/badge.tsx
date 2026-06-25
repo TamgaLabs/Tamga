@@ -1,11 +1,11 @@
 import { cn } from "@/lib/utils";
 
 const variants: Record<string, string> = {
-  default: "bg-neutral-700 text-neutral-200",
-  success: "bg-green-600/20 text-green-400 border-green-600/30",
+  default: "bg-muted text-card-foreground",
+  success: "bg-success/20 text-success border-success/30",
   warning: "bg-yellow-600/20 text-yellow-400 border-yellow-600/30",
-  error: "bg-red-600/20 text-red-400 border-red-600/30",
-  info: "bg-blue-600/20 text-blue-400 border-blue-600/30",
+  error: "bg-destructive/20 text-destructive border-destructive/30",
+  info: "bg-accent/20 text-accent border-accent/30",
 };
 
 export function Badge({

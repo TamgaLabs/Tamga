@@ -1,12 +1,16 @@
 "use client";
 
+"use client";
+
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useAuth } from "@/lib/auth";
+import { useTheme } from "@/lib/theme";
 
 export function Sidebar() {
   const pathname = usePathname();
   const { logout } = useAuth();
+  const { theme, toggleTheme } = useTheme();
 
   const navItems = [
     { href: "/dashboard", label: "Projects", icon: "▦" },
@@ -16,9 +20,9 @@ export function Sidebar() {
   ];
 
   return (
-    <aside className="fixed left-0 top-0 h-full w-56 bg-neutral-900 border-r border-neutral-800 flex flex-col z-50">
-      <div className="p-4 border-b border-neutral-800">
-        <Link href="/dashboard" className="text-lg font-bold text-white">
+    <aside className="fixed left-0 top-0 h-full w-56 bg-card border-r border-border flex flex-col z-50">
+      <div className="p-4 border-b border-border">
+        <Link href="/dashboard" className="text-lg font-bold text-foreground">
           Tamga
         </Link>
       </div>
@@ -32,8 +36,8 @@ export function Sidebar() {
               href={item.href}
               className={`flex items-center gap-3 px-3 py-2 rounded-md text-sm transition-colors ${
                 active
-                  ? "bg-neutral-800 text-white"
-                  : "text-neutral-400 hover:text-white hover:bg-neutral-800/50"
+                  ? "bg-muted text-foreground"
+                  : "text-muted-foreground hover:text-foreground hover:bg-muted"
               }`}
             >
               <span className="w-5 text-center">{item.icon}</span>
@@ -43,10 +47,17 @@ export function Sidebar() {
         })}
       </nav>
 
-      <div className="p-2 border-t border-neutral-800">
+      <div className="p-2 border-t border-border space-y-1">
+        <button
+          onClick={toggleTheme}
+          className="flex items-center gap-3 px-3 py-2 rounded-md text-sm text-muted-foreground hover:text-foreground hover:bg-muted w-full transition-colors"
+        >
+          <span className="w-5 text-center">{theme === "dark" ? "☀️" : "🌙"}</span>
+          {theme === "dark" ? "Light Mode" : "Dark Mode"}
+        </button>
         <button
           onClick={() => { logout(); window.location.href = "/login"; }}
-          className="flex items-center gap-3 px-3 py-2 rounded-md text-sm text-neutral-400 hover:text-white hover:bg-neutral-800/50 w-full transition-colors"
+          className="flex items-center gap-3 px-3 py-2 rounded-md text-sm text-muted-foreground hover:text-foreground hover:bg-muted w-full transition-colors"
         >
           <span className="w-5 text-center">⎋</span>
           Logout

@@ -302,11 +302,12 @@ func (s *ProjectService) Restart(ctx context.Context, id int64) error {
 }
 
 type UpdateProjectRequest struct {
-	Name       *string            `json:"name,omitempty"`
-	SourceType *domain.SourceType `json:"source_type,omitempty"`
-	RepoURL    *string            `json:"repo_url,omitempty"`
-	Domain     *string            `json:"domain,omitempty"`
-	Branch     *string            `json:"branch,omitempty"`
+	Name            *string            `json:"name,omitempty"`
+	SourceType      *domain.SourceType `json:"source_type,omitempty"`
+	RepoURL         *string            `json:"repo_url,omitempty"`
+	Domain          *string            `json:"domain,omitempty"`
+	Branch          *string            `json:"branch,omitempty"`
+	AgentProviderID *string            `json:"agent_provider_id,omitempty"`
 }
 
 func (s *ProjectService) Update(ctx context.Context, id int64, req UpdateProjectRequest) (*domain.Project, error) {
@@ -328,6 +329,9 @@ func (s *ProjectService) Update(ctx context.Context, id int64, req UpdateProject
 	}
 	if req.Branch != nil {
 		project.Branch = *req.Branch
+	}
+	if req.AgentProviderID != nil {
+		project.AgentProviderID = req.AgentProviderID
 	}
 	if err := s.db.UpdateProject(project); err != nil {
 		return nil, fmt.Errorf("update project: %w", err)

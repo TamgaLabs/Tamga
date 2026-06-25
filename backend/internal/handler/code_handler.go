@@ -219,7 +219,8 @@ func (h *CodeHandler) Chat(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var req struct {
-		Message string `json:"message"`
+		Message   string  `json:"message"`
+		SessionID *string `json:"session_id,omitempty"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "invalid request body", http.StatusBadRequest)
@@ -232,24 +233,31 @@ func (h *CodeHandler) Chat(w http.ResponseWriter, r *http.Request) {
 
 	// System codebase (projectID = 0)
 	if pid == 0 {
-		task, err := h.agentSvc.ChatForDir(r.Context(), "system", h.cfg.SystemCodeDir, req.Message)
+		task, err := h.agentSvc.ChatForDir(r.Context(), "system", h.cfg.SystemCodeDir, req.Message, req.SessionID)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
 		w.WriteHeader(http.StatusCreated)
-		json.NewEncoder(w).Encode(map[string]string{"task_id": task.ID})
+		json.NewEncoder(w).Encode(map[string]string{"task_id": task.ID, "session_id": safeDeref(task.SessionID)})
 		return
 	}
 
 	// Project codebase
-	task, err := h.agentSvc.Chat(r.Context(), pid, req.Message)
+	task, err := h.agentSvc.Chat(r.Context(), pid, req.Message, req.SessionID)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 	w.WriteHeader(http.StatusCreated)
-	json.NewEncoder(w).Encode(map[string]string{"task_id": task.ID})
+	json.NewEncoder(w).Encode(map[string]string{"task_id": task.ID, "session_id": safeDeref(task.SessionID)})
+}
+
+func safeDeref(s *string) string {
+	if s == nil {
+		return ""
+	}
+	return *s
 }
 
 func (h *CodeHandler) GetTask(w http.ResponseWriter, r *http.Request) {
@@ -368,6 +376,109 @@ func (h *CodeHandler) StopAgent(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.WriteHeader(http.StatusOK)
+}
+
+func (h *CodeHandler) ListSessions(w http.ResponseWriter, r *http.Request) {
+	pid, err := strconv.ParseInt(chi.URLParam(r, "projectID"), 10, 64)
+	if err != nil {
+		http.Error(w, "invalid project id", http.StatusBadRequest)
+		return
+	}
+
+	sessions, err := h.agentSvc.ListSessions(r.Context(), pid)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	if sessions == nil {
+		sessions = []*domain.AgentSession{}
+	}
+	json.NewEncoder(w).Encode(sessions)
+}
+
+func (h *CodeHandler) CreateSession(w http.ResponseWriter, r *http.Request) {
+	pid, err := strconv.ParseInt(chi.URLParam(r, "projectID"), 10, 64)
+	if err != nil {
+		http.Error(w, "invalid project id", http.StatusBadRequest)
+		return
+	}
+
+	var req struct {
+		Name string `json:"name"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "invalid request body", http.StatusBadRequest)
+		return
+	}
+	if req.Name == "" {
+		req.Name = "New Chat"
+	}
+
+	sess, err := h.agentSvc.CreateSession(r.Context(), pid, req.Name)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	w.WriteHeader(http.StatusCreated)
+	json.NewEncoder(w).Encode(sess)
+}
+
+func (h *CodeHandler) RenameSession(w http.ResponseWriter, r *http.Request) {
+	sessionID := chi.URLParam(r, "sessionId")
+	if sessionID == "" {
+		http.Error(w, "session id required", http.StatusBadRequest)
+		return
+	}
+
+	var req struct {
+		Name string `json:"name"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "invalid request body", http.StatusBadRequest)
+		return
+	}
+	if req.Name == "" {
+		http.Error(w, "name is required", http.StatusBadRequest)
+		return
+	}
+
+	if err := h.agentSvc.RenameSession(r.Context(), sessionID, req.Name); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	w.WriteHeader(http.StatusOK)
+}
+
+func (h *CodeHandler) DeleteSession(w http.ResponseWriter, r *http.Request) {
+	sessionID := chi.URLParam(r, "sessionId")
+	if sessionID == "" {
+		http.Error(w, "session id required", http.StatusBadRequest)
+		return
+	}
+
+	if err := h.agentSvc.DeleteSession(r.Context(), sessionID); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	w.WriteHeader(http.StatusOK)
+}
+
+func (h *CodeHandler) ListSessionTasks(w http.ResponseWriter, r *http.Request) {
+	sessionID := chi.URLParam(r, "sessionId")
+	if sessionID == "" {
+		http.Error(w, "session id required", http.StatusBadRequest)
+		return
+	}
+
+	tasks, err := h.agentSvc.ListTasksBySession(r.Context(), sessionID)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	if tasks == nil {
+		tasks = []*domain.AgentTask{}
+	}
+	json.NewEncoder(w).Encode(tasks)
 }
 
 func (h *CodeHandler) TreeAsJSON(entries []FileEntry) []map[string]interface{} {

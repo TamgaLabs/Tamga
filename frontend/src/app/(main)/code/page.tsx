@@ -42,21 +42,21 @@ export default function CodeListPage() {
       <h1 className="text-2xl font-bold mb-6">Code</h1>
 
       {loading ? (
-        <p className="text-neutral-400">Loading...</p>
+        <p className="text-muted-foreground">Loading...</p>
       ) : codebases.length === 0 ? (
-        <p className="text-neutral-500">No codebases available.</p>
+        <p className="text-muted-foreground">No codebases available.</p>
       ) : (
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
           {codebases.map((cb) => (
             <Card
               key={`${cb.type}-${cb.id}`}
-              className="cursor-pointer hover:bg-neutral-800/50 transition-colors"
+              className="cursor-pointer hover:bg-muted/50 transition-colors"
               onClick={() => router.push(`/code/${cb.id}`)}
             >
               <CardContent className="p-4">
                 <CardTitle className="text-sm mb-2">{cb.name}</CardTitle>
-                <p className="text-xs text-neutral-500">{cb.type === "system" ? "System" : "Project"}</p>
-                <p className="text-xs text-neutral-500 mt-1 font-mono truncate">{cb.path}</p>
+                <p className="text-xs text-muted-foreground">{cb.type === "system" ? "System" : "Project"}</p>
+                <p className="text-xs text-muted-foreground mt-1 font-mono truncate">{cb.path}</p>
               </CardContent>
             </Card>
           ))}

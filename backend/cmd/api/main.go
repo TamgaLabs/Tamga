@@ -51,8 +51,9 @@ func main() {
 	}
 	caddyClient := caddyrepo.New(cfg.CaddyAdminURL)
 
+	agentProviderService := service.NewAgentProviderService(db)
 	projectService := service.NewProjectService(db, dockerClient, caddyClient, cfg)
-	agentService := service.NewAgentService(db, dockerClient, cfg)
+	agentService := service.NewAgentService(db, dockerClient, cfg, agentProviderService)
 
 	if err := setupCaddyRoutes(caddyClient, cfg); err != nil {
 		slog.Warn("caddy route setup", "error", err)
@@ -63,6 +64,7 @@ func main() {
 	projectHandler := handler.NewProjectHandler(projectService)
 	agentHandler := handler.NewAgentHandler(agentService)
 	codeHandler := handler.NewCodeHandler(projectService, agentService, cfg)
+	agentProviderHandler := handler.NewAgentProviderHandler(agentProviderService)
 	authMiddleware := handler.AuthMiddleware(authService)
 
 	var containerHandler *handler.ContainerHandler
@@ -72,7 +74,7 @@ func main() {
 		containerHandler = handler.NewContainerHandler(nil)
 	}
 
-	r := router.New(authHandler, systemHandler, projectHandler, agentHandler, containerHandler, codeHandler, authMiddleware)
+	r := router.New(authHandler, systemHandler, projectHandler, agentHandler, containerHandler, codeHandler, agentProviderHandler, authMiddleware)
 
 	srv := &http.Server{
 		Addr:         fmt.Sprintf(":%d", cfg.Port),

@@ -2,12 +2,12 @@ import * as React from "react";
 import { cn } from "@/lib/utils";
 
 const variants = {
-  default: "bg-neutral-900 text-white hover:bg-neutral-800",
-  destructive: "bg-red-600 text-white hover:bg-red-500",
-  outline: "border border-neutral-600 bg-transparent hover:bg-neutral-800",
-  secondary: "bg-neutral-800 text-white hover:bg-neutral-700",
-  ghost: "hover:bg-neutral-800",
-  link: "text-neutral-300 underline-offset-4 hover:underline",
+  default: "bg-card text-foreground hover:bg-muted",
+  destructive: "bg-destructive text-destructive-foreground hover:bg-destructive/90",
+  outline: "border border-border bg-transparent hover:bg-muted",
+  secondary: "bg-muted text-foreground hover:bg-muted/80",
+  ghost: "hover:bg-muted",
+  link: "text-card-foreground underline-offset-4 hover:underline",
 };
 
 const sizes = {
@@ -31,7 +31,7 @@ export function Button({
   return (
     <button
       className={cn(
-        "inline-flex items-center justify-center whitespace-nowrap rounded-md text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-neutral-400 disabled:pointer-events-none disabled:opacity-50",
+        "inline-flex items-center justify-center whitespace-nowrap rounded-md text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-muted-foreground disabled:pointer-events-none disabled:opacity-50",
         variants[variant],
         sizes[size],
         className

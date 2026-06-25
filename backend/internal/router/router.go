@@ -17,6 +17,7 @@ func New(
 	agentHandler *handler.AgentHandler,
 	containerHandler *handler.ContainerHandler,
 	codeHandler *handler.CodeHandler,
+	agentProviderHandler *handler.AgentProviderHandler,
 	authMiddleware func(http.Handler) http.Handler,
 ) *chi.Mux {
 	r := chi.NewRouter()
@@ -64,6 +65,18 @@ func New(
 			r.Get("/code/{projectID}/agent/status", codeHandler.AgentStatus)
 			r.Post("/code/{projectID}/agent/start", codeHandler.StartAgent)
 			r.Post("/code/{projectID}/agent/stop", codeHandler.StopAgent)
+			r.Get("/code/{projectID}/agent/sessions", codeHandler.ListSessions)
+			r.Post("/code/{projectID}/agent/sessions", codeHandler.CreateSession)
+			r.Put("/code/{projectID}/agent/sessions/{sessionId}", codeHandler.RenameSession)
+			r.Delete("/code/{projectID}/agent/sessions/{sessionId}", codeHandler.DeleteSession)
+			r.Get("/code/{projectID}/agent/sessions/{sessionId}/tasks", codeHandler.ListSessionTasks)
+
+			// Agent Providers
+			r.Get("/agent-providers", agentProviderHandler.List)
+			r.Get("/agent-providers/{id}", agentProviderHandler.Get)
+			r.Post("/agent-providers", agentProviderHandler.Create)
+			r.Put("/agent-providers/{id}", agentProviderHandler.Update)
+			r.Delete("/agent-providers/{id}", agentProviderHandler.Delete)
 
 			// System / Docker containers
 			r.Get("/system/containers", containerHandler.List)

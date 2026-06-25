@@ -46,7 +46,7 @@ export default function NewProjectPage() {
         <CardContent>
           <form onSubmit={handleSubmit} className="space-y-4">
             <div className="space-y-2">
-              <label className="text-sm text-neutral-400">Project Name</label>
+              <label className="text-sm text-muted-foreground">Project Name</label>
               <Input
                 value={name}
                 onChange={(e) => setName(e.target.value)}
@@ -56,7 +56,7 @@ export default function NewProjectPage() {
             </div>
 
             <div className="space-y-2">
-              <label className="text-sm text-neutral-400">Source</label>
+              <label className="text-sm text-muted-foreground">Source</label>
               <div className="flex gap-4">
                 <label className="flex items-center gap-2 cursor-pointer">
                   <input
@@ -68,7 +68,7 @@ export default function NewProjectPage() {
                       setSourceType("local");
                       setRepoUrl("");
                     }}
-                    className="accent-neutral-400"
+                    className="accent-accent"
                   />
                   <span className="text-sm">Local</span>
                 </label>
@@ -79,7 +79,7 @@ export default function NewProjectPage() {
                     value="remote"
                     checked={sourceType === "remote"}
                     onChange={() => setSourceType("remote")}
-                    className="accent-neutral-400"
+                    className="accent-accent"
                   />
                   <span className="text-sm">Remote</span>
                 </label>
@@ -88,7 +88,7 @@ export default function NewProjectPage() {
 
             {sourceType === "remote" && (
               <div className="space-y-2">
-                <label className="text-sm text-neutral-400">Repository URL</label>
+                <label className="text-sm text-muted-foreground">Repository URL</label>
                 <Input
                   value={repoUrl}
                   onChange={(e) => setRepoUrl(e.target.value)}
@@ -99,7 +99,7 @@ export default function NewProjectPage() {
             )}
 
             <div className="space-y-2">
-              <label className="text-sm text-neutral-400">Domain</label>
+              <label className="text-sm text-muted-foreground">Domain</label>
               <Input
                 value={domain}
                 onChange={(e) => setDomain(e.target.value)}
@@ -108,7 +108,7 @@ export default function NewProjectPage() {
               />
             </div>
 
-            {error && <p className="text-sm text-red-400">{error}</p>}
+            {error && <p className="text-sm text-destructive">{error}</p>}
             <Button type="submit" disabled={submitting}>
               {submitting ? "Creating..." : "Create & Deploy"}
             </Button>

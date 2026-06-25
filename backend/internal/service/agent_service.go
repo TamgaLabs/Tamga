@@ -1,13 +1,9 @@
 package service
 
 import (
-	"bytes"
 	"context"
-	"encoding/json"
 	"fmt"
-	"io"
 	"log/slog"
-	"net/http"
 	"sync"
 	"time"
 
@@ -19,20 +15,22 @@ import (
 )
 
 type AgentService struct {
-	db     *sqlite.DB
-	docker *dockerclient.Client
-	cfg    config.Config
+	db          *sqlite.DB
+	docker      *dockerclient.Client
+	cfg         config.Config
+	providerSvc *AgentProviderService
 
 	mu           sync.Mutex
 	lastActivity map[string]time.Time
 	startOnce    sync.Once
 }
 
-func NewAgentService(db *sqlite.DB, docker *dockerclient.Client, cfg config.Config) *AgentService {
+func NewAgentService(db *sqlite.DB, docker *dockerclient.Client, cfg config.Config, providerSvc *AgentProviderService) *AgentService {
 	return &AgentService{
 		db:           db,
 		docker:       docker,
 		cfg:          cfg,
+		providerSvc:  providerSvc,
 		lastActivity: make(map[string]time.Time),
 	}
 }
@@ -41,6 +39,9 @@ const agentImage = "tamga-agent"
 const idleTimeout = 30 * time.Minute
 
 func (s *AgentService) ensureContainerRunning(ctx context.Context, containerName string, mounts []string) error {
+	if s.docker == nil {
+		return fmt.Errorf("docker daemon not available")
+	}
 	if s.docker.ContainerIsRunning(ctx, containerName) {
 		return nil
 	}
@@ -98,11 +99,45 @@ func (s *AgentService) startIdleWatcher() {
 	})
 }
 
-func (s *AgentService) Chat(ctx context.Context, projectID int64, message string) (*domain.AgentTask, error) {
-	if s.docker == nil {
-		return nil, fmt.Errorf("docker daemon not available")
+func (s *AgentService) getOrCreateSession(ctx context.Context, projectID int64, sessionID, message string) (string, error) {
+	if sessionID != "" {
+		sess, err := s.db.FindAgentSession(sessionID)
+		if err == nil {
+			sess.UpdatedAt = time.Now()
+			s.db.UpdateAgentSession(sess)
+			return sess.ID, nil
+		}
 	}
 
+	name := message
+	if len(name) > 60 {
+		name = name[:60] + "..."
+	}
+
+	id := uuid.New().String()
+	now := time.Now()
+	sess := &domain.AgentSession{
+		ID:        id,
+		ProjectID: projectID,
+		Name:      name,
+		CreatedAt: now,
+		UpdatedAt: now,
+	}
+	if err := s.db.CreateAgentSession(sess); err != nil {
+		return "", fmt.Errorf("create session: %w", err)
+	}
+	return id, nil
+}
+
+func (s *AgentService) resolveProviderForProject(ctx context.Context, projectID int64) (*domain.AgentProvider, error) {
+	project, err := s.db.FindProject(projectID)
+	if err != nil {
+		return nil, fmt.Errorf("find project: %w", err)
+	}
+	return s.providerSvc.ResolveProvider(safeDeref(project.AgentProviderID))
+}
+
+func (s *AgentService) Chat(ctx context.Context, projectID int64, message string, sessionID *string) (*domain.AgentTask, error) {
 	project, err := s.db.FindProject(projectID)
 	if err != nil {
 		return nil, fmt.Errorf("find project: %w", err)
@@ -111,10 +146,16 @@ func (s *AgentService) Chat(ctx context.Context, projectID int64, message string
 		return nil, fmt.Errorf("project is not running")
 	}
 
+	sid, err := s.getOrCreateSession(ctx, projectID, safeDeref(sessionID), message)
+	if err != nil {
+		return nil, fmt.Errorf("resolve session: %w", err)
+	}
+
 	taskID := uuid.New().String()
 	task := &domain.AgentTask{
 		ID:        taskID,
 		ProjectID: projectID,
+		SessionID: &sid,
 		Message:   message,
 		Status:    domain.AgentTaskStatusPending,
 	}
@@ -122,17 +163,25 @@ func (s *AgentService) Chat(ctx context.Context, projectID int64, message string
 		return nil, fmt.Errorf("create agent task: %w", err)
 	}
 
-	containerName := fmt.Sprintf("agent-%d", projectID)
-
-	if err := s.ensureContainerRunning(ctx, containerName, nil); err != nil {
-		slog.Error("ensure agent container running failed", "container", containerName, "error", err)
+	provider, err := s.resolveProviderForProject(ctx, projectID)
+	if err != nil {
+		return nil, fmt.Errorf("resolve provider: %w", err)
 	}
 
-	s.trackActivity(containerName)
-	s.startIdleWatcher()
+	containerName := fmt.Sprintf("agent-%d", projectID)
+	bridge := s.providerSvc.BuildBridge(provider, containerName)
 
+	if provider.Type == domain.ProviderTypeDocker {
+		if err := s.ensureContainerRunning(ctx, containerName, nil); err != nil {
+			slog.Error("ensure agent container running failed", "container", containerName, "error", err)
+		}
+		s.trackActivity(containerName)
+		s.startIdleWatcher()
+	}
+
+	projectDir := fmt.Sprintf("%s/projects/%d", s.cfg.DataDir, projectID)
 	go func() {
-		if err := s.forwardTask(context.Background(), containerName, taskID, message, projectID, ""); err != nil {
+		if err := bridge.ForwardTask(context.Background(), taskID, message, projectDir); err != nil {
 			slog.Error("forward task to agent failed", "task_id", taskID, "error", err)
 		}
 	}()
@@ -149,10 +198,18 @@ func (s *AgentService) GetTask(ctx context.Context, projectID int64, taskID stri
 		return nil, fmt.Errorf("task not found for this project")
 	}
 
+	provider, err := s.resolveProviderForProject(ctx, projectID)
+	if err != nil {
+		return nil, fmt.Errorf("resolve provider: %w", err)
+	}
+
 	containerName := fmt.Sprintf("agent-%d", projectID)
-	if err := s.pollAgentTask(context.Background(), containerName, "9000", task); err != nil {
+	bridge := s.providerSvc.BuildBridge(provider, containerName)
+
+	if err := bridge.PollTask(ctx, taskID, task); err != nil {
 		slog.Warn("poll agent task error", "task_id", taskID, "error", err)
 	}
+	s.db.UpdateAgentTask(task)
 
 	return task, nil
 }
@@ -162,6 +219,9 @@ func (s *AgentService) ListTasks(ctx context.Context, projectID int64) ([]*domai
 }
 
 func (s *AgentService) IsAgentRunning(ctx context.Context, projectID int64) bool {
+	if s.docker == nil {
+		return false
+	}
 	containerName := fmt.Sprintf("agent-%d", projectID)
 	return s.docker.ContainerIsRunning(ctx, containerName)
 }
@@ -172,6 +232,9 @@ func (s *AgentService) StartAgent(ctx context.Context, projectID int64) error {
 }
 
 func (s *AgentService) StopAgent(ctx context.Context, projectID int64) error {
+	if s.docker == nil {
+		return nil
+	}
 	containerName := fmt.Sprintf("agent-%d", projectID)
 
 	s.mu.Lock()
@@ -191,9 +254,21 @@ func (s *AgentService) StopAgent(ctx context.Context, projectID int64) error {
 	return nil
 }
 
-func (s *AgentService) ChatForDir(ctx context.Context, dirID, dirPath, message string) (*domain.AgentTask, error) {
+func safeDeref(s *string) string {
+	if s == nil {
+		return ""
+	}
+	return *s
+}
+
+func (s *AgentService) ChatForDir(ctx context.Context, dirID, dirPath, message string, sessionID *string) (*domain.AgentTask, error) {
 	if s.docker == nil {
 		return nil, fmt.Errorf("docker daemon not available")
+	}
+
+	sid, err := s.getOrCreateSession(ctx, 0, safeDeref(sessionID), message)
+	if err != nil {
+		return nil, fmt.Errorf("resolve session: %w", err)
 	}
 
 	taskID := uuid.New().String()
@@ -201,6 +276,7 @@ func (s *AgentService) ChatForDir(ctx context.Context, dirID, dirPath, message s
 	s.db.CreateAgentTask(&domain.AgentTask{
 		ID:        taskID,
 		ProjectID: 0,
+		SessionID: &sid,
 		Message:   message,
 		Status:    domain.AgentTaskStatusPending,
 	})
@@ -215,13 +291,58 @@ func (s *AgentService) ChatForDir(ctx context.Context, dirID, dirPath, message s
 	s.trackActivity(containerName)
 	s.startIdleWatcher()
 
+	provider, err := s.providerSvc.ResolveProvider("")
+	if err != nil {
+		return nil, fmt.Errorf("resolve default provider: %w", err)
+	}
+	bridge := s.providerSvc.BuildBridge(provider, containerName)
+
 	go func() {
-		if err := s.forwardTask(context.Background(), containerName, taskID, message, 0, dirPath); err != nil {
+		containerDir := fmt.Sprintf("/workspace/%s", dirID)
+		if err := bridge.ForwardTask(context.Background(), taskID, message, containerDir); err != nil {
 			slog.Error("forward task to dir agent failed", "task_id", taskID, "error", err)
 		}
 	}()
 
 	return &domain.AgentTask{ID: taskID}, nil
+}
+
+func (s *AgentService) CreateSession(ctx context.Context, projectID int64, name string) (*domain.AgentSession, error) {
+	id := uuid.New().String()
+	now := time.Now()
+	sess := &domain.AgentSession{
+		ID:        id,
+		ProjectID: projectID,
+		Name:      name,
+		CreatedAt: now,
+		UpdatedAt: now,
+	}
+	if err := s.db.CreateAgentSession(sess); err != nil {
+		return nil, fmt.Errorf("create session: %w", err)
+	}
+	return sess, nil
+}
+
+func (s *AgentService) ListSessions(ctx context.Context, projectID int64) ([]*domain.AgentSession, error) {
+	return s.db.ListAgentSessions(projectID)
+}
+
+func (s *AgentService) RenameSession(ctx context.Context, sessionID, name string) error {
+	sess, err := s.db.FindAgentSession(sessionID)
+	if err != nil {
+		return fmt.Errorf("find session: %w", err)
+	}
+	sess.Name = name
+	sess.UpdatedAt = time.Now()
+	return s.db.UpdateAgentSession(sess)
+}
+
+func (s *AgentService) DeleteSession(ctx context.Context, sessionID string) error {
+	return s.db.DeleteAgentSession(sessionID)
+}
+
+func (s *AgentService) ListTasksBySession(ctx context.Context, sessionID string) ([]*domain.AgentTask, error) {
+	return s.db.ListAgentTasksBySession(sessionID)
 }
 
 func (s *AgentService) GetTaskForDir(ctx context.Context, dirID, taskID string) (*domain.AgentTask, error) {
@@ -231,9 +352,17 @@ func (s *AgentService) GetTaskForDir(ctx context.Context, dirID, taskID string) 
 	}
 
 	containerName := fmt.Sprintf("agent-%s", dirID)
-	if err := s.pollAgentTask(context.Background(), containerName, "9001", task); err != nil {
+
+	provider, err := s.providerSvc.ResolveProvider("")
+	if err != nil {
+		return nil, fmt.Errorf("resolve default provider: %w", err)
+	}
+	bridge := s.providerSvc.BuildBridge(provider, containerName)
+
+	if err := bridge.PollTask(ctx, taskID, task); err != nil {
 		slog.Warn("poll agent task error", "task_id", taskID, "error", err)
 	}
+	s.db.UpdateAgentTask(task)
 
 	return task, nil
 }
@@ -243,6 +372,9 @@ func (s *AgentService) ListTasksForDir(ctx context.Context) ([]*domain.AgentTask
 }
 
 func (s *AgentService) IsAgentRunningForDir(ctx context.Context, dirID string) bool {
+	if s.docker == nil {
+		return false
+	}
 	containerName := fmt.Sprintf("agent-%s", dirID)
 	return s.docker.ContainerIsRunning(ctx, containerName)
 }
@@ -254,6 +386,9 @@ func (s *AgentService) StartAgentForDir(ctx context.Context, dirID, dirPath stri
 }
 
 func (s *AgentService) StopAgentForDir(ctx context.Context, dirID string) error {
+	if s.docker == nil {
+		return nil
+	}
 	containerName := fmt.Sprintf("agent-%s", dirID)
 
 	s.mu.Lock()
@@ -273,104 +408,11 @@ func (s *AgentService) StopAgentForDir(ctx context.Context, dirID string) error 
 	return nil
 }
 
-func (s *AgentService) startAgentContainer(ctx context.Context, containerName string, mounts []string) error {
-	if _, err := s.docker.CreateContainerOpts(ctx, containerName, agentImage, nil, "tamga-net", mounts); err != nil {
-		return fmt.Errorf("create agent container: %w", err)
-	}
-	if err := s.docker.StartContainer(ctx, containerName); err != nil {
-		return fmt.Errorf("start agent container: %w", err)
-	}
-	slog.Info("agent container started", "container", containerName)
-	return nil
-}
-
-func (s *AgentService) forwardTask(ctx context.Context, containerName, taskID, message string, projectID int64, dirPath string) error {
-	var projectDir string
-	if dirPath != "" {
-		projectDir = dirPath
-	} else {
-		projectDir = fmt.Sprintf("%s/projects/%d", s.cfg.DataDir, projectID)
-	}
-
-	port := "9000"
-	if projectID == 0 && dirPath != "" {
-		port = "9001"
-	}
-
-	agentURL := fmt.Sprintf("http://%s:%s/chat", containerName, port)
-
-	payload := map[string]string{
-		"task_id":     taskID,
-		"message":     message,
-		"project_dir": projectDir,
-	}
-	body, _ := json.Marshal(payload)
-
-	httpClient := &http.Client{Timeout: 10 * time.Second}
-	resp, err := httpClient.Post(agentURL, "application/json", bytes.NewReader(body))
+func (s *AgentService) UpdateProjectProvider(ctx context.Context, projectID int64, providerID string) error {
+	project, err := s.db.FindProject(projectID)
 	if err != nil {
-		return fmt.Errorf("forward to agent: %w", err)
+		return fmt.Errorf("find project: %w", err)
 	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode >= 300 {
-		b, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("agent returned %d: %s", resp.StatusCode, string(b))
-	}
-
-	for i := 0; i < 300; i++ {
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		default:
-		}
-
-		time.Sleep(2 * time.Second)
-
-		var task *domain.AgentTask
-		if projectID == 0 && dirPath != "" {
-			task, _ = s.GetTaskForDir(context.Background(), "system", taskID)
-		} else {
-			task, _ = s.GetTask(context.Background(), projectID, taskID)
-		}
-		if task != nil && (task.Status == domain.AgentTaskStatusCompleted || task.Status == domain.AgentTaskStatusFailed) {
-			return nil
-		}
-	}
-
-	return fmt.Errorf("agent task timed out")
-}
-
-func (s *AgentService) pollAgentTask(ctx context.Context, containerName, port string, task *domain.AgentTask) error {
-	agentURL := fmt.Sprintf("http://%s:%s/tasks/%s", containerName, port, task.ID)
-	httpClient := &http.Client{Timeout: 5 * time.Second}
-	resp, err := httpClient.Get(agentURL)
-	if err != nil {
-		return fmt.Errorf("poll agent: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("agent returned %d", resp.StatusCode)
-	}
-
-	var agentTask struct {
-		Status      string `json:"status"`
-		Response    string `json:"response"`
-		Diff        string `json:"diff"`
-		CompletedAt string `json:"completed_at"`
-	}
-	if err := json.NewDecoder(resp.Body).Decode(&agentTask); err != nil {
-		return fmt.Errorf("decode agent task: %w", err)
-	}
-
-	task.Status = domain.AgentTaskStatus(agentTask.Status)
-	task.Response = agentTask.Response
-	task.Diff = agentTask.Diff
-	if agentTask.CompletedAt != "" {
-		t, _ := time.Parse(time.RFC3339, agentTask.CompletedAt)
-		task.CompletedAt = &t
-	}
-	s.db.UpdateAgentTask(task)
-	return nil
+	project.AgentProviderID = &providerID
+	return s.db.UpdateProject(project)
 }

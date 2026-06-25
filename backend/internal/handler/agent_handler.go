@@ -38,7 +38,7 @@ func (h *AgentHandler) Chat(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	task, err := h.svc.Chat(r.Context(), id, req.Message)
+	task, err := h.svc.Chat(r.Context(), id, req.Message, nil)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return

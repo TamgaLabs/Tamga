@@ -34,6 +34,18 @@ export type User = {
   created_at: string;
 };
 
+export type AgentProvider = {
+  id: string;
+  name: string;
+  provider_type: "docker" | "http";
+  image?: string;
+  command?: string;
+  endpoint?: string;
+  is_default: boolean;
+  created_at: string;
+  updated_at: string;
+};
+
 export type Project = {
   id: number;
   name: string;
@@ -43,6 +55,7 @@ export type Project = {
   domain: string;
   status: string;
   container_id?: string;
+  agent_provider_id?: string;
   created_at: string;
   updated_at: string;
 };
@@ -69,12 +82,22 @@ export type EnvVar = {
 export type AgentTask = {
   id: string;
   project_id: number;
+  session_id?: string;
   message: string;
   status: "pending" | "processing" | "completed" | "failed";
   response?: string;
   diff?: string;
   created_at: string;
   completed_at?: string;
+};
+
+export type AgentSession = {
+  id: string;
+  project_id: number;
+  dir_id?: string;
+  name: string;
+  created_at: string;
+  updated_at: string;
 };
 
 // Auth
@@ -221,10 +244,10 @@ export const writeFile = (projectId: number, path: string, content: string) =>
     method: "PUT",
     body: JSON.stringify({ content }),
   });
-export const chatWithCodeAgent = (projectId: number, message: string) =>
-  api<{ task_id: string }>(`/code/${projectId}/agent/chat`, {
+export const chatWithCodeAgent = (projectId: number, message: string, sessionId?: string) =>
+  api<{ task_id: string; session_id: string }>(`/code/${projectId}/agent/chat`, {
     method: "POST",
-    body: JSON.stringify({ message }),
+    body: JSON.stringify({ message, session_id: sessionId }),
   });
 export const getCodeTask = (projectId: number, taskId: string) =>
   api<AgentTask>(`/code/${projectId}/agent/tasks/${taskId}`);
@@ -237,6 +260,50 @@ export const startCodeAgent = (projectId: number) =>
 export const stopCodeAgent = (projectId: number) =>
   api<void>(`/code/${projectId}/agent/stop`, { method: "POST" });
 
+// Agent sessions
+export const listSessions = (projectId: number) =>
+  api<AgentSession[]>(`/code/${projectId}/agent/sessions`);
+export const createSession = (projectId: number, name: string) =>
+  api<AgentSession>(`/code/${projectId}/agent/sessions`, {
+    method: "POST",
+    body: JSON.stringify({ name }),
+  });
+export const renameSession = (projectId: number, sessionId: string, name: string) =>
+  api<void>(`/code/${projectId}/agent/sessions/${sessionId}`, {
+    method: "PUT",
+    body: JSON.stringify({ name }),
+  });
+export const deleteSession = (projectId: number, sessionId: string) =>
+  api<void>(`/code/${projectId}/agent/sessions/${sessionId}`, {
+    method: "DELETE",
+  });
+export const listSessionTasks = (projectId: number, sessionId: string) =>
+  api<AgentTask[]>(`/code/${projectId}/agent/sessions/${sessionId}/tasks`);
+
 // Agent tasks for project
 export const listAgentTasks = (projectId: number) =>
   api<AgentTask[]>(`/projects/${projectId}/agent/tasks`);
+
+// Agent Providers
+export const listAgentProviders = () =>
+  api<AgentProvider[]>("/agent-providers");
+export const getAgentProvider = (id: string) =>
+  api<AgentProvider>(`/agent-providers/${id}`);
+export const createAgentProvider = (data: {
+  name: string;
+  provider_type: "docker" | "http";
+  image?: string;
+  command?: string;
+  endpoint?: string;
+}) =>
+  api<AgentProvider>("/agent-providers", {
+    method: "POST",
+    body: JSON.stringify(data),
+  });
+export const updateAgentProvider = (id: string, data: Partial<AgentProvider>) =>
+  api<AgentProvider>(`/agent-providers/${id}`, {
+    method: "PUT",
+    body: JSON.stringify(data),
+  });
+export const deleteAgentProvider = (id: string) =>
+  api<void>(`/agent-providers/${id}`, { method: "DELETE" });

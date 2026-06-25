@@ -97,14 +97,14 @@ export default function ContainersPage() {
           placeholder="Search by name..."
           value={search}
           onChange={(e) => setSearch(e.target.value)}
-          className="bg-neutral-950 border border-neutral-700 rounded px-3 py-1.5 text-sm text-neutral-200 max-w-xs"
+          className="bg-background border border-border rounded px-3 py-1.5 text-sm text-foreground max-w-xs"
         />
       </div>
 
       {loading ? (
-        <p className="text-neutral-400">Loading...</p>
+        <p className="text-muted-foreground">Loading...</p>
       ) : filtered.length === 0 ? (
-        <p className="text-neutral-500">No containers found.</p>
+        <p className="text-muted-foreground">No containers found.</p>
       ) : (
         <div className="space-y-2">
           {filtered.map((c) => {
@@ -113,21 +113,21 @@ export default function ContainersPage() {
             return (
               <Card
                 key={c.id}
-                className="cursor-pointer hover:bg-neutral-800/50 transition-colors"
+                className="cursor-pointer hover:bg-muted/50 transition-colors"
                 onClick={() => router.push(`/containers/${c.id}`)}
               >
                 <CardContent className="p-4">
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-3 min-w-0">
-                      <span className="font-mono text-sm text-blue-400 truncate max-w-48">
+                      <span className="font-mono text-sm text-accent truncate max-w-48">
                         {name}
                       </span>
                       <Badge variant={statusVariant[c.state] || "default"}>{c.state}</Badge>
                     </div>
-                    <div className="flex items-center gap-4 text-sm text-neutral-400">
+                    <div className="flex items-center gap-4 text-sm text-muted-foreground">
                       <span className="hidden md:inline truncate max-w-40">{c.image}</span>
                       {ports.length > 0 && (
-                        <span className="hidden lg:inline text-xs font-mono text-neutral-500">
+                        <span className="hidden lg:inline text-xs font-mono text-muted-foreground">
                           {ports.join(", ")}
                         </span>
                       )}
@@ -147,15 +147,15 @@ export default function ContainersPage() {
                         </Button>
                         <div className="relative">
                           <button
-                            className="text-neutral-500 hover:text-white px-1 text-lg leading-none"
+                            className="text-muted-foreground hover:text-foreground px-1 text-lg leading-none"
                             onClick={() => setMenuOpen(menuOpen === c.id ? null : c.id)}
                           >
                             ⋮
                           </button>
                           {menuOpen === c.id && (
-                            <div className="absolute right-0 top-full mt-1 bg-neutral-900 border border-neutral-700 rounded shadow-lg z-10 min-w-28">
+                            <div className="absolute right-0 top-full mt-1 bg-card border border-border rounded shadow-lg z-10 min-w-28">
                               <button
-                                className="w-full text-left px-3 py-1.5 text-sm text-red-400 hover:bg-neutral-800"
+                                className="w-full text-left px-3 py-1.5 text-sm text-destructive hover:bg-muted"
                                 onClick={() => handleDelete(c.id)}
                               >
                                 Delete
@@ -167,10 +167,10 @@ export default function ContainersPage() {
                     </div>
                   </div>
                   {c.system_type && (
-                    <p className="text-xs text-neutral-500 mt-1">system: {c.system_type}</p>
+                    <p className="text-xs text-muted-foreground mt-1">system: {c.system_type}</p>
                   )}
                   {c.project_id && (
-                    <p className="text-xs text-neutral-500 mt-1">project: {c.project_id}</p>
+                    <p className="text-xs text-muted-foreground mt-1">project: {c.project_id}</p>
                   )}
                 </CardContent>
               </Card>
