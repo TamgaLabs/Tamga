@@ -1,3 +1,6 @@
+DOMAIN ?= localhost
+CADDY_EMAIL ?= admin@example.com
+
 .PHONY: setup up down logs test build clean
 
 -include .env
@@ -16,6 +19,7 @@ network:
 	docker network inspect tamga-net >/dev/null 2>&1 || docker network create tamga-net
 
 up: network build
+	@test -f .env || cp .env.example .env
 	docker run -d --name tamga-caddy \
 		--network tamga-net \
 		-p 80:80 -p 443:443 -p 2019:2019 \
@@ -34,24 +38,19 @@ up: network build
 		--network tamga-net \
 		--env-file .env \
 		tamga-frontend
-	@echo "Frontend: https://$(DOMAIN)"
-	@echo "API:      https://api.$(DOMAIN)"
-	@echo "Caddy admin: http://localhost:2019"
+	@echo ""
+	@URL_SCHEME=$$( [ "$(DOMAIN)" = "localhost" ] && echo "http" || echo "https" ); \
+	echo "Frontend: $$URL_SCHEME://$(DOMAIN)"; \
+	echo "API:      $$URL_SCHEME://api.$(DOMAIN)"
 
 down:
 	-docker rm -f tamga-caddy tamga-backend tamga-frontend 2>/dev/null
 
 logs:
-	docker logs -f tamga-backend
+	@docker logs -f tamga-backend 2>&1 || true
 
 test:
 	go test ./backend/...
-
-build-backend:
-	CGO_ENABLED=0 go build -o bin/api ./backend/cmd/api/
-
-run-backend:
-	go run ./backend/cmd/api/
 
 clean: down
 	-docker network rm tamga-net 2>/dev/null

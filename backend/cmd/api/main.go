@@ -92,11 +92,6 @@ func main() {
 }
 
 func setupCaddyRoutes(c *caddyrepo.Client, cfg config.Config) error {
-	if cfg.Domain == "" || cfg.Domain == "localhost" {
-		slog.Info("skipping caddy route setup (localhost)")
-		return nil
-	}
-
 	// Register frontend route: DOMAIN → frontend:3000
 	if err := c.AddRoute(cfg.Domain, "frontend:3000"); err != nil {
 		return fmt.Errorf("frontend route: %w", err)
