@@ -30,7 +30,7 @@ func (db *DB) FindAgentTask(id string) (*domain.AgentTask, error) {
 
 func (db *DB) ListAgentTasks(projectID int64) ([]*domain.AgentTask, error) {
 	rows, err := db.Query(
-		"SELECT id, project_id, message, status, COALESCE(response,''), COALESCE(diff,''), created_at, completed_at FROM agent_tasks WHERE project_id = ? ORDER BY created_at DESC LIMIT 50",
+		"SELECT id, project_id, message, status, COALESCE(response,''), COALESCE(diff,''), created_at, completed_at FROM agent_tasks WHERE project_id = ? ORDER BY created_at ASC LIMIT 50",
 		projectID,
 	)
 	if err != nil {

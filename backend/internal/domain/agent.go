@@ -16,8 +16,8 @@ type AgentTask struct {
 	ProjectID   int64           `json:"project_id"`
 	Message     string          `json:"message"`
 	Status      AgentTaskStatus `json:"status"`
-	Response    string          `json:"response,omitempty"`
-	Diff        string          `json:"diff,omitempty"`
+	Response    string          `json:"response"`
+	Diff        string          `json:"diff"`
 	CreatedAt   time.Time       `json:"created_at"`
 	CompletedAt *time.Time      `json:"completed_at,omitempty"`
 }
