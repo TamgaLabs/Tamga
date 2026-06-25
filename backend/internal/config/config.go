@@ -14,6 +14,7 @@ type Config struct {
 	CaddyAdminURL string
 	CaddyEmail    string
 	DataDir       string
+	SystemCodeDir string
 	Port          int
 	ReadTimeout   time.Duration
 	WriteTimeout  time.Duration
@@ -28,6 +29,7 @@ func Load() Config {
 		CaddyAdminURL: getEnv("CADDY_ADMIN_URL", "http://localhost:2019"),
 		CaddyEmail:    getEnv("CADDY_EMAIL", "admin@example.com"),
 		DataDir:       getEnv("DATA_DIR", "./data"),
+		SystemCodeDir: getEnv("SYSTEM_CODE_DIR", ""),
 		Port:          getEnvInt("PORT", 8080),
 		ReadTimeout:   time.Second * 10,
 		WriteTimeout:  time.Second * 30,

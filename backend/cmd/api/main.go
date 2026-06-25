@@ -39,6 +39,12 @@ func main() {
 
 	authService := service.NewAuthService(db, cfg)
 
+	if err := authService.AutoSetup(); err != nil {
+		slog.Warn("auto setup", "error", err)
+	} else {
+		slog.Info("admin user ready")
+	}
+
 	dockerClient, err := dockerrepo.New()
 	if err != nil {
 		slog.Warn("docker client not available, deploy disabled", "error", err)
@@ -56,9 +62,17 @@ func main() {
 	authHandler := handler.NewAuthHandler(authService)
 	projectHandler := handler.NewProjectHandler(projectService)
 	agentHandler := handler.NewAgentHandler(agentService)
+	codeHandler := handler.NewCodeHandler(projectService, agentService, cfg)
 	authMiddleware := handler.AuthMiddleware(authService)
 
-	r := router.New(authHandler, systemHandler, projectHandler, agentHandler, authMiddleware)
+	var containerHandler *handler.ContainerHandler
+	if dockerClient != nil {
+		containerHandler = handler.NewContainerHandler(dockerClient)
+	} else {
+		containerHandler = handler.NewContainerHandler(nil)
+	}
+
+	r := router.New(authHandler, systemHandler, projectHandler, agentHandler, containerHandler, codeHandler, authMiddleware)
 
 	srv := &http.Server{
 		Addr:         fmt.Sprintf(":%d", cfg.Port),
@@ -92,18 +106,7 @@ func main() {
 }
 
 func setupCaddyRoutes(c *caddyrepo.Client, cfg config.Config) error {
-	// Register frontend route: DOMAIN → frontend:3000
-	if err := c.AddRoute(cfg.Domain, "frontend:3000"); err != nil {
-		return fmt.Errorf("frontend route: %w", err)
-	}
-	slog.Info("caddy route added", "domain", cfg.Domain, "upstream", "frontend:3000")
-
-	// Register backend route: api.DOMAIN → backend:8080
-	apiDomain := "api." + cfg.Domain
-	if err := c.AddRoute(apiDomain, "backend:8080"); err != nil {
-		return fmt.Errorf("backend route: %w", err)
-	}
-	slog.Info("caddy route added", "domain", apiDomain, "upstream", "backend:8080")
+	slog.Info("caddy routes are managed by Caddyfile")
 
 	return nil
 }

@@ -15,6 +15,8 @@ func New(
 	systemHandler *handler.SystemHandler,
 	projectHandler *handler.ProjectHandler,
 	agentHandler *handler.AgentHandler,
+	containerHandler *handler.ContainerHandler,
+	codeHandler *handler.CodeHandler,
 	authMiddleware func(http.Handler) http.Handler,
 ) *chi.Mux {
 	r := chi.NewRouter()
@@ -39,6 +41,7 @@ func New(
 			r.Use(authMiddleware)
 			r.Get("/auth/me", authHandler.Me)
 
+			// Projects
 			r.Get("/projects", projectHandler.List)
 			r.Post("/projects", projectHandler.Create)
 			r.Get("/projects/{id}", projectHandler.Get)
@@ -51,7 +54,36 @@ func New(
 			r.Post("/projects/{id}/env-vars", projectHandler.CreateEnvVar)
 			r.Delete("/projects/{id}/env-vars/{envVarId}", projectHandler.DeleteEnvVar)
 			r.Post("/projects/{id}/agent/chat", agentHandler.Chat)
+			r.Get("/projects/{id}/agent/tasks", agentHandler.ListTasks)
 			r.Get("/projects/{id}/agent/tasks/{taskId}", agentHandler.GetTask)
+
+			// Code agent routes
+			r.Post("/code/{projectID}/agent/chat", codeHandler.Chat)
+			r.Get("/code/{projectID}/agent/tasks", codeHandler.ListTasks)
+			r.Get("/code/{projectID}/agent/tasks/{taskId}", codeHandler.GetTask)
+			r.Get("/code/{projectID}/agent/status", codeHandler.AgentStatus)
+			r.Post("/code/{projectID}/agent/start", codeHandler.StartAgent)
+			r.Post("/code/{projectID}/agent/stop", codeHandler.StopAgent)
+
+			// System / Docker containers
+			r.Get("/system/containers", containerHandler.List)
+			r.Get("/system/containers/{id}", containerHandler.Inspect)
+			r.Post("/system/containers/{id}/start", containerHandler.Start)
+			r.Post("/system/containers/{id}/stop", containerHandler.Stop)
+			r.Post("/system/containers/{id}/restart", containerHandler.Restart)
+			r.Delete("/system/containers/{id}", containerHandler.Remove)
+			r.Get("/system/containers/{id}/logs", containerHandler.Logs)
+			r.Get("/system/containers/{id}/stats", containerHandler.Stats)
+			r.Put("/system/containers/{id}/resources", containerHandler.UpdateResources)
+			r.Post("/system/prune", containerHandler.Prune)
+			r.Get("/system/info", containerHandler.Info)
+
+			// Code
+			r.Get("/code/projects", codeHandler.ListCodebases)
+			r.Get("/code/{projectID}/tree", codeHandler.FileTree)
+			r.Get("/code/{projectID}/file", codeHandler.ReadFile)
+			r.Put("/code/{projectID}/file", codeHandler.WriteFile)
+
 		})
 	})
 
