@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"log/slog"
@@ -107,8 +108,48 @@ func main() {
 	slog.Info("server stopped")
 }
 
+const caddyfilePath = "/Caddyfile"
+
 func setupCaddyRoutes(c *caddyrepo.Client, cfg config.Config) error {
-	slog.Info("caddy routes are managed by Caddyfile")
+	var buf bytes.Buffer
+
+	buf.WriteString("{\n")
+	buf.WriteString("\tadmin :2019\n")
+	if cfg.CaddyAutoSSL {
+		buf.WriteString(fmt.Sprintf("\temail %s\n", cfg.CaddyEmail))
+	} else {
+		buf.WriteString("\tauto_https off\n")
+	}
+	buf.WriteString("}\n\n")
+
+	if !cfg.CaddyAutoSSL {
+		buf.WriteString(fmt.Sprintf("%s:80 {\n", cfg.UIDomain))
+	} else {
+		buf.WriteString(fmt.Sprintf("%s {\n", cfg.UIDomain))
+	}
+	buf.WriteString("\t@api path /api/*\n")
+	buf.WriteString("\thandle @api {\n")
+	buf.WriteString("\t\treverse_proxy backend:8080\n")
+	buf.WriteString("\t}\n")
+	buf.WriteString("\thandle {\n")
+	buf.WriteString("\t\treverse_proxy frontend:3000\n")
+	buf.WriteString("\t}\n")
+	buf.WriteString("}\n")
+
+	if err := os.WriteFile(caddyfilePath, buf.Bytes(), 0644); err != nil {
+		return fmt.Errorf("write caddyfile: %w", err)
+	}
+	slog.Info("caddyfile written", "path", caddyfilePath)
+
+	// Reload Caddy via admin API
+	reloadURL := cfg.CaddyAdminURL + "/reload"
+	resp, err := http.Post(reloadURL, "application/json", nil)
+	if err != nil {
+		slog.Warn("caddy reload request failed (non-fatal)", "url", reloadURL, "error", err)
+		return nil
+	}
+	defer resp.Body.Close()
+	slog.Info("caddy reloaded", "status", resp.StatusCode)
 
 	return nil
 }
