@@ -1,0 +1,45 @@
+services:
+  caddy:
+    image: caddy:alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile
+      - caddy_data:/data
+      - caddy_config:/config
+    networks:
+      - tamga-network
+
+  backend:
+    build:
+      context: .
+      dockerfile: deploy/Dockerfile.backend
+    restart: unless-stopped
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ./data:/data
+      - ./Caddyfile:/Caddyfile
+    env_file: .env
+    networks:
+      - tamga-network
+
+  frontend:
+    build:
+      context: .
+      dockerfile: deploy/Dockerfile.frontend
+    restart: unless-stopped
+    networks:
+      - tamga-network
+
+volumes:
+  caddy_data:
+  caddy_config:
+
+networks:
+  tamga-network:
+    # Not internal: Caddy needs outbound access for Let's Encrypt, and the
+    # backend needs it for git clone/pull. Egress isolation belongs on the
+    # separate agent-sandbox network (see FEAT-006), not here.
+    driver: bridge
