@@ -78,32 +78,25 @@ The backend auto-runs database migrations on startup. An admin user is created a
 | POST   | `/api/projects/{id}/env-vars`      | Bearer  | Add env var          |
 | DELETE | `/api/projects/{id}/env-vars/{id}` | Bearer  | Remove env var       |
 
-### Agents
+### Agent Terminal
+
+A WebSocket-backed terminal (xterm.js on the frontend) into an on-demand
+sandbox container. The container is created when the terminal connects and
+stopped + removed when it disconnects. Run whatever agent CLI you like
+(`opencode`, etc.) by hand inside it - the backend just proxies a shell, it
+doesn't speak any agent-specific protocol.
+
+| Method | Path                                       | Auth    | Description                        |
+|--------|---------------------------------------------|---------|------------------------------------|
+| GET    | `/api/projects/{id}/agent/terminal`         | Bearer* | WebSocket: PTY into sandbox         |
+
+\* WebSocket connections can't set an `Authorization` header, so the token is
+passed as a `?token=` query param instead.
+
+### Code
 
 | Method | Path                                                              | Auth    | Description               |
 |--------|-------------------------------------------------------------------|---------|---------------------------|
-| POST   | `/api/projects/{id}/agent/chat`                                   | Bearer  | Agent chat                |
-| POST   | `/api/projects/{id}/agent/chat/stream`                            | Bearer  | Streamed agent chat       |
-| GET    | `/api/projects/{id}/agent/tasks`                                  | Bearer  | List agent tasks          |
-| GET    | `/api/projects/{id}/agent/tasks/{taskId}`                         | Bearer  | Get agent task details    |
-
-### Code Agents
-
-| Method | Path                                                              | Auth    | Description               |
-|--------|-------------------------------------------------------------------|---------|---------------------------|
-| POST   | `/api/code/{projectId}/agent/chat`                                | Bearer  | Code agent chat           |
-| POST   | `/api/code/{projectId}/agent/chat/stream`                         | Bearer  | Streamed chat             |
-| GET    | `/api/code/{projectId}/agent/tasks`                               | Bearer  | List tasks                |
-| GET    | `/api/code/{projectId}/agent/tasks/{taskId}`                      | Bearer  | Get task                  |
-| GET    | `/api/code/{projectId}/agent/status`                              | Bearer  | Agent status              |
-| POST   | `/api/code/{projectId}/agent/start`                               | Bearer  | Start agent               |
-| POST   | `/api/code/{projectId}/agent/stop`                                | Bearer  | Stop agent                |
-| POST   | `/api/code/{projectId}/agent/init`                                | Bearer  | Init agent                |
-| GET    | `/api/code/{projectId}/agent/sessions`                            | Bearer  | List sessions             |
-| POST   | `/api/code/{projectId}/agent/sessions`                            | Bearer  | Create session            |
-| PUT    | `/api/code/{projectId}/agent/sessions/{sessionId}`                | Bearer  | Rename session            |
-| DELETE | `/api/code/{projectId}/agent/sessions/{sessionId}`                | Bearer  | Delete session            |
-| GET    | `/api/code/{projectId}/agent/sessions/{sessionId}/tasks`          | Bearer  | List session tasks        |
 | GET    | `/api/code/projects`                                              | Bearer  | List codebases            |
 | GET    | `/api/code/{projectId}/tree`                                      | Bearer  | File tree                 |
 | GET    | `/api/code/{projectId}/file`                                      | Bearer  | Read file                 |
