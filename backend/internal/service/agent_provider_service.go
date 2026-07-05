@@ -52,14 +52,3 @@ func (s *AgentProviderService) ResolveProvider(providerID string) (*domain.Agent
 	}
 	return s.db.FindDefaultProvider()
 }
-
-func (s *AgentProviderService) BuildBridge(provider *domain.AgentProvider, containerName string) AgentProvider {
-	switch provider.Type {
-	case domain.ProviderTypeDocker:
-		return newDockerBridge(containerName, "9000")
-	case domain.ProviderTypeHTTP:
-		return newHTTPBridge(provider.Endpoint, provider.AuthToken)
-	default:
-		return newDockerBridge(containerName, "9000")
-	}
-}

@@ -14,10 +14,11 @@ func New(
 	authHandler *handler.AuthHandler,
 	systemHandler *handler.SystemHandler,
 	projectHandler *handler.ProjectHandler,
-	agentHandler *handler.AgentHandler,
+	terminalHandler *handler.TerminalHandler,
 	containerHandler *handler.ContainerHandler,
 	codeHandler *handler.CodeHandler,
 	agentProviderHandler *handler.AgentProviderHandler,
+	apiKeyHandler *handler.ApiKeyHandler,
 	authMiddleware func(http.Handler) http.Handler,
 ) *chi.Mux {
 	r := chi.NewRouter()
@@ -54,24 +55,7 @@ func New(
 			r.Get("/projects/{id}/env-vars", projectHandler.ListEnvVars)
 			r.Post("/projects/{id}/env-vars", projectHandler.CreateEnvVar)
 			r.Delete("/projects/{id}/env-vars/{envVarId}", projectHandler.DeleteEnvVar)
-			r.Post("/projects/{id}/agent/chat", agentHandler.Chat)
-			r.Post("/projects/{id}/agent/chat/stream", agentHandler.ChatStream)
-			r.Get("/projects/{id}/agent/tasks", agentHandler.ListTasks)
-			r.Get("/projects/{id}/agent/tasks/{taskId}", agentHandler.GetTask)
-
-			// Code agent routes
-			r.Post("/code/{projectID}/agent/chat", codeHandler.Chat)
-			r.Post("/code/{projectID}/agent/chat/stream", codeHandler.ChatStream)
-			r.Get("/code/{projectID}/agent/tasks", codeHandler.ListTasks)
-			r.Get("/code/{projectID}/agent/tasks/{taskId}", codeHandler.GetTask)
-			r.Get("/code/{projectID}/agent/status", codeHandler.AgentStatus)
-			r.Post("/code/{projectID}/agent/start", codeHandler.StartAgent)
-			r.Post("/code/{projectID}/agent/stop", codeHandler.StopAgent)
-			r.Get("/code/{projectID}/agent/sessions", codeHandler.ListSessions)
-			r.Post("/code/{projectID}/agent/sessions", codeHandler.CreateSession)
-			r.Put("/code/{projectID}/agent/sessions/{sessionId}", codeHandler.RenameSession)
-			r.Delete("/code/{projectID}/agent/sessions/{sessionId}", codeHandler.DeleteSession)
-			r.Get("/code/{projectID}/agent/sessions/{sessionId}/tasks", codeHandler.ListSessionTasks)
+			r.Get("/projects/{id}/agent/terminal", terminalHandler.Serve)
 
 			// Agent Providers
 			r.Get("/agent-providers", agentProviderHandler.List)
@@ -92,6 +76,11 @@ func New(
 			r.Put("/system/containers/{id}/resources", containerHandler.UpdateResources)
 			r.Post("/system/prune", containerHandler.Prune)
 			r.Get("/system/info", containerHandler.Info)
+
+			// API Keys
+			r.Get("/system/api-keys", apiKeyHandler.List)
+			r.Post("/system/api-keys", apiKeyHandler.Set)
+			r.Delete("/system/api-keys/{id}", apiKeyHandler.Delete)
 
 			// Code
 			r.Get("/code/projects", codeHandler.ListCodebases)

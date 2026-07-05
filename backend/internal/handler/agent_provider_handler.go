@@ -54,8 +54,8 @@ func (h *AgentProviderHandler) Create(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "name is required", http.StatusBadRequest)
 		return
 	}
-	if p.Type != domain.ProviderTypeDocker && p.Type != domain.ProviderTypeHTTP {
-		http.Error(w, "type must be 'docker' or 'http'", http.StatusBadRequest)
+	if p.Type != domain.ProviderTypeDocker {
+		http.Error(w, "type must be 'docker'", http.StatusBadRequest)
 		return
 	}
 

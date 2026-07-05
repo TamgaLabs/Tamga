@@ -6,7 +6,6 @@ type ProviderType string
 
 const (
 	ProviderTypeDocker ProviderType = "docker"
-	ProviderTypeHTTP   ProviderType = "http"
 )
 
 type AgentProvider struct {
@@ -34,6 +33,6 @@ var DefaultProvider = &AgentProvider{
 	Name:      "Opencode (Built-in)",
 	Type:      ProviderTypeDocker,
 	Image:     "tamga-agent",
-	Command:   "opencode --stdin --diff",
+	Command:   "opencode acp",
 	IsDefault: true,
 }

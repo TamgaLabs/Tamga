@@ -38,6 +38,11 @@ func main() {
 	}
 	slog.Info("database migrations completed")
 
+	if err := db.EnsureTables(); err != nil {
+		slog.Error("failed to ensure tables", "error", err)
+		os.Exit(1)
+	}
+
 	authService := service.NewAuthService(db, cfg)
 
 	if err := authService.AutoSetup(); err != nil {
@@ -53,8 +58,9 @@ func main() {
 	caddyClient := caddyrepo.New(cfg.CaddyAdminURL)
 
 	agentProviderService := service.NewAgentProviderService(db)
+	apiKeyService := service.NewApiKeyService(db, cfg.JWTSecret)
 	projectService := service.NewProjectService(db, dockerClient, caddyClient, cfg)
-	agentService := service.NewAgentService(db, dockerClient, cfg, agentProviderService)
+	agentService := service.NewAgentService(db, dockerClient, cfg, agentProviderService, apiKeyService)
 
 	if err := setupCaddyRoutes(caddyClient, cfg); err != nil {
 		slog.Warn("caddy route setup", "error", err)
@@ -63,9 +69,10 @@ func main() {
 	systemHandler := handler.NewSystemHandler()
 	authHandler := handler.NewAuthHandler(authService)
 	projectHandler := handler.NewProjectHandler(projectService)
-	agentHandler := handler.NewAgentHandler(agentService)
-	codeHandler := handler.NewCodeHandler(projectService, agentService, cfg)
+	terminalHandler := handler.NewTerminalHandler(agentService)
+	codeHandler := handler.NewCodeHandler(projectService, cfg)
 	agentProviderHandler := handler.NewAgentProviderHandler(agentProviderService)
+	apiKeyHandler := handler.NewApiKeyHandler(apiKeyService)
 	authMiddleware := handler.AuthMiddleware(authService)
 
 	var containerHandler *handler.ContainerHandler
@@ -75,7 +82,7 @@ func main() {
 		containerHandler = handler.NewContainerHandler(nil)
 	}
 
-	r := router.New(authHandler, systemHandler, projectHandler, agentHandler, containerHandler, codeHandler, agentProviderHandler, authMiddleware)
+	r := router.New(authHandler, systemHandler, projectHandler, terminalHandler, containerHandler, codeHandler, agentProviderHandler, apiKeyHandler, authMiddleware)
 
 	srv := &http.Server{
 		Addr:         fmt.Sprintf(":%d", cfg.Port),

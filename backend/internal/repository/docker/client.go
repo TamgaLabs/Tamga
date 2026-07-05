@@ -259,6 +259,38 @@ func (c *Client) PruneNetworks(ctx context.Context) error {
 	return err
 }
 
+// ExecCreate creates a shell/PTY exec session inside a running container.
+func (c *Client) ExecCreate(ctx context.Context, containerID string, cmd []string, workDir string) (string, error) {
+	resp, err := c.cli.ContainerExecCreate(ctx, containerID, container.ExecOptions{
+		AttachStdin:  true,
+		AttachStdout: true,
+		AttachStderr: true,
+		Tty:          true,
+		Cmd:          cmd,
+		WorkingDir:   workDir,
+		Env:          []string{"TERM=xterm-256color"},
+	})
+	if err != nil {
+		return "", fmt.Errorf("exec create: %w", err)
+	}
+	return resp.ID, nil
+}
+
+// ExecAttach attaches to an exec session, returning the hijacked stdio
+// stream to proxy stdin/stdout over.
+func (c *Client) ExecAttach(ctx context.Context, execID string) (types.HijackedResponse, error) {
+	resp, err := c.cli.ContainerExecAttach(ctx, execID, container.ExecAttachOptions{Tty: true})
+	if err != nil {
+		return types.HijackedResponse{}, fmt.Errorf("exec attach: %w", err)
+	}
+	return resp, nil
+}
+
+// ExecResize resizes the PTY behind an exec session.
+func (c *Client) ExecResize(ctx context.Context, execID string, height, width uint) error {
+	return c.cli.ContainerExecResize(ctx, execID, container.ResizeOptions{Height: height, Width: width})
+}
+
 func (c *Client) DockerInfo(ctx context.Context) (system.Info, error) {
 	info, err := c.cli.Info(ctx)
 	if err != nil {

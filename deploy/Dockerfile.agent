@@ -1,6 +1,8 @@
 FROM node:22-alpine
 RUN apk add --no-cache git openssh-client curl
-WORKDIR /agent
-COPY agent-server/server.js ./
-EXPOSE 9000
-CMD ["node", "server.js"]
+RUN npm i -g opencode-ai@latest
+WORKDIR /workspace
+# No in-container server process anymore: the backend execs a shell directly
+# via the Docker API (ContainerExecCreate/Attach), so this just needs to be a
+# long-running init process to keep the container alive between exec calls.
+CMD ["tail", "-f", "/dev/null"]

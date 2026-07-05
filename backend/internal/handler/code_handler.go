@@ -10,19 +10,17 @@ import (
 	"strings"
 
 	"github.com/TamgaLabs/Tamga/backend/internal/config"
-	"github.com/TamgaLabs/Tamga/backend/internal/domain"
 	"github.com/TamgaLabs/Tamga/backend/internal/service"
 	"github.com/go-chi/chi/v5"
 )
 
 type CodeHandler struct {
 	projectSvc *service.ProjectService
-	agentSvc   *service.AgentService
 	cfg        config.Config
 }
 
-func NewCodeHandler(projectSvc *service.ProjectService, agentSvc *service.AgentService, cfg config.Config) *CodeHandler {
-	return &CodeHandler{projectSvc: projectSvc, agentSvc: agentSvc, cfg: cfg}
+func NewCodeHandler(projectSvc *service.ProjectService, cfg config.Config) *CodeHandler {
+	return &CodeHandler{projectSvc: projectSvc, cfg: cfg}
 }
 
 type Codebase struct {
@@ -57,12 +55,6 @@ func (h *CodeHandler) ListCodebases(w http.ResponseWriter, r *http.Request) {
 			Type: "system",
 			Path: sysPath,
 		})
-		codebases = append(codebases, Codebase{
-			ID:   -1,
-			Name: "Agent Server",
-			Type: "system",
-			Path: filepath.Join(sysPath, "agent-server"),
-		})
 	}
 
 	if codebases == nil {
@@ -72,10 +64,10 @@ func (h *CodeHandler) ListCodebases(w http.ResponseWriter, r *http.Request) {
 }
 
 type FileEntry struct {
-	Name string      `json:"name"`
-	Path string      `json:"path"`
-	Type string      `json:"type"` // "file" or "dir"
-	Size int64       `json:"size,omitempty"`
+	Name string `json:"name"`
+	Path string `json:"path"`
+	Type string `json:"type"` // "file" or "dir"
+	Size int64  `json:"size,omitempty"`
 }
 
 func (h *CodeHandler) getProjectDir(projectID int64) string {
@@ -210,329 +202,6 @@ func (h *CodeHandler) WriteFile(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.WriteHeader(http.StatusOK)
-}
-
-func (h *CodeHandler) ChatStream(w http.ResponseWriter, r *http.Request) {
-	pid, err := strconv.ParseInt(chi.URLParam(r, "projectID"), 10, 64)
-	if err != nil {
-		http.Error(w, "invalid project id", http.StatusBadRequest)
-		return
-	}
-	var req struct {
-		Message   string        `json:"message"`
-		Messages  []interface{} `json:"messages"`
-		SessionID *string       `json:"session_id,omitempty"`
-	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "invalid request body", http.StatusBadRequest)
-		return
-	}
-
-	message := req.Message
-	if message == "" && len(req.Messages) > 0 {
-		lastMsg := req.Messages[len(req.Messages)-1]
-		if m, ok := lastMsg.(map[string]interface{}); ok {
-			if c, ok := m["content"].(string); ok {
-				message = c
-			}
-		}
-	}
-	if message == "" {
-		http.Error(w, "message is required", http.StatusBadRequest)
-		return
-	}
-
-	write := sseWriter(w)
-
-	if pid == 0 {
-		events, err := h.agentSvc.ChatStreamForDir(r.Context(), "system", h.cfg.SystemCodeDir, message, req.SessionID)
-		if err != nil {
-			write(fmt.Sprintf(`{"type":"text","text":%s}`, jsonEncodeStr(err.Error())))
-			return
-		}
-		for event := range events {
-			write(event)
-		}
-		return
-	}
-
-	events, err := h.agentSvc.ChatStream(r.Context(), pid, message, req.SessionID)
-	if err != nil {
-		write(fmt.Sprintf(`{"type":"text","text":%s}`, jsonEncodeStr(err.Error())))
-		return
-	}
-	for event := range events {
-		write(event)
-	}
-}
-
-func (h *CodeHandler) Chat(w http.ResponseWriter, r *http.Request) {
-	pid, err := strconv.ParseInt(chi.URLParam(r, "projectID"), 10, 64)
-	if err != nil {
-		http.Error(w, "invalid project id", http.StatusBadRequest)
-		return
-	}
-	var req struct {
-		Message   string  `json:"message"`
-		SessionID *string `json:"session_id,omitempty"`
-	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "invalid request body", http.StatusBadRequest)
-		return
-	}
-	if req.Message == "" {
-		http.Error(w, "message is required", http.StatusBadRequest)
-		return
-	}
-
-	// System codebase (projectID = 0)
-	if pid == 0 {
-		task, err := h.agentSvc.ChatForDir(r.Context(), "system", h.cfg.SystemCodeDir, req.Message, req.SessionID)
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
-		w.WriteHeader(http.StatusCreated)
-		json.NewEncoder(w).Encode(map[string]string{"task_id": task.ID, "session_id": safeDeref(task.SessionID)})
-		return
-	}
-
-	// Project codebase
-	task, err := h.agentSvc.Chat(r.Context(), pid, req.Message, req.SessionID)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-	w.WriteHeader(http.StatusCreated)
-	json.NewEncoder(w).Encode(map[string]string{"task_id": task.ID, "session_id": safeDeref(task.SessionID)})
-}
-
-func safeDeref(s *string) string {
-	if s == nil {
-		return ""
-	}
-	return *s
-}
-
-func (h *CodeHandler) GetTask(w http.ResponseWriter, r *http.Request) {
-	pid, err := strconv.ParseInt(chi.URLParam(r, "projectID"), 10, 64)
-	if err != nil {
-		http.Error(w, "invalid project id", http.StatusBadRequest)
-		return
-	}
-	taskID := chi.URLParam(r, "taskId")
-	if taskID == "" {
-		http.Error(w, "task id is required", http.StatusBadRequest)
-		return
-	}
-
-	if pid == 0 {
-		task, err := h.agentSvc.GetTaskForDir(r.Context(), "system", taskID)
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
-		if task == nil {
-			http.Error(w, "task not found", http.StatusNotFound)
-			return
-		}
-		json.NewEncoder(w).Encode(task)
-		return
-	}
-
-	task, err := h.agentSvc.GetTask(r.Context(), pid, taskID)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-	json.NewEncoder(w).Encode(task)
-}
-
-func (h *CodeHandler) ListTasks(w http.ResponseWriter, r *http.Request) {
-	pid, err := strconv.ParseInt(chi.URLParam(r, "projectID"), 10, 64)
-	if err != nil {
-		http.Error(w, "invalid project id", http.StatusBadRequest)
-		return
-	}
-
-	var tasks []*domain.AgentTask
-	if pid == 0 {
-		tasks, err = h.agentSvc.ListTasksForDir(r.Context())
-	} else {
-		tasks, err = h.agentSvc.ListTasks(r.Context(), pid)
-	}
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-	if tasks == nil {
-		tasks = []*domain.AgentTask{}
-	}
-	json.NewEncoder(w).Encode(tasks)
-}
-
-func (h *CodeHandler) AgentStatus(w http.ResponseWriter, r *http.Request) {
-	pid, err := strconv.ParseInt(chi.URLParam(r, "projectID"), 10, 64)
-	if err != nil {
-		http.Error(w, "invalid project id", http.StatusBadRequest)
-		return
-	}
-
-	var running bool
-	if pid == 0 {
-		running = h.agentSvc.IsAgentRunningForDir(r.Context(), "system")
-	} else {
-		running = h.agentSvc.IsAgentRunning(r.Context(), pid)
-	}
-
-	json.NewEncoder(w).Encode(map[string]bool{"running": running})
-}
-
-func (h *CodeHandler) StartAgent(w http.ResponseWriter, r *http.Request) {
-	pid, err := strconv.ParseInt(chi.URLParam(r, "projectID"), 10, 64)
-	if err != nil {
-		http.Error(w, "invalid project id", http.StatusBadRequest)
-		return
-	}
-
-	if pid == 0 {
-		if err := h.agentSvc.StartAgentForDir(r.Context(), "system", h.cfg.SystemCodeDir); err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
-	} else {
-		if err := h.agentSvc.StartAgent(r.Context(), pid); err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
-	}
-
-	w.WriteHeader(http.StatusOK)
-}
-
-func (h *CodeHandler) StopAgent(w http.ResponseWriter, r *http.Request) {
-	pid, err := strconv.ParseInt(chi.URLParam(r, "projectID"), 10, 64)
-	if err != nil {
-		http.Error(w, "invalid project id", http.StatusBadRequest)
-		return
-	}
-
-	if pid == 0 {
-		if err := h.agentSvc.StopAgentForDir(r.Context(), "system"); err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
-	} else {
-		if err := h.agentSvc.StopAgent(r.Context(), pid); err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
-	}
-
-	w.WriteHeader(http.StatusOK)
-}
-
-func (h *CodeHandler) ListSessions(w http.ResponseWriter, r *http.Request) {
-	pid, err := strconv.ParseInt(chi.URLParam(r, "projectID"), 10, 64)
-	if err != nil {
-		http.Error(w, "invalid project id", http.StatusBadRequest)
-		return
-	}
-
-	sessions, err := h.agentSvc.ListSessions(r.Context(), pid)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-	if sessions == nil {
-		sessions = []*domain.AgentSession{}
-	}
-	json.NewEncoder(w).Encode(sessions)
-}
-
-func (h *CodeHandler) CreateSession(w http.ResponseWriter, r *http.Request) {
-	pid, err := strconv.ParseInt(chi.URLParam(r, "projectID"), 10, 64)
-	if err != nil {
-		http.Error(w, "invalid project id", http.StatusBadRequest)
-		return
-	}
-
-	var req struct {
-		Name string `json:"name"`
-	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "invalid request body", http.StatusBadRequest)
-		return
-	}
-	if req.Name == "" {
-		req.Name = "New Chat"
-	}
-
-	sess, err := h.agentSvc.CreateSession(r.Context(), pid, req.Name)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-	w.WriteHeader(http.StatusCreated)
-	json.NewEncoder(w).Encode(sess)
-}
-
-func (h *CodeHandler) RenameSession(w http.ResponseWriter, r *http.Request) {
-	sessionID := chi.URLParam(r, "sessionId")
-	if sessionID == "" {
-		http.Error(w, "session id required", http.StatusBadRequest)
-		return
-	}
-
-	var req struct {
-		Name string `json:"name"`
-	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "invalid request body", http.StatusBadRequest)
-		return
-	}
-	if req.Name == "" {
-		http.Error(w, "name is required", http.StatusBadRequest)
-		return
-	}
-
-	if err := h.agentSvc.RenameSession(r.Context(), sessionID, req.Name); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-	w.WriteHeader(http.StatusOK)
-}
-
-func (h *CodeHandler) DeleteSession(w http.ResponseWriter, r *http.Request) {
-	sessionID := chi.URLParam(r, "sessionId")
-	if sessionID == "" {
-		http.Error(w, "session id required", http.StatusBadRequest)
-		return
-	}
-
-	if err := h.agentSvc.DeleteSession(r.Context(), sessionID); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-	w.WriteHeader(http.StatusOK)
-}
-
-func (h *CodeHandler) ListSessionTasks(w http.ResponseWriter, r *http.Request) {
-	sessionID := chi.URLParam(r, "sessionId")
-	if sessionID == "" {
-		http.Error(w, "session id required", http.StatusBadRequest)
-		return
-	}
-
-	tasks, err := h.agentSvc.ListTasksBySession(r.Context(), sessionID)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-	if tasks == nil {
-		tasks = []*domain.AgentTask{}
-	}
-	json.NewEncoder(w).Encode(tasks)
 }
 
 func (h *CodeHandler) TreeAsJSON(entries []FileEntry) []map[string]interface{} {
