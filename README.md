@@ -170,8 +170,6 @@ See `.env.example` for all configurable variables and defaults.
 │       ├── app/                   # Pages (login, setup, dashboard, projects)
 │       ├── components/            # UI components (shadcn/ui)
 │       └── lib/                   # API client + types
-├── agent-server/                  # Agent bridge server
-├── agent-bridge/                  # Agent bridge client
 ├── Caddyfile                      # Caddy config template
 ├── docker-compose.yml             # Production stack
 └── Makefile
