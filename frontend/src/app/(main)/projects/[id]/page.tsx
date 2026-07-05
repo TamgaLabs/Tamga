@@ -2,7 +2,6 @@
 
 import { useEffect, useState, useCallback } from "react";
 import { useParams, useRouter } from "next/navigation";
-import dynamic from "next/dynamic";
 import {
   getProject,
   deleteProject,
@@ -13,26 +12,37 @@ import {
   listEnvVars,
   createEnvVar,
   deleteEnvVar,
-  getFileTree,
-  readFile,
-  writeFile,
   type Project,
   type Deployment,
   type EnvVar,
-  type FileEntry,
-} from "@/lib/api";
-import {
   listAgentProviders,
   type AgentProvider,
 } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
-import { useTheme } from "@/lib/theme";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-
-const MonacoEditor = dynamic(() => import("@monaco-editor/react"), { ssr: false });
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import { FileCode2 } from "lucide-react";
 
 const statusVariant: Record<string, "success" | "warning" | "error" | "info" | "default"> = {
   running: "success",
@@ -46,7 +56,8 @@ export default function ProjectDetailPage() {
   const params = useParams();
   const router = useRouter();
   const [project, setProject] = useState<Project | null>(null);
-  const [tab, setTab] = useState<"overview" | "settings" | "environment">("overview");
+  const [tab, setTab] = useState("overview");
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const { user, loading: authLoading } = useAuth();
 
   const fetchProject = useCallback(() => {
@@ -67,25 +78,13 @@ export default function ProjectDetailPage() {
     fetchProject();
   };
 
-  const handleRedeploy = async () => {
-    if (!project) return;
-    await restartProject(project.id);
-    fetchProject();
-  };
-
   const handleDelete = async () => {
-    if (!project || !confirm("Delete this project?")) return;
+    if (!project) return;
     await deleteProject(project.id);
     router.push("/dashboard");
   };
 
   if (authLoading || !user || !project) return null;
-
-  const tabs = [
-    { id: "overview" as const, label: "Overview" },
-    { id: "settings" as const, label: "Settings" },
-    { id: "environment" as const, label: "Environment" },
-  ];
 
   return (
     <div className="min-h-screen p-6 max-w-5xl mx-auto">
@@ -101,39 +100,58 @@ export default function ProjectDetailPage() {
         <Badge variant={statusVariant[project.status] || "default"}>{project.status}</Badge>
       </div>
 
-      <div className="flex gap-1 mb-6 border-b border-border items-center">
-        {tabs.map((t) => (
-          <button
-            key={t.id}
-            onClick={() => setTab(t.id)}
-            className={`px-4 py-2 text-sm font-medium transition-colors ${
-              tab === t.id
-                ? "border-b-2 border-foreground text-foreground"
-                : "text-muted-foreground hover:text-card-foreground"
-            }`}
-          >
-            {t.label}
-          </button>
-        ))}
-        <div className="ml-auto">
-          <Button
-            size="sm"
-            className="bg-accent text-accent-foreground hover:bg-accent/90"
-            onClick={() => router.push(`/code/${project.id}`)}
-          >
-            Code
-          </Button>
+      <Tabs value={tab} onValueChange={setTab}>
+        <div className="flex items-center gap-1 mb-6">
+          <TabsList>
+            <TabsTrigger value="overview">Overview</TabsTrigger>
+            <TabsTrigger value="settings">Settings</TabsTrigger>
+            <TabsTrigger value="environment">Environment</TabsTrigger>
+          </TabsList>
+          <div className="ml-auto">
+            <Button
+              size="sm"
+              onClick={() => router.push(`/code/${project.id}`)}
+            >
+              Code
+            </Button>
+          </div>
         </div>
-      </div>
 
-      {tab === "overview" && <OverviewTab project={project} onUpdate={fetchProject} />}
-      {tab === "settings" && <ProjectSettingsTab project={project} onUpdate={fetchProject} />}
-      {tab === "environment" && <EnvironmentTab projectId={project.id} />}
+        <TabsContent value="overview">
+          <OverviewTab
+            project={project}
+            onRestart={handleRestart}
+            onDelete={() => setDeleteDialogOpen(true)}
+          />
+        </TabsContent>
+        <TabsContent value="settings">
+          <ProjectSettingsTab project={project} onUpdate={fetchProject} />
+        </TabsContent>
+        <TabsContent value="environment">
+          <EnvironmentTab projectId={project.id} />
+        </TabsContent>
+      </Tabs>
+
+      <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete project?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will permanently delete &quot;{project.name}&quot; and its
+              associated container. This action cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={handleDelete}>Delete</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
 
-function OverviewTab({ project, onUpdate }: { project: Project; onUpdate: () => void }) {
+function OverviewTab({ project, onRestart, onDelete }: { project: Project; onRestart: () => void; onDelete: () => void }) {
   const router = useRouter();
   const [deployments, setDeployments] = useState<Deployment[]>([]);
   const [logs, setLogs] = useState<string>("");
@@ -185,15 +203,16 @@ function OverviewTab({ project, onUpdate }: { project: Project; onUpdate: () => 
         </CardHeader>
         <CardContent className="space-y-2">
           <Button variant="outline" size="sm" className="w-full" onClick={() => router.push(`/code/${project.id}`)}>
+            <FileCode2 className="h-4 w-4 mr-1" />
             Open in Code IDE
           </Button>
-          <Button variant="outline" size="sm" className="w-full" onClick={handleRestart}>
+          <Button variant="outline" size="sm" className="w-full" onClick={onRestart}>
             Restart
           </Button>
           <Button variant="outline" size="sm" className="w-full" onClick={loadLogs}>
             View Logs
           </Button>
-          <Button variant="destructive" size="sm" className="w-full" onClick={handleDelete}>
+          <Button variant="destructive" size="sm" className="w-full" onClick={onDelete}>
             Delete
           </Button>
         </CardContent>
@@ -243,15 +262,6 @@ function OverviewTab({ project, onUpdate }: { project: Project; onUpdate: () => 
       </Card>
     </div>
   );
-
-  function handleRestart() {
-    restartProject(project.id).then(onUpdate).catch(console.error);
-  }
-
-  function handleDelete() {
-    if (!confirm("Delete this project?")) return;
-    deleteProject(project.id).then(() => window.location.href = "/dashboard");
-  }
 }
 
 function ProjectSettingsTab({ project, onUpdate }: { project: Project; onUpdate: () => void }) {
@@ -282,30 +292,31 @@ function ProjectSettingsTab({ project, onUpdate }: { project: Project; onUpdate:
           <CardTitle className="text-sm">Project Settings</CardTitle>
         </CardHeader>
         <CardContent className="space-y-3">
-          <div>
-            <label className="text-xs text-muted-foreground block mb-1">Name</label>
+          <div className="space-y-1">
+            <Label className="text-xs">Name</Label>
             <Input value={editName} onChange={(e) => setEditName(e.target.value)} />
           </div>
-          <div>
-            <label className="text-xs text-muted-foreground block mb-1">Domain</label>
+          <div className="space-y-1">
+            <Label className="text-xs">Domain</Label>
             <Input value={editDomain} onChange={(e) => setEditDomain(e.target.value)} />
           </div>
-          <div>
-            <label className="text-xs text-muted-foreground block mb-1">Branch</label>
+          <div className="space-y-1">
+            <Label className="text-xs">Branch</Label>
             <Input value={editBranch} onChange={(e) => setEditBranch(e.target.value)} />
           </div>
-          <div>
-            <label className="text-xs text-muted-foreground block mb-1">Agent Provider</label>
-            <select
-              className="w-full h-9 rounded-md border border-border bg-card px-3 text-sm"
-              value={editProviderId}
-              onChange={(e) => setEditProviderId(e.target.value)}
-            >
-              <option value="">Default (builtin-opencode)</option>
-              {providers.map((p) => (
-                <option key={p.id} value={p.id}>{p.name} ({p.provider_type})</option>
-              ))}
-            </select>
+          <div className="space-y-1">
+            <Label className="text-xs">Agent Provider</Label>
+            <Select value={editProviderId} onValueChange={setEditProviderId}>
+              <SelectTrigger>
+                <SelectValue placeholder="Default (builtin-opencode)" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="">Default (builtin-opencode)</SelectItem>
+                {providers.map((p) => (
+                  <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
           <Button size="sm" onClick={handleSaveProject}>Save</Button>
         </CardContent>
@@ -376,146 +387,3 @@ function EnvironmentTab({ projectId }: { projectId: number }) {
     </div>
   );
 }
-
-function CodeTab({ projectId }: { projectId: number }) {
-  const { theme } = useTheme();
-  const [files, setFiles] = useState<FileEntry[]>([]);
-  const [currentPath, setCurrentPath] = useState("");
-  const [content, setContent] = useState("");
-  const [originalContent, setOriginalContent] = useState("");
-  const [dirty, setDirty] = useState(false);
-  const [expandedDirs, setExpandedDirs] = useState<Set<string>>(new Set());
-
-  useEffect(() => {
-    getFileTree(projectId).then(setFiles).catch(console.error);
-  }, [projectId]);
-
-  const openFile = async (path: string) => {
-    if (dirty && !confirm("Discard unsaved changes?")) return;
-    try {
-      const res = await readFile(projectId, path);
-      setCurrentPath(path);
-      setContent(res.content);
-      setOriginalContent(res.content);
-      setDirty(false);
-    } catch (e) {
-      console.error(e);
-    }
-  };
-
-  const handleSave = async () => {
-    if (!currentPath) return;
-    try {
-      await writeFile(projectId, currentPath, content);
-      setOriginalContent(content);
-      setDirty(false);
-    } catch (e) {
-      console.error(e);
-    }
-  };
-
-  const toggleDir = (path: string) => {
-    setExpandedDirs((prev) => {
-      const next = new Set(prev);
-      if (next.has(path)) next.delete(path);
-      else next.add(path);
-      return next;
-    });
-  };
-
-  const buildTree = (entries: FileEntry[]) => {
-    const root: Record<string, any> = {};
-    for (const e of entries) {
-      const parts = e.path.split("/");
-      let current = root;
-      for (let i = 0; i < parts.length; i++) {
-        const part = parts[i];
-        if (!current[part]) current[part] = {};
-        current = current[part];
-      }
-      current._entry = e;
-    }
-    const render = (obj: Record<string, any>, depth = 0): React.ReactNode[] => {
-      return Object.keys(obj)
-        .filter((k) => !k.startsWith("_"))
-        .sort((a, b) => {
-          const ae = obj[a]._entry;
-          const be = obj[b]._entry;
-          if (ae?.type !== be?.type) return ae?.type === "dir" ? -1 : 1;
-          return a.localeCompare(b);
-        })
-        .map((key) => {
-          const entry = obj[key]._entry;
-          if (!entry) return null;
-          const isExpanded = expandedDirs.has(entry.path);
-          return (
-            <div key={entry.path}>
-              <div
-                className={`flex items-center gap-1 px-2 py-0.5 text-xs cursor-pointer rounded hover:bg-muted ${
-                  currentPath === entry.path ? "bg-muted text-accent" : "text-muted-foreground"
-                }`}
-                style={{ paddingLeft: `${12 + depth * 12}px` }}
-                onClick={() => {
-                  if (entry.type === "dir") toggleDir(entry.path);
-                  else openFile(entry.path);
-                }}
-              >
-                <span className="w-4 text-center">
-                  {entry.type === "dir" ? (isExpanded ? "▼" : "▶") : "📄"}
-                </span>
-                <span className="truncate">{key}</span>
-              </div>
-              {entry.type === "dir" && isExpanded && render(obj[key], depth + 1)}
-            </div>
-          );
-        });
-    };
-    return render(root);
-  };
-
-  const detectLanguage = (path: string): string => {
-    const ext = path.split(".").pop()?.toLowerCase() || "";
-    const map: Record<string, string> = {
-      ts: "typescript", tsx: "typescript", js: "javascript", jsx: "javascript",
-      go: "go", py: "python", rs: "rust", rb: "ruby", java: "java",
-      json: "json", yaml: "yaml", yml: "yaml", md: "markdown",
-      css: "css", scss: "scss", html: "html", xml: "xml",
-      sql: "sql", sh: "shell", bash: "shell", dockerfile: "dockerfile",
-    };
-    return map[ext] || "plaintext";
-  };
-
-  return (
-    <div className="flex gap-4 h-[70vh]">
-      <div className="w-56 bg-card border border-border rounded overflow-auto flex-shrink-0">
-        <div className="p-2 text-xs font-semibold text-muted-foreground uppercase border-b border-border">Files</div>
-        <div className="py-1">{buildTree(files)}</div>
-      </div>
-      <div className="flex-1 flex flex-col border border-border rounded overflow-hidden">
-        {currentPath ? (
-          <>
-            <div className="flex items-center justify-between px-3 py-1.5 border-b border-border bg-card">
-              <span className="text-xs text-card-foreground font-mono">{currentPath}</span>
-              {dirty && <Button size="sm" variant="outline" onClick={handleSave}>Save</Button>}
-            </div>
-            <div className="flex-1">
-              <MonacoEditor
-                language={detectLanguage(currentPath)}
-                theme={theme === "dark" ? "vs-dark" : "vs"}
-                value={content}
-                onChange={(v) => {
-                  setContent(v || "");
-                  setDirty(v !== originalContent);
-                }}
-                options={{ minimap: { enabled: false }, fontSize: 13, lineNumbers: "on", scrollBeyondLastLine: false, automaticLayout: true }}
-              />
-            </div>
-          </>
-        ) : (
-          <div className="flex-1 flex items-center justify-center text-sm text-muted-foreground">Select a file to edit</div>
-        )}
-      </div>
-    </div>
-  );
-}
-

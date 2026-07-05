@@ -32,12 +32,23 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 
 export default function SettingsPage() {
   const [info, setInfo] = useState<DockerInfo | null>(null);
   const [showSystemState, setShowSystemState] = useState(true);
   const [providers, setProviders] = useState<AgentProvider[]>([]);
   const [apiKeys, setApiKeys] = useState<ApiKeyEntry[]>([]);
+  const [pruneDialogOpen, setPruneDialogOpen] = useState(false);
   const { user, loading: authLoading } = useAuth();
   const router = useRouter();
 
@@ -67,11 +78,12 @@ export default function SettingsPage() {
   };
 
   const handlePrune = async () => {
-    if (!confirm("Prune all unused containers, images, volumes, and networks?")) return;
     try {
       await systemPrune();
     } catch (e) {
       console.error(e);
+    } finally {
+      setPruneDialogOpen(false);
     }
   };
 
@@ -154,7 +166,7 @@ export default function SettingsPage() {
               <p className="text-sm text-muted-foreground">Loading...</p>
             )}
             <div className="mt-4 pt-4">
-              <Button variant="destructive" size="sm" onClick={handlePrune}>
+              <Button variant="destructive" size="sm" onClick={() => setPruneDialogOpen(true)}>
                 Prune All
               </Button>
             </div>
@@ -163,6 +175,22 @@ export default function SettingsPage() {
         <AgentProvidersCard providers={providers} onUpdate={loadProviders} />
         <ApiKeysCard keys={apiKeys} onUpdate={loadApiKeys} />
       </div>
+
+      <AlertDialog open={pruneDialogOpen} onOpenChange={setPruneDialogOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Prune Docker resources?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will remove all unused containers, images, volumes, and
+              networks. This action cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={handlePrune}>Prune</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
@@ -185,6 +213,7 @@ function ApiKeysCard({ keys, onUpdate }: { keys: ApiKeyEntry[]; onUpdate: () => 
   const [provider, setProvider] = useState("");
   const [keyValue, setKeyValue] = useState("");
   const [showForm, setShowForm] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState<ApiKeyEntry | null>(null);
 
   const resetForm = () => {
     setProvider("");
@@ -204,13 +233,18 @@ function ApiKeysCard({ keys, onUpdate }: { keys: ApiKeyEntry[]; onUpdate: () => 
   };
 
   const handleDelete = async (id: string) => {
-    if (!confirm("Delete this API key?")) return;
     try {
       await deleteApiKey(id);
       onUpdate();
     } catch (e) {
       console.error(e);
     }
+  };
+
+  const confirmDelete = async () => {
+    if (!deleteTarget) return;
+    await handleDelete(deleteTarget.id);
+    setDeleteTarget(null);
   };
 
   return (
@@ -265,7 +299,7 @@ function ApiKeysCard({ keys, onUpdate }: { keys: ApiKeyEntry[]; onUpdate: () => 
                   <Button variant="ghost" size="sm" onClick={() => { setProvider(k.provider); setKeyValue(""); setShowForm(true); }}>
                     Update
                   </Button>
-                  <Button variant="ghost" size="sm" className="text-destructive" onClick={() => handleDelete(k.id)}>
+                  <Button variant="ghost" size="sm" className="text-destructive" onClick={() => setDeleteTarget(k)}>
                     Delete
                   </Button>
                 </div>
@@ -274,6 +308,22 @@ function ApiKeysCard({ keys, onUpdate }: { keys: ApiKeyEntry[]; onUpdate: () => 
           </div>
         )}
       </CardContent>
+
+      <AlertDialog open={!!deleteTarget} onOpenChange={(open) => !open && setDeleteTarget(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete API key?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will delete the API key for &quot;{deleteTarget?.provider}&quot;.
+              This action cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={confirmDelete}>Delete</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </Card>
   );
 }
@@ -283,6 +333,7 @@ function AgentProvidersCard({ providers, onUpdate }: { providers: AgentProvider[
   const [editId, setEditId] = useState<string | null>(null);
   const [name, setName] = useState("");
   const [image, setImage] = useState("");
+  const [deleteTarget, setDeleteTarget] = useState<AgentProvider | null>(null);
 
   const resetForm = () => {
     setName("");
@@ -314,13 +365,18 @@ function AgentProvidersCard({ providers, onUpdate }: { providers: AgentProvider[
   };
 
   const handleDelete = async (id: string) => {
-    if (!confirm("Delete this agent provider?")) return;
     try {
       await deleteAgentProvider(id);
       onUpdate();
     } catch (e) {
       console.error(e);
     }
+  };
+
+  const confirmDelete = async () => {
+    if (!deleteTarget) return;
+    await handleDelete(deleteTarget.id);
+    setDeleteTarget(null);
   };
 
   return (
@@ -359,7 +415,7 @@ function AgentProvidersCard({ providers, onUpdate }: { providers: AgentProvider[
                 <div className="flex gap-1">
                   <Button variant="ghost" size="sm" onClick={() => handleEdit(p)}>Edit</Button>
                   {!p.is_default && (
-                    <Button variant="ghost" size="sm" className="text-destructive" onClick={() => handleDelete(p.id)}>
+                    <Button variant="ghost" size="sm" className="text-destructive" onClick={() => setDeleteTarget(p)}>
                       Delete
                     </Button>
                   )}
@@ -369,6 +425,22 @@ function AgentProvidersCard({ providers, onUpdate }: { providers: AgentProvider[
           </div>
         )}
       </CardContent>
+
+      <AlertDialog open={!!deleteTarget} onOpenChange={(open) => !open && setDeleteTarget(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete agent provider?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will permanently delete &quot;{deleteTarget?.name}&quot;. This
+              action cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={confirmDelete}>Delete</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </Card>
   );
 }

@@ -15,6 +15,25 @@ import { getShowSystem } from "@/lib/settings";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import { MoreVertical, Search } from "lucide-react";
 
 const statusVariant: Record<string, "success" | "warning" | "error" | "info" | "default"> = {
   running: "success",
@@ -27,7 +46,7 @@ export default function ContainersPage() {
   const [containers, setContainers] = useState<ContainerInfo[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
-  const [menuOpen, setMenuOpen] = useState<string | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<ContainerInfo | null>(null);
   const { user, loading: authLoading } = useAuth();
   const router = useRouter();
 
@@ -58,23 +77,19 @@ export default function ContainersPage() {
   };
 
   const handleDelete = async (id: string) => {
-    if (!confirm("Delete this container? This action cannot be undone.")) return;
     try {
       await removeContainer(id);
-      setMenuOpen(null);
       fetch();
     } catch (e) {
       console.error(e);
     }
   };
 
-  useEffect(() => {
-    const close = () => setMenuOpen(null);
-    if (menuOpen) {
-      document.addEventListener("click", close);
-      return () => document.removeEventListener("click", close);
-    }
-  }, [menuOpen]);
+  const confirmDelete = async () => {
+    if (!deleteTarget) return;
+    await handleDelete(deleteTarget.id);
+    setDeleteTarget(null);
+  };
 
   const showSystem = getShowSystem();
 
@@ -92,13 +107,16 @@ export default function ContainersPage() {
     <div className="p-6 max-w-6xl mx-auto">
       <div className="flex items-center justify-between mb-6">
         <h1 className="text-2xl font-bold">Containers</h1>
-        <input
-          type="text"
-          placeholder="Search by name..."
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          className="bg-background border border-border rounded px-3 py-1.5 text-sm text-foreground max-w-xs"
-        />
+        <div className="relative max-w-xs">
+          <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+          <Input
+            type="text"
+            placeholder="Search by name..."
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            className="pl-8"
+          />
+        </div>
       </div>
 
       {loading ? (
@@ -119,7 +137,7 @@ export default function ContainersPage() {
                 <CardContent className="p-4">
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-3 min-w-0">
-                      <span className="font-mono text-sm text-accent truncate max-w-48">
+                      <span className="font-mono text-sm text-foreground truncate max-w-48">
                         {name}
                       </span>
                       <Badge variant={statusVariant[c.state] || "default"}>{c.state}</Badge>
@@ -145,24 +163,21 @@ export default function ContainersPage() {
                         <Button variant="outline" size="sm" onClick={() => handleAction(c.id, "restart")}>
                           Restart
                         </Button>
-                        <div className="relative">
-                          <button
-                            className="text-muted-foreground hover:text-foreground px-1 text-lg leading-none"
-                            onClick={() => setMenuOpen(menuOpen === c.id ? null : c.id)}
-                          >
-                            ⋮
-                          </button>
-                          {menuOpen === c.id && (
-                            <div className="absolute right-0 top-full mt-1 bg-card border border-border rounded shadow-lg z-10 min-w-28">
-                              <button
-                                className="w-full text-left px-3 py-1.5 text-sm text-destructive hover:bg-muted"
-                                onClick={() => handleDelete(c.id)}
-                              >
-                                Delete
-                              </button>
-                            </div>
-                          )}
-                        </div>
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button variant="ghost" size="icon" className="h-8 w-8">
+                              <MoreVertical className="h-4 w-4" />
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end">
+                            <DropdownMenuItem
+                              className="text-destructive"
+                              onClick={() => setDeleteTarget(c)}
+                            >
+                              Delete
+                            </DropdownMenuItem>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
                       </div>
                     </div>
                   </div>
@@ -178,6 +193,23 @@ export default function ContainersPage() {
           })}
         </div>
       )}
+
+      <AlertDialog open={!!deleteTarget} onOpenChange={(open) => !open && setDeleteTarget(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete container?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will permanently delete &quot;
+              {deleteTarget?.name || deleteTarget?.id.slice(0, 12)}&quot;. This action
+              cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={confirmDelete}>Delete</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
