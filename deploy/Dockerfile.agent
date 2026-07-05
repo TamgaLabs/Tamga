@@ -1,6 +1,6 @@
 FROM node:22-alpine
 RUN apk add --no-cache git openssh-client curl
-RUN npm i -g opencode-ai@latest
+RUN npm i -g opencode-ai@latest @anthropic-ai/claude-code@latest @openai/codex@latest @google/gemini-cli@latest
 WORKDIR /workspace
 # No in-container server process anymore: the backend execs a shell directly
 # via the Docker API (ContainerExecCreate/Attach), so this just needs to be a
