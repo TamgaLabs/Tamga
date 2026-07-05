@@ -9,20 +9,35 @@ import {
   createAgentProvider,
   updateAgentProvider,
   deleteAgentProvider,
+  listApiKeys,
+  setApiKey,
+  deleteApiKey,
   type DockerInfo,
   type AgentProvider,
+  type ApiKeyEntry,
 } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { getShowSystem, setShowSystem } from "@/lib/settings";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Separator } from "@/components/ui/separator";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 
 export default function SettingsPage() {
   const [info, setInfo] = useState<DockerInfo | null>(null);
-  const [showSystem, setShowSystemState] = useState(true);
+  const [showSystemState, setShowSystemState] = useState(true);
   const [providers, setProviders] = useState<AgentProvider[]>([]);
+  const [apiKeys, setApiKeys] = useState<ApiKeyEntry[]>([]);
   const { user, loading: authLoading } = useAuth();
   const router = useRouter();
 
@@ -30,19 +45,23 @@ export default function SettingsPage() {
     if (!authLoading && !user) router.replace("/login");
   }, [user, authLoading, router]);
 
+  const loadProviders = useCallback(() => {
+    listAgentProviders().then(setProviders).catch(console.error);
+  }, []);
+  const loadApiKeys = useCallback(() => {
+    listApiKeys().then(setApiKeys).catch(console.error);
+  }, []);
+
   useEffect(() => {
     if (!user) return;
     systemInfo().then(setInfo).catch(console.error);
     setShowSystemState(getShowSystem());
     loadProviders();
-  }, [user]);
-
-  const loadProviders = useCallback(() => {
-    listAgentProviders().then(setProviders).catch(console.error);
-  }, []);
+    loadApiKeys();
+  }, [user, loadProviders, loadApiKeys]);
 
   const handleToggleSystem = () => {
-    const next = !showSystem;
+    const next = !showSystemState;
     setShowSystemState(next);
     setShowSystem(next);
   };
@@ -68,16 +87,15 @@ export default function SettingsPage() {
             <CardTitle className="text-sm">Display</CardTitle>
           </CardHeader>
           <CardContent>
-              <label className="flex items-center gap-2 text-sm cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={showSystem}
-                  onChange={handleToggleSystem}
-                  className="accent-accent"
-                />
-              Show Tamga System
-            </label>
-              <p className="text-xs text-muted-foreground mt-1">
+            <div className="flex items-center gap-2">
+              <Checkbox
+                id="show-system"
+                checked={showSystemState}
+                onCheckedChange={handleToggleSystem}
+              />
+              <Label htmlFor="show-system">Show Tamga System</Label>
+            </div>
+            <p className="text-xs text-muted-foreground mt-2">
               When disabled, Tamga system containers and codebases are hidden from all pages.
             </p>
           </CardContent>
@@ -88,54 +106,54 @@ export default function SettingsPage() {
             <CardTitle className="text-sm">Docker</CardTitle>
           </CardHeader>
           <CardContent>
-              {info ? (
-                <div className="text-sm space-y-2 text-muted-foreground">
-                  <div className="flex justify-between">
-                    <span>Version</span>
-                    <span className="text-foreground">{info.version}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span>OS</span>
-                    <span className="text-foreground">{info.os}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span>Architecture</span>
-                    <span className="text-foreground">{info.architecture}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span>Kernel</span>
-                    <span className="text-foreground">{info.kernel}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span>Storage Driver</span>
-                    <span className="text-foreground">{info.driver}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span>Name</span>
-                    <span className="text-foreground">{info.name}</span>
-                  </div>
-                  <div className="border-t border-border my-2" />
-                  <div className="flex justify-between">
-                    <span>CPU</span>
-                    <span className="text-foreground">{info.cpus} cores</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span>Memory</span>
-                    <span className="text-foreground">{(info.memory / 1024 / 1024 / 1024).toFixed(1)} GB</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span>Containers</span>
-                    <span className="text-foreground">{info.containers} ({info.running} running, {info.paused} paused, {info.stopped} stopped)</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span>Images</span>
-                    <span className="text-foreground">{info.images}</span>
-                  </div>
+            {info ? (
+              <div className="text-sm space-y-2 text-muted-foreground">
+                <div className="flex justify-between">
+                  <span>Version</span>
+                  <span className="text-foreground">{info.version}</span>
                 </div>
-              ) : (
-                <p className="text-sm text-muted-foreground">Loading...</p>
-              )}
-              <div className="mt-4 pt-4 border-t border-border">
+                <div className="flex justify-between">
+                  <span>OS</span>
+                  <span className="text-foreground">{info.os}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span>Architecture</span>
+                  <span className="text-foreground">{info.architecture}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span>Kernel</span>
+                  <span className="text-foreground">{info.kernel}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span>Storage Driver</span>
+                  <span className="text-foreground">{info.driver}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span>Name</span>
+                  <span className="text-foreground">{info.name}</span>
+                </div>
+                <Separator />
+                <div className="flex justify-between">
+                  <span>CPU</span>
+                  <span className="text-foreground">{info.cpus} cores</span>
+                </div>
+                <div className="flex justify-between">
+                  <span>Memory</span>
+                  <span className="text-foreground">{(info.memory / 1024 / 1024 / 1024).toFixed(1)} GB</span>
+                </div>
+                <div className="flex justify-between">
+                  <span>Containers</span>
+                  <span className="text-foreground">{info.containers} ({info.running} running, {info.paused} paused, {info.stopped} stopped)</span>
+                </div>
+                <div className="flex justify-between">
+                  <span>Images</span>
+                  <span className="text-foreground">{info.images}</span>
+                </div>
+              </div>
+            ) : (
+              <p className="text-sm text-muted-foreground">Loading...</p>
+            )}
+            <div className="mt-4 pt-4">
               <Button variant="destructive" size="sm" onClick={handlePrune}>
                 Prune All
               </Button>
@@ -143,8 +161,120 @@ export default function SettingsPage() {
           </CardContent>
         </Card>
         <AgentProvidersCard providers={providers} onUpdate={loadProviders} />
+        <ApiKeysCard keys={apiKeys} onUpdate={loadApiKeys} />
       </div>
     </div>
+  );
+}
+
+const PROVIDER_OPTIONS = [
+  { value: "anthropic", label: "Anthropic" },
+  { value: "openai", label: "OpenAI" },
+  { value: "google", label: "Google" },
+  { value: "groq", label: "Groq" },
+  { value: "deepseek", label: "DeepSeek" },
+  { value: "mistral", label: "Mistral" },
+  { value: "cohere", label: "Cohere" },
+  { value: "together", label: "Together" },
+  { value: "openrouter", label: "OpenRouter" },
+  { value: "xai", label: "xAI" },
+  { value: "huggingface", label: "HuggingFace" },
+];
+
+function ApiKeysCard({ keys, onUpdate }: { keys: ApiKeyEntry[]; onUpdate: () => void }) {
+  const [provider, setProvider] = useState("");
+  const [keyValue, setKeyValue] = useState("");
+  const [showForm, setShowForm] = useState(false);
+
+  const resetForm = () => {
+    setProvider("");
+    setKeyValue("");
+    setShowForm(false);
+  };
+
+  const handleSave = async () => {
+    if (!provider || !keyValue) return;
+    try {
+      await setApiKey(provider, keyValue);
+      resetForm();
+      onUpdate();
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  const handleDelete = async (id: string) => {
+    if (!confirm("Delete this API key?")) return;
+    try {
+      await deleteApiKey(id);
+      onUpdate();
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  return (
+    <Card>
+      <CardHeader className="flex flex-row items-center justify-between">
+        <CardTitle className="text-sm">API Keys</CardTitle>
+        <Button size="sm" variant="outline" onClick={() => { resetForm(); setShowForm(!showForm); }}>
+          {showForm ? "Cancel" : "Add Key"}
+        </Button>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        {showForm && (
+          <div className="space-y-2 p-3 border border-border rounded bg-card">
+            <div className="space-y-1">
+              <Label className="text-xs">Provider</Label>
+              <Select value={provider} onValueChange={setProvider}>
+                <SelectTrigger className="w-full">
+                  <SelectValue placeholder="Select provider" />
+                </SelectTrigger>
+                <SelectContent>
+                  {PROVIDER_OPTIONS.map((opt) => (
+                    <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1">
+              <Label className="text-xs">API Key</Label>
+              <Input
+                value={keyValue}
+                onChange={(e) => setKeyValue(e.target.value)}
+                placeholder="sk-..."
+                type="password"
+              />
+            </div>
+            <Button size="sm" onClick={handleSave}>Set Key</Button>
+          </div>
+        )}
+        {keys.length === 0 ? (
+          <p className="text-sm text-muted-foreground">No API keys configured. Add keys for your LLM providers.</p>
+        ) : (
+          <div className="text-sm space-y-2">
+            {keys.map((k) => (
+              <div key={k.id} className="flex items-center justify-between py-1.5 border-b border-border last:border-0">
+                <div className="flex items-center gap-2">
+                  <span className="font-medium capitalize">{k.provider}</span>
+                  <Badge variant="outline" className="text-xs font-mono">
+                    {k.has_key ? "••••••••" : "not set"}
+                  </Badge>
+                </div>
+                <div className="flex gap-1">
+                  <Button variant="ghost" size="sm" onClick={() => { setProvider(k.provider); setKeyValue(""); setShowForm(true); }}>
+                    Update
+                  </Button>
+                  <Button variant="ghost" size="sm" className="text-destructive" onClick={() => handleDelete(k.id)}>
+                    Delete
+                  </Button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </CardContent>
+    </Card>
   );
 }
 
@@ -152,37 +282,29 @@ function AgentProvidersCard({ providers, onUpdate }: { providers: AgentProvider[
   const [showForm, setShowForm] = useState(false);
   const [editId, setEditId] = useState<string | null>(null);
   const [name, setName] = useState("");
-  const [providerType, setProviderType] = useState<"docker" | "http">("docker");
   const [image, setImage] = useState("");
-  const [command, setCommand] = useState("");
-  const [endpoint, setEndpoint] = useState("");
 
   const resetForm = () => {
     setName("");
-    setProviderType("docker");
     setImage("");
-    setCommand("");
-    setEndpoint("");
     setShowForm(false);
     setEditId(null);
   };
 
   const handleEdit = (p: AgentProvider) => {
     setName(p.name);
-    setProviderType(p.provider_type);
     setImage(p.image || "");
-    setCommand(p.command || "");
-    setEndpoint(p.endpoint || "");
     setEditId(p.id);
     setShowForm(true);
   };
 
   const handleSave = async () => {
+    const data = { name, image };
     try {
       if (editId) {
-        await updateAgentProvider(editId, { name, provider_type: providerType, image, command, endpoint });
+        await updateAgentProvider(editId, data);
       } else {
-        await createAgentProvider({ name, provider_type: providerType, image, command, endpoint });
+        await createAgentProvider(data);
       }
       resetForm();
       onUpdate();
@@ -212,39 +334,14 @@ function AgentProvidersCard({ providers, onUpdate }: { providers: AgentProvider[
       <CardContent className="space-y-3">
         {showForm && (
           <div className="space-y-2 p-3 border border-border rounded bg-card">
-            <div>
-              <label className="text-xs text-muted-foreground block mb-1">Name</label>
+            <div className="space-y-1">
+              <Label className="text-xs">Name</Label>
               <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="my-agent" />
             </div>
-            <div>
-              <label className="text-xs text-muted-foreground block mb-1">Type</label>
-              <select
-                className="w-full h-9 rounded-md border border-border bg-card px-3 text-sm"
-                value={providerType}
-                onChange={(e) => setProviderType(e.target.value as "docker" | "http")}
-              >
-                <option value="docker">Docker</option>
-                <option value="http">HTTP</option>
-              </select>
+            <div className="space-y-1">
+              <Label className="text-xs">Image</Label>
+              <Input value={image} onChange={(e) => setImage(e.target.value)} placeholder="tamga-agent" />
             </div>
-            {providerType === "docker" && (
-              <>
-                <div>
-                  <label className="text-xs text-muted-foreground block mb-1">Image</label>
-                  <Input value={image} onChange={(e) => setImage(e.target.value)} placeholder="tamga-agent" />
-                </div>
-                <div>
-                  <label className="text-xs text-muted-foreground block mb-1">Command</label>
-                  <Input value={command} onChange={(e) => setCommand(e.target.value)} placeholder="opencode --stdin --diff" />
-                </div>
-              </>
-            )}
-            {providerType === "http" && (
-              <div>
-                <label className="text-xs text-muted-foreground block mb-1">Endpoint</label>
-                <Input value={endpoint} onChange={(e) => setEndpoint(e.target.value)} placeholder="http://agent:9000/chat" />
-              </div>
-            )}
             <Button size="sm" onClick={handleSave}>{editId ? "Update" : "Create"}</Button>
           </div>
         )}
@@ -256,7 +353,7 @@ function AgentProvidersCard({ providers, onUpdate }: { providers: AgentProvider[
               <div key={p.id} className="flex items-center justify-between py-1.5 border-b border-border last:border-0">
                 <div className="flex items-center gap-2">
                   <span className="font-medium">{p.name}</span>
-                  <Badge variant="info" className="text-xs">{p.provider_type}</Badge>
+                  <Badge variant="outline" className="text-xs">docker</Badge>
                   {p.is_default && <Badge variant="success" className="text-xs">default</Badge>}
                 </div>
                 <div className="flex gap-1">

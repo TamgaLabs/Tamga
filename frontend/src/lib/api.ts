@@ -37,10 +37,8 @@ export type User = {
 export type AgentProvider = {
   id: string;
   name: string;
-  provider_type: "docker" | "http";
+  type: "docker";
   image?: string;
-  command?: string;
-  endpoint?: string;
   is_default: boolean;
   created_at: string;
   updated_at: string;
@@ -291,10 +289,7 @@ export const getAgentProvider = (id: string) =>
   api<AgentProvider>(`/agent-providers/${id}`);
 export const createAgentProvider = (data: {
   name: string;
-  provider_type: "docker" | "http";
   image?: string;
-  command?: string;
-  endpoint?: string;
 }) =>
   api<AgentProvider>("/agent-providers", {
     method: "POST",
