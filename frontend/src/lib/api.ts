@@ -77,27 +77,6 @@ export type EnvVar = {
   updated_at: string;
 };
 
-export type AgentTask = {
-  id: string;
-  project_id: number;
-  session_id?: string;
-  message: string;
-  status: "pending" | "processing" | "completed" | "failed";
-  response?: string;
-  diff?: string;
-  created_at: string;
-  completed_at?: string;
-};
-
-export type AgentSession = {
-  id: string;
-  project_id: number;
-  dir_id?: string;
-  name: string;
-  created_at: string;
-  updated_at: string;
-};
-
 // Auth
 export const checkSetup = () => api<{ setup: boolean }>("/auth/status");
 export const setup = (password: string) =>
@@ -143,15 +122,6 @@ export const createEnvVar = (projectId: number, key: string, value: string) =>
   });
 export const deleteEnvVar = (projectId: number, envVarId: number) =>
   api<void>(`/projects/${projectId}/env-vars/${envVarId}`, { method: "DELETE" });
-
-// Agent
-export const chatWithAgent = (projectId: number, message: string) =>
-  api<{ task_id: string }>(`/projects/${projectId}/agent/chat`, {
-    method: "POST",
-    body: JSON.stringify({ message }),
-  });
-export const getTask = (projectId: number, taskId: string) =>
-  api<AgentTask>(`/projects/${projectId}/agent/tasks/${taskId}`);
 
 // Containers
 export type ContainerInfo = {
@@ -242,45 +212,16 @@ export const writeFile = (projectId: number, path: string, content: string) =>
     method: "PUT",
     body: JSON.stringify({ content }),
   });
-export const chatWithCodeAgent = (projectId: number, message: string, sessionId?: string) =>
-  api<{ task_id: string; session_id: string }>(`/code/${projectId}/agent/chat`, {
-    method: "POST",
-    body: JSON.stringify({ message, session_id: sessionId }),
-  });
-export const getCodeTask = (projectId: number, taskId: string) =>
-  api<AgentTask>(`/code/${projectId}/agent/tasks/${taskId}`);
-export const listCodeTasks = (projectId: number) =>
-  api<AgentTask[]>(`/code/${projectId}/agent/tasks`);
-export const getCodeAgentStatus = (projectId: number) =>
-  api<{ running: boolean }>(`/code/${projectId}/agent/status`);
-export const startCodeAgent = (projectId: number) =>
-  api<void>(`/code/${projectId}/agent/start`, { method: "POST" });
-export const stopCodeAgent = (projectId: number) =>
-  api<void>(`/code/${projectId}/agent/stop`, { method: "POST" });
 
-// Agent sessions
-export const listSessions = (projectId: number) =>
-  api<AgentSession[]>(`/code/${projectId}/agent/sessions`);
-export const createSession = (projectId: number, name: string) =>
-  api<AgentSession>(`/code/${projectId}/agent/sessions`, {
-    method: "POST",
-    body: JSON.stringify({ name }),
-  });
-export const renameSession = (projectId: number, sessionId: string, name: string) =>
-  api<void>(`/code/${projectId}/agent/sessions/${sessionId}`, {
-    method: "PUT",
-    body: JSON.stringify({ name }),
-  });
-export const deleteSession = (projectId: number, sessionId: string) =>
-  api<void>(`/code/${projectId}/agent/sessions/${sessionId}`, {
-    method: "DELETE",
-  });
-export const listSessionTasks = (projectId: number, sessionId: string) =>
-  api<AgentTask[]>(`/code/${projectId}/agent/sessions/${sessionId}/tasks`);
-
-// Agent tasks for project
-export const listAgentTasks = (projectId: number) =>
-  api<AgentTask[]>(`/projects/${projectId}/agent/tasks`);
+// Agent terminal: WebSocket into an on-demand sandbox container. Built as a
+// plain URL (not via the `api()` json helper) since the browser WebSocket API
+// can't set an Authorization header - the token travels as a query param.
+export function agentTerminalUrl(projectId: number): string {
+  const token = getToken() || "";
+  const proto = typeof window !== "undefined" && window.location.protocol === "https:" ? "wss:" : "ws:";
+  const host = typeof window !== "undefined" ? window.location.host : "";
+  return `${proto}//${host}/api/projects/${projectId}/agent/terminal?token=${encodeURIComponent(token)}`;
+}
 
 // Agent Providers
 export const listAgentProviders = () =>
