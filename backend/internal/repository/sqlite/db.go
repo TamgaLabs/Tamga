@@ -29,6 +29,25 @@ func Open(path string) (*DB, error) {
 	return &DB{db}, nil
 }
 
+func (db *DB) EnsureTables() error {
+	tables := []string{
+		`CREATE TABLE IF NOT EXISTS api_keys (
+			id TEXT PRIMARY KEY,
+			provider TEXT NOT NULL,
+			key_enc TEXT NOT NULL,
+			label TEXT DEFAULT '',
+			created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+			updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+		)`,
+	}
+	for _, q := range tables {
+		if _, err := db.Exec(q); err != nil {
+			return fmt.Errorf("ensure table: %w", err)
+		}
+	}
+	return nil
+}
+
 func (db *DB) Migrate() error {
 	if _, err := db.Exec(`CREATE TABLE IF NOT EXISTS schema_migrations (filename TEXT PRIMARY KEY, applied_at TEXT NOT NULL DEFAULT (datetime('now')))`); err != nil {
 		return fmt.Errorf("create schema_migrations table: %w", err)
