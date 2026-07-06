@@ -20,6 +20,7 @@ func New(
 	agentProviderHandler *handler.AgentProviderHandler,
 	apiKeyHandler *handler.ApiKeyHandler,
 	whitelistHandler *handler.WhitelistHandler,
+	resourceLimitHandler *handler.ResourceLimitHandler,
 	authMiddleware func(http.Handler) http.Handler,
 ) *chi.Mux {
 	r := chi.NewRouter()
@@ -87,6 +88,10 @@ func New(
 			r.Get("/system/egress-whitelist", whitelistHandler.List)
 			r.Post("/system/egress-whitelist", whitelistHandler.Create)
 			r.Delete("/system/egress-whitelist/{id}", whitelistHandler.Delete)
+
+			// Agent sandbox default resource limit
+			r.Get("/system/resource-limits", resourceLimitHandler.Get)
+			r.Put("/system/resource-limits", resourceLimitHandler.Update)
 
 			// Code
 			r.Get("/code/projects", codeHandler.ListCodebases)

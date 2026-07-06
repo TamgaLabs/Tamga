@@ -11,6 +11,7 @@ import (
 	"sync"
 
 	"github.com/docker/docker/api/types"
+	"github.com/docker/docker/api/types/container"
 
 	"github.com/TamgaLabs/Tamga/backend/internal/config"
 	"github.com/TamgaLabs/Tamga/backend/internal/domain"
@@ -29,27 +30,53 @@ import (
 // egress-proxy container, which is multi-homed onto every active sandbox's
 // network and only allows CONNECT/requests to whitelisted domains.
 type AgentService struct {
-	db           *sqlite.DB
-	docker       *dockerclient.Client
-	cfg          config.Config
-	providerSvc  *AgentProviderService
-	apiKeySvc    *ApiKeyService
-	whitelistSvc *WhitelistService
+	db            *sqlite.DB
+	docker        *dockerclient.Client
+	cfg           config.Config
+	providerSvc   *AgentProviderService
+	apiKeySvc     *ApiKeyService
+	whitelistSvc  *WhitelistService
+	resourceLimit *ResourceLimitService
 
 	mu        sync.Mutex
 	connCount map[string]int
 }
 
-func NewAgentService(db *sqlite.DB, docker *dockerclient.Client, cfg config.Config, providerSvc *AgentProviderService, apiKeySvc *ApiKeyService, whitelistSvc *WhitelistService) *AgentService {
+func NewAgentService(db *sqlite.DB, docker *dockerclient.Client, cfg config.Config, providerSvc *AgentProviderService, apiKeySvc *ApiKeyService, whitelistSvc *WhitelistService, resourceLimitSvc *ResourceLimitService) *AgentService {
 	return &AgentService{
-		db:           db,
-		docker:       docker,
-		cfg:          cfg,
-		providerSvc:  providerSvc,
-		apiKeySvc:    apiKeySvc,
-		whitelistSvc: whitelistSvc,
-		connCount:    make(map[string]int),
+		db:            db,
+		docker:        docker,
+		cfg:           cfg,
+		providerSvc:   providerSvc,
+		apiKeySvc:     apiKeySvc,
+		whitelistSvc:  whitelistSvc,
+		resourceLimit: resourceLimitSvc,
+		connCount:     make(map[string]int),
 	}
+}
+
+// defaultSandboxMemoryBytes and defaultSandboxNanoCPUs are the hardcoded
+// fallback resource limit applied to a sandbox if the configured default
+// can't be loaded (e.g. a transient DB error) - a sandbox must never be
+// created with no limit at all, per FEAT-007.
+const (
+	defaultSandboxMemoryBytes int64 = 1 << 30       // 1 GiB
+	defaultSandboxNanoCPUs    int64 = 1_000_000_000 // 1 CPU
+)
+
+// sandboxResources returns the CPU/memory limit to apply to a newly
+// created sandbox container, per the global default stored in Settings
+// (see FEAT-007). Falls back to a hardcoded safe default if the setting
+// can't be loaded, so no sandbox is ever created unlimited.
+func (s *AgentService) sandboxResources() container.Resources {
+	if s.resourceLimit != nil {
+		if rl, err := s.resourceLimit.Get(); err == nil {
+			return container.Resources{Memory: rl.MemoryBytes, NanoCPUs: rl.NanoCPUs}
+		} else {
+			slog.Warn("load default sandbox resource limit, using hardcoded fallback", "error", err)
+		}
+	}
+	return container.Resources{Memory: defaultSandboxMemoryBytes, NanoCPUs: defaultSandboxNanoCPUs}
 }
 
 const agentImage = "tamga-agent"
@@ -124,7 +151,7 @@ func (s *AgentService) ensureEgressProxy(ctx context.Context, networks []string)
 		// "bridge" is Docker's always-present default network - this is
 		// the proxy's one and only route to the internet. Per-project
 		// sandbox networks are attached below via NetworkConnect.
-		if _, err := s.docker.CreateContainerOpts(ctx, egressProxyName, egressProxyImage, env, "bridge", nil); err != nil {
+		if _, err := s.docker.CreateContainerOpts(ctx, egressProxyName, egressProxyImage, env, "bridge", nil, container.Resources{}); err != nil {
 			return fmt.Errorf("create egress proxy: %w", err)
 		}
 		if err := s.docker.StartContainer(ctx, egressProxyName); err != nil {
@@ -156,7 +183,7 @@ func egressProxyEnv() []string {
 	}
 }
 
-func (s *AgentService) ensureContainerRunning(ctx context.Context, containerName string, mounts []string, image string, env []string, network string) error {
+func (s *AgentService) ensureContainerRunning(ctx context.Context, containerName string, mounts []string, image string, env []string, network string, resources container.Resources) error {
 	if s.docker == nil {
 		return fmt.Errorf("docker daemon not available")
 	}
@@ -170,7 +197,7 @@ func (s *AgentService) ensureContainerRunning(ctx context.Context, containerName
 		if err := s.docker.StartContainer(ctx, containerName); err != nil {
 			slog.Warn("failed to start existing agent container, recreating", "container", containerName, "error", err)
 			s.docker.RemoveContainer(ctx, containerName)
-			if _, err := s.docker.CreateContainerOpts(ctx, containerName, image, env, network, mounts); err != nil {
+			if _, err := s.docker.CreateContainerOpts(ctx, containerName, image, env, network, mounts, resources); err != nil {
 				return fmt.Errorf("recreate agent container: %w", err)
 			}
 			if err := s.docker.StartContainer(ctx, containerName); err != nil {
@@ -182,7 +209,7 @@ func (s *AgentService) ensureContainerRunning(ctx context.Context, containerName
 		slog.Info("agent container restarted", "container", containerName)
 		return nil
 	}
-	if _, err := s.docker.CreateContainerOpts(ctx, containerName, image, env, network, mounts); err != nil {
+	if _, err := s.docker.CreateContainerOpts(ctx, containerName, image, env, network, mounts, resources); err != nil {
 		return fmt.Errorf("create agent container: %w", err)
 	}
 	if err := s.docker.StartContainer(ctx, containerName); err != nil {
@@ -282,7 +309,7 @@ func (s *AgentService) StartSandbox(ctx context.Context, projectID int64) (conta
 		return "", "", fmt.Errorf("ensure egress proxy: %w", err)
 	}
 
-	if err := s.ensureContainerRunning(ctx, containerName, mounts, image, env, network); err != nil {
+	if err := s.ensureContainerRunning(ctx, containerName, mounts, image, env, network, s.sandboxResources()); err != nil {
 		return "", "", err
 	}
 

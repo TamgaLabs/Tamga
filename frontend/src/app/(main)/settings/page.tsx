@@ -12,9 +12,12 @@ import {
   listApiKeys,
   setApiKey,
   deleteApiKey,
+  getResourceLimit,
+  updateResourceLimit,
   type DockerInfo,
   type AgentProvider,
   type ApiKeyEntry,
+  type ResourceLimit,
 } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { getShowSystem, setShowSystem } from "@/lib/settings";
@@ -48,6 +51,7 @@ export default function SettingsPage() {
   const [showSystemState, setShowSystemState] = useState(true);
   const [providers, setProviders] = useState<AgentProvider[]>([]);
   const [apiKeys, setApiKeys] = useState<ApiKeyEntry[]>([]);
+  const [resourceLimit, setResourceLimit] = useState<ResourceLimit | null>(null);
   const [pruneDialogOpen, setPruneDialogOpen] = useState(false);
   const { user, loading: authLoading } = useAuth();
   const router = useRouter();
@@ -62,6 +66,9 @@ export default function SettingsPage() {
   const loadApiKeys = useCallback(() => {
     listApiKeys().then(setApiKeys).catch(console.error);
   }, []);
+  const loadResourceLimit = useCallback(() => {
+    getResourceLimit().then(setResourceLimit).catch(console.error);
+  }, []);
 
   useEffect(() => {
     if (!user) return;
@@ -69,7 +76,8 @@ export default function SettingsPage() {
     setShowSystemState(getShowSystem());
     loadProviders();
     loadApiKeys();
-  }, [user, loadProviders, loadApiKeys]);
+    loadResourceLimit();
+  }, [user, loadProviders, loadApiKeys, loadResourceLimit]);
 
   const handleToggleSystem = () => {
     const next = !showSystemState;
@@ -174,6 +182,7 @@ export default function SettingsPage() {
         </Card>
         <AgentProvidersCard providers={providers} onUpdate={loadProviders} />
         <ApiKeysCard keys={apiKeys} onUpdate={loadApiKeys} />
+        <ResourceLimitCard limit={resourceLimit} onUpdate={loadResourceLimit} />
       </div>
 
       <AlertDialog open={pruneDialogOpen} onOpenChange={setPruneDialogOpen}>
@@ -441,6 +450,78 @@ function AgentProvidersCard({ providers, onUpdate }: { providers: AgentProvider[
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+    </Card>
+  );
+}
+
+// Default CPU/memory limit applied to every agent sandbox container at
+// creation time (see FEAT-007). Displayed/edited in friendlier units
+// (GiB, CPU cores) and converted to the bytes/nano_cpus the API expects.
+function ResourceLimitCard({ limit, onUpdate }: { limit: ResourceLimit | null; onUpdate: () => void }) {
+  const [memoryGiB, setMemoryGiB] = useState("");
+  const [cpus, setCpus] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    if (!limit) return;
+    setMemoryGiB((limit.memory_bytes / (1024 ** 3)).toString());
+    setCpus((limit.nano_cpus / 1_000_000_000).toString());
+  }, [limit]);
+
+  const handleSave = async () => {
+    const memGiB = parseFloat(memoryGiB);
+    const cpuCores = parseFloat(cpus);
+    if (!(memGiB > 0) || !(cpuCores > 0)) return;
+    setSaving(true);
+    try {
+      await updateResourceLimit({
+        memory_bytes: Math.round(memGiB * 1024 ** 3),
+        nano_cpus: Math.round(cpuCores * 1_000_000_000),
+      });
+      onUpdate();
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-sm">Sandbox Resource Limits</CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        <p className="text-xs text-muted-foreground">
+          Default CPU/memory limit applied to every new agent sandbox
+          container. Existing sandboxes aren&apos;t affected until recreated.
+        </p>
+        <div className="flex gap-3">
+          <div className="space-y-1 flex-1">
+            <Label className="text-xs">Memory (GiB)</Label>
+            <Input
+              type="number"
+              min="0"
+              step="0.5"
+              value={memoryGiB}
+              onChange={(e) => setMemoryGiB(e.target.value)}
+            />
+          </div>
+          <div className="space-y-1 flex-1">
+            <Label className="text-xs">CPUs (cores)</Label>
+            <Input
+              type="number"
+              min="0"
+              step="0.5"
+              value={cpus}
+              onChange={(e) => setCpus(e.target.value)}
+            />
+          </div>
+        </div>
+        <Button size="sm" onClick={handleSave} disabled={saving}>
+          {saving ? "Saving..." : "Save"}
+        </Button>
+      </CardContent>
     </Card>
   );
 }

@@ -264,3 +264,17 @@ export const setApiKey = (provider: string, key: string, label?: string) =>
   });
 export const deleteApiKey = (id: string) =>
   api<void>(`/system/api-keys/${id}`, { method: "DELETE" });
+
+// Agent sandbox default resource limit (see FEAT-007)
+export type ResourceLimit = {
+  memory_bytes: number;
+  nano_cpus: number;
+};
+
+export const getResourceLimit = () =>
+  api<ResourceLimit>("/system/resource-limits");
+export const updateResourceLimit = (data: ResourceLimit) =>
+  api<ResourceLimit>("/system/resource-limits", {
+    method: "PUT",
+    body: JSON.stringify(data),
+  });

@@ -47,13 +47,19 @@ func (c *Client) BuildImage(ctx context.Context, tag, dockerfile string, buildCt
 }
 
 func (c *Client) CreateContainer(ctx context.Context, name, imageName string, env []string, network string) (string, error) {
-	return c.CreateContainerOpts(ctx, name, imageName, env, network, nil)
+	return c.CreateContainerOpts(ctx, name, imageName, env, network, nil, container.Resources{})
 }
 
-func (c *Client) CreateContainerOpts(ctx context.Context, name, imageName string, env []string, network string, mounts []string) (string, error) {
+// CreateContainerOpts creates a container with the given mounts and
+// resource limits applied via HostConfig.Resources (zero value means no
+// limit - i.e. Docker's own default). See FEAT-007: agent sandbox creation
+// always passes a non-zero Resources so no sandbox is ever created
+// unlimited.
+func (c *Client) CreateContainerOpts(ctx context.Context, name, imageName string, env []string, network string, mounts []string, resources container.Resources) (string, error) {
 	hostCfg := &container.HostConfig{
 		NetworkMode:   container.NetworkMode(network),
 		RestartPolicy: container.RestartPolicy{Name: container.RestartPolicyUnlessStopped},
+		Resources:     resources,
 	}
 	for _, m := range mounts {
 		parts := strings.SplitN(m, ":", 2)
