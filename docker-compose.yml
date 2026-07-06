@@ -35,6 +35,22 @@ services:
     networks:
       - tamga-network
 
+  agent:
+    build:
+      context: .
+      dockerfile: deploy/Dockerfile.agent
+    image: tamga-agent
+    profiles:
+      - build-only
+
+  egress-proxy:
+    build:
+      context: .
+      dockerfile: deploy/Dockerfile.egress-proxy
+    image: tamga-egress-proxy
+    profiles:
+      - build-only
+
 volumes:
   caddy_data:
   caddy_config:

@@ -15,6 +15,7 @@ build:
 
 up:
 	@test -f .env || cp .env.example .env
+	docker compose build agent egress-proxy
 	docker compose up -d
 	@echo ""
 	@echo "Frontend: https://$(DOMAIN)"; \
