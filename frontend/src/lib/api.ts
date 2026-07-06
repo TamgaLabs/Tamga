@@ -278,3 +278,25 @@ export const updateResourceLimit = (data: ResourceLimit) =>
     method: "PUT",
     body: JSON.stringify(data),
   });
+
+// Global git credential (see FEAT-008): used both by the backend for
+// `git clone`/`pull` and injected into every agent sandbox for
+// `git commit`/`push`. Single value, not a list - same GET/PUT shape as
+// resource limits, plus DELETE to clear it.
+export type GitCredential = {
+  provider: string;
+  username: string;
+  has_token: boolean;
+  created_at: string;
+  updated_at: string;
+};
+
+export const getGitCredential = () =>
+  api<GitCredential>("/system/git-credential");
+export const setGitCredential = (data: { provider: string; username?: string; token: string }) =>
+  api<GitCredential>("/system/git-credential", {
+    method: "PUT",
+    body: JSON.stringify(data),
+  });
+export const deleteGitCredential = () =>
+  api<void>("/system/git-credential", { method: "DELETE" });

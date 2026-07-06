@@ -19,14 +19,15 @@ import (
 )
 
 type ProjectService struct {
-	db     *sqlite.DB
-	docker *dockerclient.Client
-	caddy  *caddy.Client
-	cfg    config.Config
+	db      *sqlite.DB
+	docker  *dockerclient.Client
+	caddy   *caddy.Client
+	cfg     config.Config
+	gitCred *GitCredentialService
 }
 
-func NewProjectService(db *sqlite.DB, docker *dockerclient.Client, caddyClient *caddy.Client, cfg config.Config) *ProjectService {
-	return &ProjectService{db: db, docker: docker, caddy: caddyClient, cfg: cfg}
+func NewProjectService(db *sqlite.DB, docker *dockerclient.Client, caddyClient *caddy.Client, cfg config.Config, gitCred *GitCredentialService) *ProjectService {
+	return &ProjectService{db: db, docker: docker, caddy: caddyClient, cfg: cfg, gitCred: gitCred}
 }
 
 func (s *ProjectService) requireDocker() error {
@@ -178,7 +179,21 @@ func (s *ProjectService) cloneRepo(ctx context.Context, repoURL, branch, workDir
 		return fmt.Errorf("mkdir workdir: %w", err)
 	}
 
-	cmd := exec.CommandContext(ctx, "git", "clone", "--branch", branch, "--single-branch", "--depth", "1", repoURL, workDir)
+	// FEAT-008: inject the global git credential (if configured) into the
+	// clone URL so private repos can be cloned without manual auth. Falls
+	// back to the plain repoURL (unauthenticated) if no credential is set
+	// or it can't be loaded.
+	cloneURL := repoURL
+	if s.gitCred != nil {
+		authed, err := s.gitCred.AuthenticatedCloneURL(repoURL)
+		if err != nil {
+			slog.Warn("load git credential for clone, cloning unauthenticated", "error", err)
+		} else {
+			cloneURL = authed
+		}
+	}
+
+	cmd := exec.CommandContext(ctx, "git", "clone", "--branch", branch, "--single-branch", "--depth", "1", cloneURL, workDir)
 	cmd.Stdout = io.Discard
 	cmd.Stderr = io.Discard
 	if err := cmd.Run(); err != nil {

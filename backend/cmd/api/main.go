@@ -62,8 +62,9 @@ func main() {
 	apiKeyService := service.NewApiKeyService(db, cfg.JWTSecret)
 	whitelistService := service.NewWhitelistService(db)
 	resourceLimitService := service.NewResourceLimitService(db)
-	projectService := service.NewProjectService(db, dockerClient, caddyClient, cfg)
-	agentService := service.NewAgentService(db, dockerClient, cfg, agentProviderService, apiKeyService, whitelistService, resourceLimitService)
+	gitCredentialService := service.NewGitCredentialService(db, cfg.JWTSecret)
+	projectService := service.NewProjectService(db, dockerClient, caddyClient, cfg, gitCredentialService)
+	agentService := service.NewAgentService(db, dockerClient, cfg, agentProviderService, apiKeyService, whitelistService, resourceLimitService, gitCredentialService)
 
 	if err := setupCaddyRoutes(caddyClient, cfg); err != nil {
 		slog.Warn("caddy route setup", "error", err)
@@ -82,6 +83,7 @@ func main() {
 	apiKeyHandler := handler.NewApiKeyHandler(apiKeyService)
 	whitelistHandler := handler.NewWhitelistHandler(whitelistService)
 	resourceLimitHandler := handler.NewResourceLimitHandler(resourceLimitService)
+	gitCredentialHandler := handler.NewGitCredentialHandler(gitCredentialService)
 	authMiddleware := handler.AuthMiddleware(authService)
 
 	var containerHandler *handler.ContainerHandler
@@ -91,7 +93,7 @@ func main() {
 		containerHandler = handler.NewContainerHandler(nil)
 	}
 
-	r := router.New(authHandler, systemHandler, projectHandler, terminalHandler, containerHandler, codeHandler, agentProviderHandler, apiKeyHandler, whitelistHandler, resourceLimitHandler, authMiddleware)
+	r := router.New(authHandler, systemHandler, projectHandler, terminalHandler, containerHandler, codeHandler, agentProviderHandler, apiKeyHandler, whitelistHandler, resourceLimitHandler, gitCredentialHandler, authMiddleware)
 
 	srv := &http.Server{
 		Addr:         fmt.Sprintf(":%d", cfg.Port),

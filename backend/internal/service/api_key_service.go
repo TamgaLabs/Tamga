@@ -1,15 +1,10 @@
 package service
 
 import (
-	"crypto/aes"
-	"crypto/cipher"
-	"crypto/rand"
 	"crypto/sha256"
 	"database/sql"
-	"encoding/hex"
 	"errors"
 	"fmt"
-	"io"
 
 	"github.com/TamgaLabs/Tamga/backend/internal/domain"
 	"github.com/TamgaLabs/Tamga/backend/internal/repository/sqlite"
@@ -41,7 +36,7 @@ func (s *ApiKeyService) Set(provider, key, label string) (*domain.ApiKeyResponse
 		id = uuid.New().String()[:12]
 	}
 
-	enc, err := s.encrypt(key)
+	enc, err := encryptSecret(s.authKey, key)
 	if err != nil {
 		return nil, fmt.Errorf("encrypt key: %w", err)
 	}
@@ -101,7 +96,7 @@ func (s *ApiKeyService) GetAllAsEnv() (map[string]string, error) {
 		if !ok {
 			continue
 		}
-		dec, err := s.decrypt(k.KeyEnc)
+		dec, err := decryptSecret(s.authKey, k.KeyEnc)
 		if err != nil {
 			continue
 		}
@@ -119,58 +114,4 @@ func (s *ApiKeyService) toResponse(k *domain.ApiKey) *domain.ApiKeyResponse {
 		CreatedAt: k.CreatedAt,
 		UpdatedAt: k.UpdatedAt,
 	}
-}
-
-func (s *ApiKeyService) encrypt(plaintext string) (string, error) {
-	block, err := aes.NewCipher(s.authKey)
-	if err != nil {
-		return "", err
-	}
-	aesGCM, err := cipher.NewGCM(block)
-	if err != nil {
-		return "", err
-	}
-	nonce := make([]byte, aesGCM.NonceSize())
-	if _, err := io.ReadFull(rand.Reader, nonce); err != nil {
-		return "", err
-	}
-	ciphertext := aesGCM.Seal(nil, nonce, []byte(plaintext), nil)
-	return hex.EncodeToString(nonce) + ":" + hex.EncodeToString(ciphertext), nil
-}
-
-func (s *ApiKeyService) decrypt(encoded string) (string, error) {
-	parts := split2(encoded, ":")
-	if len(parts) != 2 {
-		return "", fmt.Errorf("invalid encrypted format")
-	}
-	nonce, err := hex.DecodeString(parts[0])
-	if err != nil {
-		return "", err
-	}
-	ciphertext, err := hex.DecodeString(parts[1])
-	if err != nil {
-		return "", err
-	}
-	block, err := aes.NewCipher(s.authKey)
-	if err != nil {
-		return "", err
-	}
-	aesGCM, err := cipher.NewGCM(block)
-	if err != nil {
-		return "", err
-	}
-	plaintext, err := aesGCM.Open(nil, nonce, ciphertext, nil)
-	if err != nil {
-		return "", err
-	}
-	return string(plaintext), nil
-}
-
-func split2(s, sep string) []string {
-	for i := 0; i < len(s)-len(sep); i++ {
-		if s[i:i+len(sep)] == sep {
-			return []string{s[:i], s[i+len(sep):]}
-		}
-	}
-	return []string{s}
 }

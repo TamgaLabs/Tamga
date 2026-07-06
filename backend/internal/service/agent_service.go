@@ -37,12 +37,13 @@ type AgentService struct {
 	apiKeySvc     *ApiKeyService
 	whitelistSvc  *WhitelistService
 	resourceLimit *ResourceLimitService
+	gitCredSvc    *GitCredentialService
 
 	mu        sync.Mutex
 	connCount map[string]int
 }
 
-func NewAgentService(db *sqlite.DB, docker *dockerclient.Client, cfg config.Config, providerSvc *AgentProviderService, apiKeySvc *ApiKeyService, whitelistSvc *WhitelistService, resourceLimitSvc *ResourceLimitService) *AgentService {
+func NewAgentService(db *sqlite.DB, docker *dockerclient.Client, cfg config.Config, providerSvc *AgentProviderService, apiKeySvc *ApiKeyService, whitelistSvc *WhitelistService, resourceLimitSvc *ResourceLimitService, gitCredSvc *GitCredentialService) *AgentService {
 	return &AgentService{
 		db:            db,
 		docker:        docker,
@@ -51,6 +52,7 @@ func NewAgentService(db *sqlite.DB, docker *dockerclient.Client, cfg config.Conf
 		apiKeySvc:     apiKeySvc,
 		whitelistSvc:  whitelistSvc,
 		resourceLimit: resourceLimitSvc,
+		gitCredSvc:    gitCredSvc,
 		connCount:     make(map[string]int),
 	}
 }
@@ -234,6 +236,22 @@ func (s *AgentService) injectApiKeys(env []string) []string {
 	return env
 }
 
+// injectGitCredential appends the env vars that configure git inside the
+// sandbox to authenticate as the global git credential (see FEAT-008), so
+// `git commit`/`push` works from the terminal without manual auth. No-op
+// (env unchanged) if no credential is configured or it can't be loaded.
+func (s *AgentService) injectGitCredential(env []string) []string {
+	if s.gitCredSvc == nil {
+		return env
+	}
+	gitEnv, err := s.gitCredSvc.SandboxEnv()
+	if err != nil {
+		slog.Warn("failed to get git credential for sandbox injection", "error", err)
+		return env
+	}
+	return append(env, gitEnv...)
+}
+
 func (s *AgentService) resolveProviderForProject(ctx context.Context, projectID int64) (*domain.AgentProvider, error) {
 	project, err := s.db.FindProject(projectID)
 	if err != nil {
@@ -247,10 +265,6 @@ func (s *AgentService) resolveProviderForProject(ctx context.Context, projectID 
 // later ReleaseSandbox call only stops the container once every terminal
 // connection for the project has closed. It returns the container name and
 // the workspace directory to exec into.
-//
-// TODO(FEAT-008): this is the natural injection point for per-project git
-// credentials once the global git credential store lands - add them to env
-// here before the container is created.
 func (s *AgentService) StartSandbox(ctx context.Context, projectID int64) (containerName, workDir string, err error) {
 	if s.docker == nil {
 		return "", "", fmt.Errorf("docker daemon not available")
@@ -277,6 +291,7 @@ func (s *AgentService) StartSandbox(ctx context.Context, projectID int64) (conta
 		}
 	}
 	env = s.injectApiKeys(env)
+	env = s.injectGitCredential(env)
 	env = append(env, egressProxyEnv()...)
 
 	// Validate HostDataDir is set and absolute before constructing mount string.

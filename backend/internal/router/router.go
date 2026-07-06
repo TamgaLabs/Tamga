@@ -21,6 +21,7 @@ func New(
 	apiKeyHandler *handler.ApiKeyHandler,
 	whitelistHandler *handler.WhitelistHandler,
 	resourceLimitHandler *handler.ResourceLimitHandler,
+	gitCredentialHandler *handler.GitCredentialHandler,
 	authMiddleware func(http.Handler) http.Handler,
 ) *chi.Mux {
 	r := chi.NewRouter()
@@ -92,6 +93,11 @@ func New(
 			// Agent sandbox default resource limit
 			r.Get("/system/resource-limits", resourceLimitHandler.Get)
 			r.Put("/system/resource-limits", resourceLimitHandler.Update)
+
+			// Global git credential (clone/pull + sandbox commit/push)
+			r.Get("/system/git-credential", gitCredentialHandler.Get)
+			r.Put("/system/git-credential", gitCredentialHandler.Set)
+			r.Delete("/system/git-credential", gitCredentialHandler.Delete)
 
 			// Code
 			r.Get("/code/projects", codeHandler.ListCodebases)
