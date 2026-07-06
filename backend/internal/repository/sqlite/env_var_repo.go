@@ -7,13 +7,15 @@ import (
 )
 
 func (db *DB) CreateEnvVar(ev *domain.EnvVar) error {
-	_, err := db.Exec(
+	res, err := db.Exec(
 		"INSERT INTO env_vars (project_id, key, value) VALUES (?, ?, ?)",
 		ev.ProjectID, ev.Key, ev.Value,
 	)
 	if err != nil {
 		return fmt.Errorf("create env var: %w", err)
 	}
+	id, _ := res.LastInsertId()
+	ev.ID = id
 	return nil
 }
 

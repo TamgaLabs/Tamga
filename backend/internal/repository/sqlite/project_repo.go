@@ -7,8 +7,12 @@ import (
 )
 
 func (db *DB) CreateProject(p *domain.Project) error {
+	// container_id is set explicitly to '' (rather than left to default to
+	// NULL) so FindProject/ListProjects - which scan straight into a plain
+	// string field - never hit a NULL-into-string scan error for a project
+	// that hasn't been deployed yet.
 	res, err := db.Exec(
-		"INSERT INTO projects (name, source_type, repo_url, branch, domain, status, agent_provider_id) VALUES (?, ?, ?, ?, ?, ?, ?)",
+		"INSERT INTO projects (name, source_type, repo_url, branch, domain, status, agent_provider_id, container_id) VALUES (?, ?, ?, ?, ?, ?, ?, '')",
 		p.Name, p.SourceType, p.RepoURL, p.Branch, p.Domain, p.Status, p.AgentProviderID,
 	)
 	if err != nil {
