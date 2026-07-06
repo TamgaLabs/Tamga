@@ -33,11 +33,17 @@ Docker orchestration layer with a developer-friendly UI — deploy applications 
 ## Quick Start
 
 ```bash
-cp .env.example .env
-docker compose up -d
+make up
 ```
 
+The `make up` command:
+1. Copies `.env.example` to `.env` (if `.env` doesn't exist)
+2. Builds the on-demand agent sandbox and egress-proxy images (required for agent terminals to work)
+3. Starts the stack with `docker compose up -d`
+
 The backend auto-runs database migrations on startup. An admin user is created automatically using `ADMIN_PASSWORD` from `.env`.
+
+**Why `make up` instead of `docker compose up -d` directly?** The agent sandbox (`tamga-agent`) and egress-proxy (`tamga-egress-proxy`) images are excluded from bare `docker compose up -d` by design—they're not persistent compose-managed containers, but rather created on-demand by the backend via the Docker API. The `make up` target explicitly builds these images before starting the stack. If you run bare `docker compose up -d`, the main services (caddy, backend, frontend) will work, but agent terminals will fail with an image-not-found error until the images are built via `make up`.
 
 | Service   | URL                          | Notes                          |
 |-----------|------------------------------|---------------------------------|
