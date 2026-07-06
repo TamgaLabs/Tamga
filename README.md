@@ -189,3 +189,12 @@ See `.env.example` for all configurable variables and defaults.
 | `make logs`  | Tail backend container logs        |
 | `make test`  | Run Go tests                       |
 | `make clean` | Stop and remove volumes            |
+
+## License
+
+Tamga is dual-licensed under the **AGPL-3.0** and a **Commercial License**.
+
+- **AGPL-3.0:** Free for personal, non-commercial, and open-source use. See the [LICENSE](LICENSE) file for full details.
+- **Commercial License:** Required for companies using Tamga for internal business operations, revenue-generating use, embedding in commercial products, or SaaS/managed service offerings.
+
+See [LICENSE](LICENSE) for full licensing details and the commercial licensing model.
