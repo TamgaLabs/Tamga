@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/TamgaLabs/Tamga/backend/internal/config"
+	"github.com/TamgaLabs/Tamga/backend/internal/domain"
 	"github.com/TamgaLabs/Tamga/backend/internal/handler"
 	caddyrepo "github.com/TamgaLabs/Tamga/backend/internal/repository/caddy"
 	dockerrepo "github.com/TamgaLabs/Tamga/backend/internal/repository/docker"
@@ -64,6 +65,10 @@ func main() {
 
 	if err := setupCaddyRoutes(caddyClient, cfg); err != nil {
 		slog.Warn("caddy route setup", "error", err)
+	} else {
+		// Reconcile existing project routes after LoadConfig
+		// (LoadConfig replaces Caddy's entire config, so we need to restore per-project routes)
+		reconcileProjectRoutes(projectService, dockerClient, caddyClient)
 	}
 
 	systemHandler := handler.NewSystemHandler()
@@ -143,20 +148,59 @@ func setupCaddyRoutes(c *caddyrepo.Client, cfg config.Config) error {
 	buf.WriteString("\t}\n")
 	buf.WriteString("}\n")
 
-	if err := os.WriteFile(caddyfilePath, buf.Bytes(), 0644); err != nil {
+	caddyfileContent := buf.Bytes()
+
+	// Write Caddyfile to disk for reference/debugging
+	if err := os.WriteFile(caddyfilePath, caddyfileContent, 0644); err != nil {
 		return fmt.Errorf("write caddyfile: %w", err)
 	}
 	slog.Info("caddyfile written", "path", caddyfilePath)
 
-	// Reload Caddy via admin API
-	reloadURL := cfg.CaddyAdminURL + "/reload"
-	resp, err := http.Post(reloadURL, "application/json", nil)
-	if err != nil {
-		slog.Warn("caddy reload request failed (non-fatal)", "url", reloadURL, "error", err)
-		return nil
+	// Load config via Caddy admin API (POST /load with Caddyfile format)
+	if err := c.LoadConfig(caddyfileContent); err != nil {
+		slog.Warn("caddy config load failed", "error", err)
+		return err
 	}
-	defer resp.Body.Close()
-	slog.Info("caddy reloaded", "status", resp.StatusCode)
+	slog.Info("caddy config loaded successfully")
 
 	return nil
+}
+
+// reconcileProjectRoutes restores all deployed project routes after LoadConfig
+// replaces Caddy's entire configuration. This ensures that backend restarts
+// don't wipe out live routing for deployed projects.
+func reconcileProjectRoutes(ps *service.ProjectService, dc *dockerrepo.Client, cc *caddyrepo.Client) {
+	if ps == nil || dc == nil {
+		return
+	}
+
+	ctx := context.Background()
+	projects, err := ps.List(ctx)
+	if err != nil {
+		slog.Warn("reconcile routes: list projects failed", "error", err)
+		return
+	}
+
+	for _, p := range projects {
+		// Only restore routes for deployed projects with active containers
+		if p.Status != domain.ProjectStatusRunning || p.ContainerID == "" || p.Domain == "" {
+			continue
+		}
+
+		// Get container port (default to 80 if unavailable)
+		port, err := dc.GetContainerPort(ctx, p.ContainerID)
+		if err != nil {
+			port = "80"
+		}
+
+		// Reconstruct the exact upstream string that would have been used
+		upstream := fmt.Sprintf("project-%d:%s", p.ID, port)
+
+		// Re-add the route (non-fatal if it fails)
+		if err := cc.AddRoute(p.Domain, upstream); err != nil {
+			slog.Warn("reconcile project route", "project_id", p.ID, "domain", p.Domain, "error", err)
+		} else {
+			slog.Info("reconciled project route", "project_id", p.ID, "domain", p.Domain, "upstream", upstream)
+		}
+	}
 }

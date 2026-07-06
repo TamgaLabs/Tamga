@@ -102,3 +102,19 @@ func (c *Client) getRoutes() ([]routeConfig, error) {
 	}
 	return routes, nil
 }
+
+// LoadConfig loads a complete Caddyfile configuration via the admin API.
+// The config should be in Caddyfile format.
+func (c *Client) LoadConfig(caddyfileContent []byte) error {
+	url := fmt.Sprintf("%s/load?adapter=caddyfile", c.adminURL)
+	resp, err := http.Post(url, "text/caddyfile", bytes.NewReader(caddyfileContent))
+	if err != nil {
+		return fmt.Errorf("load config request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode >= 400 {
+		return fmt.Errorf("load config failed: status %d", resp.StatusCode)
+	}
+	return nil
+}
