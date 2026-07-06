@@ -22,6 +22,8 @@ services:
       - ./data:/data
       - ./Caddyfile:/Caddyfile
     env_file: .env
+    environment:
+      - HOST_DATA_DIR=${PWD}/data
     networks:
       - tamga-network
 

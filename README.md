@@ -140,6 +140,8 @@ passed as a `?token=` query param instead.
 
 See `.env.example` for all configurable variables and defaults.
 
+**Note on `HOST_DATA_DIR`**: This is the absolute host-side path to the data directory (the same directory that docker-compose.yml mounts as `./data:/data`). When using `docker compose up`, this is automatically set by the compose file to `${PWD}/data`. If running the backend outside of docker-compose, you must set this to the absolute path of your data directory; otherwise, agent sandbox container creation will fail.
+
 ## Project Layout
 
 ```

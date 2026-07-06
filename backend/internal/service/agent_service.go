@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"path/filepath"
 	"sync"
 
 	"github.com/docker/docker/api/types"
@@ -138,7 +139,13 @@ func (s *AgentService) StartSandbox(ctx context.Context, projectID int64) (conta
 	}
 	env = s.injectApiKeys(env)
 
-	mounts := []string{fmt.Sprintf("%s/projects/%d:/workspace/%d", s.cfg.DataDir, projectID, projectID)}
+	// Validate HostDataDir is set and absolute before constructing mount string.
+	// This ensures the bind-mount source passed to the Docker daemon is correct.
+	if s.cfg.HostDataDir == "" || !filepath.IsAbs(s.cfg.HostDataDir) {
+		return "", "", fmt.Errorf("HOST_DATA_DIR must be set to an absolute host path (got: %q); see .env.example or set HOST_DATA_DIR explicitly", s.cfg.HostDataDir)
+	}
+
+	mounts := []string{fmt.Sprintf("%s/projects/%d:/workspace/%d", s.cfg.HostDataDir, projectID, projectID)}
 
 	// Hold the lock across the full ensure-container-then-increment sequence
 	// so a concurrent StartSandbox/ReleaseSandbox for the same container name

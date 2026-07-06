@@ -17,6 +17,7 @@ type Config struct {
 	UIDomain      string
 	APIDomain     string
 	DataDir       string
+	HostDataDir   string
 	SystemCodeDir string
 	Port          int
 	ReadTimeout   time.Duration
@@ -35,6 +36,7 @@ func Load() Config {
 		UIDomain:      getEnv("UI_DOMAIN", "localhost"),
 		APIDomain:     getEnv("API_DOMAIN", "api.localhost"),
 		DataDir:       getEnv("DATA_DIR", "./data"),
+		HostDataDir:   getEnv("HOST_DATA_DIR", ""),
 		SystemCodeDir: getEnv("SYSTEM_CODE_DIR", ""),
 		Port:          getEnvInt("PORT", 8080),
 		ReadTimeout:   time.Second * 10,
