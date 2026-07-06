@@ -244,3 +244,23 @@ export const updateAgentProvider = (id: string, data: Partial<AgentProvider>) =>
   });
 export const deleteAgentProvider = (id: string) =>
   api<void>(`/agent-providers/${id}`, { method: "DELETE" });
+
+// API Keys
+export type ApiKeyEntry = {
+  id: string;
+  provider: string;
+  label?: string;
+  has_key: boolean;
+  created_at: string;
+  updated_at: string;
+};
+
+export const listApiKeys = () =>
+  api<ApiKeyEntry[]>("/system/api-keys");
+export const setApiKey = (provider: string, key: string, label?: string) =>
+  api<ApiKeyEntry>("/system/api-keys", {
+    method: "POST",
+    body: JSON.stringify({ provider, key, label }),
+  });
+export const deleteApiKey = (id: string) =>
+  api<void>(`/system/api-keys/${id}`, { method: "DELETE" });
