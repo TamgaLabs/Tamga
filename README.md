@@ -147,6 +147,7 @@ See `.env.example` for all configurable variables and defaults.
 ```
 ├── backend/
 │   ├── cmd/api/main.go            # Go entrypoint
+│   ├── cmd/egress-proxy/main.go   # Agent sandbox egress-whitelist proxy (FEAT-006)
 │   └── internal/
 │       ├── config/                # Config loader (env vars)
 │       ├── handler/               # HTTP handlers
@@ -159,7 +160,8 @@ See `.env.example` for all configurable variables and defaults.
 ├── deploy/
 │   ├── Dockerfile.backend         # Go production image
 │   ├── Dockerfile.frontend        # Next.js production image
-│   └── Dockerfile.agent           # Agent runner image
+│   ├── Dockerfile.agent           # Agent runner image
+│   └── Dockerfile.egress-proxy    # Agent sandbox egress-whitelist proxy (FEAT-006)
 ├── frontend/                      # Next.js App Router
 │   └── src/
 │       ├── app/                   # Pages (login, setup, dashboard, projects)

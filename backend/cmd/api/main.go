@@ -60,8 +60,9 @@ func main() {
 
 	agentProviderService := service.NewAgentProviderService(db)
 	apiKeyService := service.NewApiKeyService(db, cfg.JWTSecret)
+	whitelistService := service.NewWhitelistService(db)
 	projectService := service.NewProjectService(db, dockerClient, caddyClient, cfg)
-	agentService := service.NewAgentService(db, dockerClient, cfg, agentProviderService, apiKeyService)
+	agentService := service.NewAgentService(db, dockerClient, cfg, agentProviderService, apiKeyService, whitelistService)
 
 	if err := setupCaddyRoutes(caddyClient, cfg); err != nil {
 		slog.Warn("caddy route setup", "error", err)
@@ -78,6 +79,7 @@ func main() {
 	codeHandler := handler.NewCodeHandler(projectService, cfg)
 	agentProviderHandler := handler.NewAgentProviderHandler(agentProviderService)
 	apiKeyHandler := handler.NewApiKeyHandler(apiKeyService)
+	whitelistHandler := handler.NewWhitelistHandler(whitelistService)
 	authMiddleware := handler.AuthMiddleware(authService)
 
 	var containerHandler *handler.ContainerHandler
@@ -87,7 +89,7 @@ func main() {
 		containerHandler = handler.NewContainerHandler(nil)
 	}
 
-	r := router.New(authHandler, systemHandler, projectHandler, terminalHandler, containerHandler, codeHandler, agentProviderHandler, apiKeyHandler, authMiddleware)
+	r := router.New(authHandler, systemHandler, projectHandler, terminalHandler, containerHandler, codeHandler, agentProviderHandler, apiKeyHandler, whitelistHandler, authMiddleware)
 
 	srv := &http.Server{
 		Addr:         fmt.Sprintf(":%d", cfg.Port),

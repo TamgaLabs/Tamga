@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"log/slog"
 	"path/filepath"
+	"sort"
+	"strings"
 	"sync"
 
 	"github.com/docker/docker/api/types"
@@ -20,31 +22,141 @@ import (
 // shell exec session a terminal WebSocket connection proxies into. It no
 // longer knows anything about a specific agent CLI or protocol - it only
 // starts/stops containers and opens a shell inside them.
+//
+// Networking (FEAT-006): each project's sandbox gets its own internal
+// Docker network (no route to the internet, no route to tamga-net or any
+// other project's sandbox). The only way out is through the shared
+// egress-proxy container, which is multi-homed onto every active sandbox's
+// network and only allows CONNECT/requests to whitelisted domains.
 type AgentService struct {
-	db          *sqlite.DB
-	docker      *dockerclient.Client
-	cfg         config.Config
-	providerSvc *AgentProviderService
-	apiKeySvc   *ApiKeyService
+	db           *sqlite.DB
+	docker       *dockerclient.Client
+	cfg          config.Config
+	providerSvc  *AgentProviderService
+	apiKeySvc    *ApiKeyService
+	whitelistSvc *WhitelistService
 
 	mu        sync.Mutex
 	connCount map[string]int
 }
 
-func NewAgentService(db *sqlite.DB, docker *dockerclient.Client, cfg config.Config, providerSvc *AgentProviderService, apiKeySvc *ApiKeyService) *AgentService {
+func NewAgentService(db *sqlite.DB, docker *dockerclient.Client, cfg config.Config, providerSvc *AgentProviderService, apiKeySvc *ApiKeyService, whitelistSvc *WhitelistService) *AgentService {
 	return &AgentService{
-		db:          db,
-		docker:      docker,
-		cfg:         cfg,
-		providerSvc: providerSvc,
-		apiKeySvc:   apiKeySvc,
-		connCount:   make(map[string]int),
+		db:           db,
+		docker:       docker,
+		cfg:          cfg,
+		providerSvc:  providerSvc,
+		apiKeySvc:    apiKeySvc,
+		whitelistSvc: whitelistSvc,
+		connCount:    make(map[string]int),
 	}
 }
 
 const agentImage = "tamga-agent"
 
-func (s *AgentService) ensureContainerRunning(ctx context.Context, containerName string, mounts []string, image string, env []string) error {
+// Egress proxy: a single shared, always-on container that is the sole
+// route off every sandbox's internal network out to the internet. See
+// ensureEgressProxy.
+const (
+	egressProxyImage = "tamga-egress-proxy"
+	egressProxyName  = "tamga-egress-proxy"
+	egressProxyPort  = "8888"
+)
+
+// agentNetworkName returns the dedicated Docker network name for a
+// project's sandbox. Each project gets its own network (rather than
+// sharing one) so sandboxes can never reach each other directly - they
+// simply aren't on the same network.
+func agentNetworkName(projectID int64) string {
+	return fmt.Sprintf("agent-net-%d", projectID)
+}
+
+// activeAgentNetworks returns the sandbox networks that currently have a
+// running container attached, derived from connCount. Caller must hold
+// s.mu.
+func (s *AgentService) activeAgentNetworks() []string {
+	var nets []string
+	for name := range s.connCount {
+		var projectID int64
+		if _, err := fmt.Sscanf(name, "agent-%d", &projectID); err == nil {
+			nets = append(nets, agentNetworkName(projectID))
+		}
+	}
+	return nets
+}
+
+// ensureEgressProxy makes sure the shared egress-proxy container is
+// running with the current whitelist and is attached to every network in
+// networks. It recreates the container whenever the whitelist has changed
+// since it was last (re)created - this is what makes whitelist edits take
+// effect on the next sandbox creation, per FEAT-006.
+func (s *AgentService) ensureEgressProxy(ctx context.Context, networks []string) error {
+	domains, err := s.whitelistSvc.Domains()
+	if err != nil {
+		return fmt.Errorf("load egress whitelist: %w", err)
+	}
+	sort.Strings(domains)
+	wantEnv := fmt.Sprintf("ALLOWED_DOMAINS=%s", strings.Join(domains, ","))
+
+	upToDate := false
+	if s.docker.ContainerIsRunning(ctx, egressProxyName) {
+		currentEnv, err := s.docker.ContainerEnv(ctx, egressProxyName)
+		if err != nil {
+			slog.Warn("inspect egress proxy env, recreating", "error", err)
+		} else {
+			for _, e := range currentEnv {
+				if e == wantEnv {
+					upToDate = true
+					break
+				}
+			}
+		}
+	}
+
+	if !upToDate {
+		if s.docker.ContainerExists(ctx, egressProxyName) {
+			s.docker.StopContainer(ctx, egressProxyName)
+			if err := s.docker.RemoveContainer(ctx, egressProxyName); err != nil {
+				return fmt.Errorf("remove stale egress proxy: %w", err)
+			}
+		}
+		env := []string{wantEnv, fmt.Sprintf("PORT=%s", egressProxyPort)}
+		// "bridge" is Docker's always-present default network - this is
+		// the proxy's one and only route to the internet. Per-project
+		// sandbox networks are attached below via NetworkConnect.
+		if _, err := s.docker.CreateContainerOpts(ctx, egressProxyName, egressProxyImage, env, "bridge", nil); err != nil {
+			return fmt.Errorf("create egress proxy: %w", err)
+		}
+		if err := s.docker.StartContainer(ctx, egressProxyName); err != nil {
+			return fmt.Errorf("start egress proxy: %w", err)
+		}
+		slog.Info("egress proxy (re)created", "domains", domains)
+	}
+
+	for _, netName := range networks {
+		if err := s.docker.NetworkConnect(ctx, netName, egressProxyName); err != nil {
+			slog.Warn("connect egress proxy to sandbox network", "network", netName, "error", err)
+		}
+	}
+	return nil
+}
+
+// egressProxyEnv returns the HTTP(S)_PROXY env vars pointing sandbox
+// traffic at the shared egress proxy, reachable by container name on the
+// sandbox's own network.
+func egressProxyEnv() []string {
+	proxyURL := fmt.Sprintf("http://%s:%s", egressProxyName, egressProxyPort)
+	return []string{
+		fmt.Sprintf("HTTP_PROXY=%s", proxyURL),
+		fmt.Sprintf("HTTPS_PROXY=%s", proxyURL),
+		fmt.Sprintf("http_proxy=%s", proxyURL),
+		fmt.Sprintf("https_proxy=%s", proxyURL),
+		"NO_PROXY=localhost,127.0.0.1",
+		"no_proxy=localhost,127.0.0.1",
+	}
+}
+
+func (s *AgentService) ensureContainerRunning(ctx context.Context, containerName string, mounts []string, image string, env []string, network string) error {
 	if s.docker == nil {
 		return fmt.Errorf("docker daemon not available")
 	}
@@ -58,7 +170,7 @@ func (s *AgentService) ensureContainerRunning(ctx context.Context, containerName
 		if err := s.docker.StartContainer(ctx, containerName); err != nil {
 			slog.Warn("failed to start existing agent container, recreating", "container", containerName, "error", err)
 			s.docker.RemoveContainer(ctx, containerName)
-			if _, err := s.docker.CreateContainerOpts(ctx, containerName, image, env, "tamga-net", mounts); err != nil {
+			if _, err := s.docker.CreateContainerOpts(ctx, containerName, image, env, network, mounts); err != nil {
 				return fmt.Errorf("recreate agent container: %w", err)
 			}
 			if err := s.docker.StartContainer(ctx, containerName); err != nil {
@@ -70,7 +182,7 @@ func (s *AgentService) ensureContainerRunning(ctx context.Context, containerName
 		slog.Info("agent container restarted", "container", containerName)
 		return nil
 	}
-	if _, err := s.docker.CreateContainerOpts(ctx, containerName, image, env, "tamga-net", mounts); err != nil {
+	if _, err := s.docker.CreateContainerOpts(ctx, containerName, image, env, network, mounts); err != nil {
 		return fmt.Errorf("create agent container: %w", err)
 	}
 	if err := s.docker.StartContainer(ctx, containerName); err != nil {
@@ -138,6 +250,7 @@ func (s *AgentService) StartSandbox(ctx context.Context, projectID int64) (conta
 		}
 	}
 	env = s.injectApiKeys(env)
+	env = append(env, egressProxyEnv()...)
 
 	// Validate HostDataDir is set and absolute before constructing mount string.
 	// This ensures the bind-mount source passed to the Docker daemon is correct.
@@ -146,6 +259,7 @@ func (s *AgentService) StartSandbox(ctx context.Context, projectID int64) (conta
 	}
 
 	mounts := []string{fmt.Sprintf("%s/projects/%d:/workspace/%d", s.cfg.HostDataDir, projectID, projectID)}
+	network := agentNetworkName(projectID)
 
 	// Hold the lock across the full ensure-container-then-increment sequence
 	// so a concurrent StartSandbox/ReleaseSandbox for the same container name
@@ -154,7 +268,21 @@ func (s *AgentService) StartSandbox(ctx context.Context, projectID int64) (conta
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	if err := s.ensureContainerRunning(ctx, containerName, mounts, image, env); err != nil {
+	// FEAT-006: this project's sandbox gets its own internal network,
+	// isolated from tamga-net, project containers and every other
+	// project's sandbox. Outbound internet only exists via the shared
+	// egress proxy, which we (re)connect to every currently-active
+	// sandbox network plus this one so whitelist edits and new sandboxes
+	// both land on an up-to-date proxy.
+	if err := s.docker.EnsureNetwork(ctx, network, true); err != nil {
+		return "", "", fmt.Errorf("ensure sandbox network: %w", err)
+	}
+	networks := append(s.activeAgentNetworks(), network)
+	if err := s.ensureEgressProxy(ctx, networks); err != nil {
+		return "", "", fmt.Errorf("ensure egress proxy: %w", err)
+	}
+
+	if err := s.ensureContainerRunning(ctx, containerName, mounts, image, env, network); err != nil {
 		return "", "", err
 	}
 
@@ -222,6 +350,7 @@ func (s *AgentService) StopAgent(ctx context.Context, projectID int64) error {
 		return nil
 	}
 	containerName := fmt.Sprintf("agent-%d", projectID)
+	network := agentNetworkName(projectID)
 
 	if !s.docker.ContainerExists(ctx, containerName) {
 		return nil
@@ -233,6 +362,16 @@ func (s *AgentService) StopAgent(ctx context.Context, projectID int64) error {
 		return fmt.Errorf("remove agent: %w", err)
 	}
 	slog.Info("agent container stopped", "container", containerName)
+
+	// The sandbox was the only other member of its network besides the
+	// egress proxy - tear both down now that it's gone, so we don't
+	// accumulate one internal network per project ever created.
+	if err := s.docker.NetworkDisconnect(ctx, network, egressProxyName); err != nil {
+		slog.Warn("disconnect egress proxy from sandbox network", "network", network, "error", err)
+	}
+	if err := s.docker.NetworkRemove(ctx, network); err != nil {
+		slog.Warn("remove sandbox network", "network", network, "error", err)
+	}
 	return nil
 }
 

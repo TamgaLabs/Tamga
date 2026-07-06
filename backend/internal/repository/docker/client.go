@@ -13,6 +13,7 @@ import (
 	"github.com/docker/docker/api/types/build"
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/filters"
+	"github.com/docker/docker/api/types/network"
 	"github.com/docker/docker/api/types/system"
 	"github.com/docker/docker/client"
 	"github.com/docker/docker/pkg/stdcopy"
@@ -257,6 +258,83 @@ func (c *Client) PruneVolumes(ctx context.Context) error {
 func (c *Client) PruneNetworks(ctx context.Context) error {
 	_, err := c.cli.NetworksPrune(ctx, filters.Args{})
 	return err
+}
+
+// NetworkExists reports whether a network with the given name already
+// exists.
+func (c *Client) NetworkExists(ctx context.Context, name string) (bool, error) {
+	_, err := c.cli.NetworkInspect(ctx, name, network.InspectOptions{})
+	if err != nil {
+		if client.IsErrNotFound(err) {
+			return false, nil
+		}
+		return false, fmt.Errorf("inspect network: %w", err)
+	}
+	return true, nil
+}
+
+// EnsureNetwork creates a bridge network with the given name if it doesn't
+// already exist. When internal is true, the network has no default route
+// to the internet - containers on it can only reach other containers
+// attached to the same network.
+func (c *Client) EnsureNetwork(ctx context.Context, name string, internal bool) error {
+	exists, err := c.NetworkExists(ctx, name)
+	if err != nil {
+		return err
+	}
+	if exists {
+		return nil
+	}
+	_, err = c.cli.NetworkCreate(ctx, name, network.CreateOptions{
+		Driver:   "bridge",
+		Internal: internal,
+	})
+	if err != nil {
+		return fmt.Errorf("create network: %w", err)
+	}
+	return nil
+}
+
+// NetworkConnect attaches a running container to a network. It is
+// idempotent: connecting an already-attached container is not an error.
+func (c *Client) NetworkConnect(ctx context.Context, networkName, containerName string) error {
+	err := c.cli.NetworkConnect(ctx, networkName, containerName, nil)
+	if err != nil && strings.Contains(err.Error(), "already exists") {
+		return nil
+	}
+	return err
+}
+
+// NetworkDisconnect detaches a container from a network. Missing
+// network/container is not an error - there's nothing left to disconnect.
+func (c *Client) NetworkDisconnect(ctx context.Context, networkName, containerName string) error {
+	err := c.cli.NetworkDisconnect(ctx, networkName, containerName, true)
+	if err != nil && client.IsErrNotFound(err) {
+		return nil
+	}
+	return err
+}
+
+// NetworkRemove removes a network. Missing network is not an error.
+func (c *Client) NetworkRemove(ctx context.Context, name string) error {
+	err := c.cli.NetworkRemove(ctx, name)
+	if err != nil && client.IsErrNotFound(err) {
+		return nil
+	}
+	return err
+}
+
+// ContainerEnv returns the environment variables a running/existing
+// container was created with.
+func (c *Client) ContainerEnv(ctx context.Context, containerName string) ([]string, error) {
+	info, err := c.cli.ContainerInspect(ctx, containerName)
+	if err != nil {
+		return nil, fmt.Errorf("inspect container: %w", err)
+	}
+	if info.Config == nil {
+		return nil, nil
+	}
+	return info.Config.Env, nil
 }
 
 // ExecCreate creates a shell/PTY exec session inside a running container.

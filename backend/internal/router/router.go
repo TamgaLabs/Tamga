@@ -19,6 +19,7 @@ func New(
 	codeHandler *handler.CodeHandler,
 	agentProviderHandler *handler.AgentProviderHandler,
 	apiKeyHandler *handler.ApiKeyHandler,
+	whitelistHandler *handler.WhitelistHandler,
 	authMiddleware func(http.Handler) http.Handler,
 ) *chi.Mux {
 	r := chi.NewRouter()
@@ -81,6 +82,11 @@ func New(
 			r.Get("/system/api-keys", apiKeyHandler.List)
 			r.Post("/system/api-keys", apiKeyHandler.Set)
 			r.Delete("/system/api-keys/{id}", apiKeyHandler.Delete)
+
+			// Agent egress whitelist
+			r.Get("/system/egress-whitelist", whitelistHandler.List)
+			r.Post("/system/egress-whitelist", whitelistHandler.Create)
+			r.Delete("/system/egress-whitelist/{id}", whitelistHandler.Delete)
 
 			// Code
 			r.Get("/code/projects", codeHandler.ListCodebases)
