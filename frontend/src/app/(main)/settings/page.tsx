@@ -350,7 +350,7 @@ function AgentProvidersCard({ providers, onUpdate }: { providers: AgentProvider[
   };
 
   const handleSave = async () => {
-    const data = { name, image };
+    const data = { name, image, type: "docker" as const };
     try {
       if (editId) {
         await updateAgentProvider(editId, data);

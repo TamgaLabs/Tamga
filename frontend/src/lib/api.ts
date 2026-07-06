@@ -231,6 +231,7 @@ export const getAgentProvider = (id: string) =>
 export const createAgentProvider = (data: {
   name: string;
   image?: string;
+  type?: string;
 }) =>
   api<AgentProvider>("/agent-providers", {
     method: "POST",
