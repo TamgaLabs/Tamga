@@ -67,6 +67,16 @@ func (s *ProjectService) Create(ctx context.Context, req CreateProjectRequest) (
 	}
 	slog.Info("project created", "id", project.ID, "name", project.Name)
 
+	// Snapshot the project's initial state to return to the caller before
+	// handing the original struct off to the background deploy() goroutine.
+	// deploy() mutates project's fields (Status, ContainerID, ...) directly
+	// and concurrently with the caller (typically an HTTP handler) reading
+	// and JSON-encoding the returned value, which is an unsynchronized data
+	// race (BUG-011). Returning a copy means the caller's view is always
+	// exactly what was just persisted, regardless of how far deploy() has
+	// progressed by the time the response is serialized.
+	result := *project
+
 	go func() {
 		if err := s.deploy(context.Background(), project); err != nil {
 			slog.Error("deploy failed", "project_id", project.ID, "error", err)
@@ -75,7 +85,7 @@ func (s *ProjectService) Create(ctx context.Context, req CreateProjectRequest) (
 		}
 	}()
 
-	return project, nil
+	return &result, nil
 }
 
 func (s *ProjectService) deploy(ctx context.Context, project *domain.Project) error {
