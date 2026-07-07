@@ -97,7 +97,7 @@ func (h *ProjectHandler) Update(w http.ResponseWriter, r *http.Request) {
 	}
 	project, err := h.svc.Update(r.Context(), id, req)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		http.Error(w, "not found", http.StatusNotFound)
 		return
 	}
 	json.NewEncoder(w).Encode(project)
@@ -110,7 +110,7 @@ func (h *ProjectHandler) Delete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := h.svc.Delete(r.Context(), id); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		http.Error(w, "not found", http.StatusNotFound)
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
@@ -123,7 +123,7 @@ func (h *ProjectHandler) Restart(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := h.svc.Restart(r.Context(), id); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		http.Error(w, "not found", http.StatusNotFound)
 		return
 	}
 	w.WriteHeader(http.StatusOK)
@@ -137,7 +137,7 @@ func (h *ProjectHandler) Logs(w http.ResponseWriter, r *http.Request) {
 	}
 	logs, err := h.svc.Logs(r.Context(), id)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		http.Error(w, "not found", http.StatusNotFound)
 		return
 	}
 	json.NewEncoder(w).Encode(map[string]string{"logs": logs})
