@@ -198,6 +198,13 @@ func (h *ContainerHandler) UpdateResources(w http.ResponseWriter, r *http.Reques
 	resources := container.Resources{}
 	if req.Memory > 0 {
 		resources.Memory = req.Memory
+		// Docker rejects a memory-limit update whose new value exceeds the
+		// container's current memory-swap limit, and every container this
+		// codebase creates starts with no explicit memory-swap set (i.e.
+		// effectively 0). Explicitly setting MemorySwap to -1 (unlimited)
+		// alongside Memory satisfies that constraint regardless of the
+		// container's prior state. See BUG-012.
+		resources.MemorySwap = -1
 	}
 	if req.NanoCPUs > 0 {
 		resources.NanoCPUs = req.NanoCPUs
