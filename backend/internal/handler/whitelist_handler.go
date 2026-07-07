@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/TamgaLabs/Tamga/backend/internal/domain"
 	"github.com/TamgaLabs/Tamga/backend/internal/service"
@@ -47,6 +48,10 @@ func (h *WhitelistHandler) Create(w http.ResponseWriter, r *http.Request) {
 
 	d, err := h.svc.Add(req.Domain)
 	if err != nil {
+		if strings.Contains(err.Error(), "UNIQUE constraint") {
+			http.Error(w, "domain already exists", http.StatusConflict)
+			return
+		}
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
