@@ -229,7 +229,8 @@ func (h *ContainerHandler) Prune(w http.ResponseWriter, r *http.Request) {
 		All        bool `json:"all"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		req.All = true
+		http.Error(w, "invalid request body", http.StatusBadRequest)
+		return
 	}
 
 	ctx := r.Context()
