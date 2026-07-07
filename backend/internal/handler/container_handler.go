@@ -57,7 +57,7 @@ func (h *ContainerHandler) Start(w http.ResponseWriter, r *http.Request) {
 	}
 	id := chi.URLParam(r, "id")
 	if err := h.docker.StartContainer(r.Context(), id); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		http.Error(w, "container not found", http.StatusNotFound)
 		return
 	}
 	w.WriteHeader(http.StatusOK)
@@ -69,7 +69,7 @@ func (h *ContainerHandler) Stop(w http.ResponseWriter, r *http.Request) {
 	}
 	id := chi.URLParam(r, "id")
 	if err := h.docker.StopContainer(r.Context(), id); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		http.Error(w, "container not found", http.StatusNotFound)
 		return
 	}
 	w.WriteHeader(http.StatusOK)
@@ -81,7 +81,7 @@ func (h *ContainerHandler) Restart(w http.ResponseWriter, r *http.Request) {
 	}
 	id := chi.URLParam(r, "id")
 	if err := h.docker.RestartContainer(r.Context(), id); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		http.Error(w, "container not found", http.StatusNotFound)
 		return
 	}
 	w.WriteHeader(http.StatusOK)
@@ -93,7 +93,7 @@ func (h *ContainerHandler) Remove(w http.ResponseWriter, r *http.Request) {
 	}
 	id := chi.URLParam(r, "id")
 	if err := h.docker.RemoveContainer(r.Context(), id); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		http.Error(w, "container not found", http.StatusNotFound)
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
@@ -112,7 +112,7 @@ func (h *ContainerHandler) Logs(w http.ResponseWriter, r *http.Request) {
 	}
 	logs, err := h.docker.ContainerLogs(r.Context(), id, tail)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		http.Error(w, "container not found", http.StatusNotFound)
 		return
 	}
 	json.NewEncoder(w).Encode(map[string]string{"logs": logs})
@@ -125,7 +125,7 @@ func (h *ContainerHandler) Stats(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 	stats, err := h.docker.ContainerStats(r.Context(), id)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		http.Error(w, "container not found", http.StatusNotFound)
 		return
 	}
 
@@ -211,7 +211,7 @@ func (h *ContainerHandler) UpdateResources(w http.ResponseWriter, r *http.Reques
 	}
 
 	if err := h.docker.UpdateContainerResources(r.Context(), id, container.UpdateConfig{Resources: resources}); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		http.Error(w, "container not found", http.StatusNotFound)
 		return
 	}
 	w.WriteHeader(http.StatusOK)
