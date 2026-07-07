@@ -188,7 +188,50 @@ See `.env.example` for all configurable variables and defaults.
 | `make down`  | Stop production stack              |
 | `make logs`  | Tail backend container logs        |
 | `make test`  | Run Go tests                       |
+| `make smoke-test` | Run smoke tests against running stack |
 | `make clean` | Stop and remove volumes            |
+
+## Smoke Tests
+
+Verify that a running (or freshly-brought-up) Tamga stack is healthy and basic functionality works. The smoke test script checks:
+- Backend health endpoint reachability
+- Frontend availability through Caddy proxy
+- Auth flow (setup, login, token generation)
+- Basic project CRUD round-trip (create, list, delete)
+
+Run the smoke tests against an already-running stack:
+
+```bash
+make smoke-test
+```
+
+Or bring up the stack and run tests in one command:
+
+```bash
+./scripts/smoke-test.sh --up
+```
+
+The script exits 0 on success with per-step output, or exits 1+ with a clear error message identifying which check failed. Example output:
+
+```
+→ Waiting for backend health endpoint...
+✓ Backend health check passed
+✓ Frontend is reachable through Caddy
+✓ Auth status check passed
+→ Logging in to get authentication token...
+✓ Login successful, obtained authentication token
+→ Creating test project...
+✓ Test project created (ID: abc123)
+✓ Test project found in project list
+✓ Test project deleted successfully
+
+✓ All smoke tests passed!
+```
+
+Useful environment variables (can be set in `.env` or passed to the script):
+- `ADMIN_PASSWORD` — Password for admin user (defaults to `admin` if not set)
+- `BACKEND_HOST` — Backend address (defaults to `localhost:8080`)
+- `CADDY_HOST` — Caddy/frontend address (defaults to `https://localhost`)
 
 ## License
 

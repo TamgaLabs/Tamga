@@ -1,7 +1,7 @@
 DOMAIN ?= localhost
 CADDY_EMAIL ?= admin@example.com
 
-.PHONY: setup up down logs test build clean
+.PHONY: setup up down logs test build clean smoke-test
 
 -include .env
 export
@@ -29,6 +29,9 @@ logs:
 
 test:
 	go test ./backend/...
+
+smoke-test:
+	@./scripts/smoke-test.sh
 
 clean: down
 	docker compose down -v
