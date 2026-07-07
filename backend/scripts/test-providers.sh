@@ -222,25 +222,42 @@ req GET "/agent-providers/builtin-opencode"
 assert_eq "update builtin default: name unchanged" "Opencode (Built-in)" "$(json_str_field "$REQ_BODY" "name")"
 
 echo ""
-echo "=== Agent providers: is_default is client-settable with no exclusivity enforced ==="
-# AgentProviderHandler.Create/Update decode domain.AgentProvider directly from
-# the request body, including IsDefault, and neither the handler nor
-# AgentProviderService.Create/Update ever clears is_default on other rows -
-# so a client can mark a second provider as default without the builtin ever
-# losing its own is_default=1. Confirmed directly below by counting
-# is_default:true occurrences in the list response before/after.
+echo "=== Agent providers: is_default exclusivity enforced (BUG-016) ==="
+# AgentProviderService.Create/Update (via agent_provider_repo.go) now wrap
+# the write in a transaction that clears is_default on every other row
+# before setting it on the target row, so at most one row is ever the
+# default at a time. Confirmed directly below.
 req GET "/agent-providers"
 DEFAULT_COUNT_BEFORE=$(count_occurrences "$REQ_BODY" '"is_default":true')
+assert_eq "before: exactly one default (seeded builtin-opencode)" "1" "$DEFAULT_COUNT_BEFORE"
 
 req POST "/agent-providers" '{"name":"Rogue Default Provider","type":"docker","image":"tamga-agent-rogue","is_default":true}'
 assert_eq "create provider with is_default:true in body: 201 (accepted, not rejected)" "201" "$REQ_STATUS"
 ROGUE_ID=$(json_str_field "$REQ_BODY" "id")
+assert_true "create provider with is_default:true: response reflects is_default:true" "$(echo "$REQ_BODY" | grep -q '"is_default":true' && echo true || echo false)"
 
 req GET "/agent-providers"
 DEFAULT_COUNT_AFTER=$(count_occurrences "$REQ_BODY" '"is_default":true')
-if [ "$DEFAULT_COUNT_AFTER" -gt "$DEFAULT_COUNT_BEFORE" ]; then
-    finding "POST/PUT /agent-providers accepts an is_default:true field straight from the client request body (agent_provider_handler.go Create/Update json-decode domain.AgentProvider wholesale, and AgentProviderService.Create/Update never clear is_default on other rows). A client can create/update a second row with is_default=1 without the original builtin-opencode ever losing its own is_default=1 - confirmed here: ${DEFAULT_COUNT_BEFORE} row(s) had is_default:true before, ${DEFAULT_COUNT_AFTER} after creating one extra provider with is_default:true in the body. Since FindDefaultProvider (agent_provider_repo.go) does 'WHERE is_default = 1 LIMIT 1' with no explicit ORDER BY, which of several is_default rows gets picked by ResolveProvider (used to pick a new sandbox's provider) is effectively undefined/DB-order-dependent."
-fi
+assert_eq "after create with is_default:true: still exactly one default (old one cleared, not additive)" "1" "$DEFAULT_COUNT_AFTER"
+req GET "/agent-providers/${ROGUE_ID}"
+assert_true "after create with is_default:true: the new provider is the one is_default row" "$(echo "$REQ_BODY" | grep -q '"is_default":true' && echo true || echo false)"
+
+req GET "/agent-providers/builtin-opencode"
+assert_true "after create with is_default:true: previous default (builtin-opencode) is_default now false" "$(echo "$REQ_BODY" | grep -q '"is_default":false' && echo true || echo false)"
+
+# builtin-opencode is no longer the default, so it's no longer protected -
+# use PUT to hand the default back to it and confirm exclusivity holds in
+# that direction too (Update path, not just Create).
+req PUT "/agent-providers/builtin-opencode" '{"name":"Opencode (Built-in)","type":"docker","image":"tamga-agent","is_default":true}'
+assert_eq "restore builtin-opencode as default via PUT is_default:true: 200" "200" "$REQ_STATUS"
+
+req GET "/agent-providers"
+DEFAULT_COUNT_RESTORED=$(count_occurrences "$REQ_BODY" '"is_default":true')
+assert_eq "after restoring builtin-opencode as default: still exactly one default" "1" "$DEFAULT_COUNT_RESTORED"
+
+req GET "/agent-providers/${ROGUE_ID}"
+assert_true "after restoring builtin-opencode as default: rogue provider's is_default cleared" "$(echo "$REQ_BODY" | grep -q '"is_default":false' && echo true || echo false)"
+
 req DELETE "/agent-providers/${ROGUE_ID}"
 
 echo ""
