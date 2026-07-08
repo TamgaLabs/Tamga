@@ -5,6 +5,7 @@ title: setupCaddyRoutes posts to nonexistent Caddy admin /reload endpoint
 status: done
 complexity: simple
 assignee: sdlc-developer
+sprint: SPRINT-001
 created: 2026-07-04
 history:
   - {date: 2026-07-04, stage: created, by: architect, note: "found by sdlc-reviewer during FEAT-002 review; non-blocking for that task's acceptance criteria, filed separately"}

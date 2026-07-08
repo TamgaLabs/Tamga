@@ -5,6 +5,7 @@ title: Data race between ProjectService.Create's response and its background dep
 status: done
 complexity: standard
 assignee: sdlc-developer
+sprint: SPRINT-002
 created: 2026-07-07
 history:
   - {date: 2026-07-07, stage: created, by: architect, note: "found during TEST-002's live verification pass; filed separately per that task's rule of not fixing bugs inline — real concurrency bug, needs a design decision, not a one-line fix"}

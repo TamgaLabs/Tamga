@@ -5,6 +5,7 @@ title: Project handler returns 500 instead of 404 for a nonexistent project ID
 status: done
 complexity: simple
 assignee: sdlc-developer
+sprint: SPRINT-002
 created: 2026-07-07
 history:
   - {date: 2026-07-07, stage: created, by: architect, note: "found during TEST-002's live verification pass; filed separately per that task's rule of not fixing bugs inline"}

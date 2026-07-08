@@ -5,6 +5,7 @@ title: Add LICENSE (AGPL-3.0 + Commercial Exception)
 status: done
 complexity: simple
 assignee: sdlc-developer
+sprint: SPRINT-001
 created: 2026-07-04
 history:
   - {date: 2026-07-04, stage: created, by: architect, note: "task created"}

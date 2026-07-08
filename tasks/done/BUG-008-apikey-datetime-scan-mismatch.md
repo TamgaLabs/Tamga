@@ -5,6 +5,7 @@ title: ApiKeyRepo can't scan created_at/updated_at back into time.Time
 status: done
 complexity: simple
 assignee: sdlc-developer
+sprint: SPRINT-001
 created: 2026-07-06
 history:
   - {date: 2026-07-06, stage: created, by: architect, note: "found by sdlc-tester while testing BUG-004; separate pre-existing bug, out of that task's scope, filed here"}

@@ -5,6 +5,7 @@ title: POST /system/egress-whitelist returns 500 instead of 400/409 for a duplic
 status: done
 complexity: simple
 assignee: sdlc-developer
+sprint: SPRINT-002
 created: 2026-07-07
 history:
   - {date: 2026-07-07, stage: created, by: architect, note: "found during TEST-004's live verification pass"}

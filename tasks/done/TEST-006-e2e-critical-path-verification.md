@@ -5,6 +5,7 @@ title: End-to-end critical path verification (setup through deploy to teardown)
 status: done
 complexity: standard
 assignee: sdlc-developer
+sprint: SPRINT-002
 created: 2026-07-07
 history:
   - {date: 2026-07-07, stage: created, by: architect, note: "task created — Phase 2 (frontend/backend compatibility), closes it out; depends on TEST-001..005"}

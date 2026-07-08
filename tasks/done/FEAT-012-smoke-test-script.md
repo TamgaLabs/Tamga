@@ -5,6 +5,7 @@ title: Add a docker-compose smoke-test script for builder/tester tooling
 status: done
 complexity: simple
 assignee: sdlc-developer
+sprint: SPRINT-001
 created: 2026-07-06
 history:
   - {date: 2026-07-06, stage: created, by: architect, note: "task created as part of pipeline tooling improvements - lets the new builder/tester agents run a canned baseline check instead of re-deriving one by hand every time"}

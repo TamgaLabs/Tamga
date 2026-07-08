@@ -5,6 +5,7 @@ title: Fix agent_provider Command mismatch / simplify fields post-ACP
 status: done
 complexity: simple
 assignee: opencode
+sprint: SPRINT-001
 created: 2026-07-04
 history:
   - {date: 2026-07-04, stage: created, by: architect, note: "task created"}

@@ -5,6 +5,7 @@ title: shadcn/component usage & styling audit
 status: done
 complexity: standard
 assignee: sdlc-developer
+sprint: SPRINT-002
 created: 2026-07-07
 history:
   - {date: 2026-07-07, stage: created, by: architect, note: "task created — Phase 3 (frontend UI), starts only after Phase 1+2 confirm the backend and its contract are sound; this is an audit only, the visual refactor itself is planned as follow-up FEAT tasks once this lands"}

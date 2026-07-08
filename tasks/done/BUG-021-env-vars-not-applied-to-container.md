@@ -5,6 +5,7 @@ title: Project env vars are stored in the DB but never actually applied to the r
 status: done
 complexity: standard
 assignee: sdlc-developer
+sprint: SPRINT-002
 created: 2026-07-07
 history:
   - {date: 2026-07-07, stage: created, by: architect, note: "found during TEST-006's e2e critical path pass; independently confirmed by the architect directly in source (project_service.go's CreateContainer/CreateEnvVar/Restart)"}

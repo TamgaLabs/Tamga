@@ -5,6 +5,7 @@ title: Frontend api() helper throws on empty-body 200/204 responses, silently ab
 status: done
 complexity: simple
 assignee: sdlc-developer
+sprint: SPRINT-002
 created: 2026-07-07
 history:
   - {date: 2026-07-07, stage: created, by: architect, note: "found during TEST-005's frontend/backend contract audit (Finding 1); reproduced directly by the developer with a throwaway Node repro, and independently confirmed by the architect by reading api.ts and an affected call site"}

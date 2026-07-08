@@ -5,6 +5,7 @@ title: Container handler returns 500 instead of 404 for a nonexistent container 
 status: done
 complexity: simple
 assignee: sdlc-developer
+sprint: SPRINT-002
 created: 2026-07-07
 history:
   - {date: 2026-07-07, stage: created, by: architect, note: "found during TEST-003's live verification pass; same shape/root cause as BUG-010 (project_handler.go), this time in container_handler.go"}

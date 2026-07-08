@@ -5,6 +5,7 @@ title: POST /system/prune's malformed-body fallback silently prunes everything
 status: done
 complexity: simple
 assignee: sdlc-developer
+sprint: SPRINT-002
 created: 2026-07-07
 history:
   - {date: 2026-07-07, stage: created, by: architect, note: "found during TEST-003's live verification pass (read from source, not independently exercised end-to-end there since a real prune isn't safe against the shared sandbox daemon); filed separately per that task's rule of not fixing bugs inline"}

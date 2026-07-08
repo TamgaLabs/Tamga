@@ -5,6 +5,7 @@ title: SQLite DSN's WAL/busy_timeout query params are silently ignored by the dr
 status: done
 complexity: standard
 assignee: sdlc-developer
+sprint: SPRINT-002
 created: 2026-07-07
 history:
   - {date: 2026-07-07, stage: created, by: architect, note: "found incidentally by agy during BUG-016's second review pass, independently confirmed by the architect directly against the vendored driver source; pre-existing, unrelated to BUG-016's diff — needs a real fix (correct DSN syntax) plus judgment on whether existing concurrent-write error handling needs hardening, not a one-line fix"}

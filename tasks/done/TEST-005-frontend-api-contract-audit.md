@@ -5,6 +5,7 @@ title: Frontend/backend API contract audit
 status: done
 complexity: standard
 assignee: sdlc-developer
+sprint: SPRINT-002
 created: 2026-07-07
 history:
   - {date: 2026-07-07, stage: created, by: architect, note: "task created — Phase 2 (frontend/backend compatibility), starts only after Phase 1 (TEST-001..004) confirms the backend itself is sound"}

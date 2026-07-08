@@ -5,6 +5,7 @@ title: PUT /system/containers/{id}/resources fails for any container without a p
 status: done
 complexity: standard
 assignee: sdlc-developer
+sprint: SPRINT-002
 created: 2026-07-07
 history:
   - {date: 2026-07-07, stage: created, by: architect, note: "found during TEST-003's live verification pass; filed separately per that task's rule of not fixing bugs inline — needs a real design decision on memory-swap semantics, not a one-line fix"}

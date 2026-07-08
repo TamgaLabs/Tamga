@@ -5,6 +5,7 @@ title: "Agent network: isolated with whitelist-only egress"
 status: done
 complexity: standard
 assignee: sdlc-developer
+sprint: SPRINT-001
 created: 2026-07-04
 history:
   - {date: 2026-07-04, stage: created, by: architect, note: "task created"}

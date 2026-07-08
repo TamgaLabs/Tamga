@@ -5,6 +5,7 @@ title: AgentProvidersCard create/update never sends `type`, backend rejects it
 status: done
 complexity: simple
 assignee: sdlc-developer
+sprint: SPRINT-001
 created: 2026-07-05
 history:
   - {date: 2026-07-05, stage: created, by: architect, note: "found by sdlc-reviewer during BUG-001 review; pre-existing (since f3be4db), unrelated to that task, filed separately"}

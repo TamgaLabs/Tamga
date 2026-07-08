@@ -5,6 +5,7 @@ title: Agent sandbox bind-mount uses relative DATA_DIR, breaking with stock .env
 status: done
 complexity: simple
 assignee: sdlc-developer
+sprint: SPRINT-001
 created: 2026-07-05
 history:
   - {date: 2026-07-05, stage: created, by: architect, note: "found by sdlc-tester while testing FEAT-004; pre-existing pattern (not introduced by that task), filed separately"}

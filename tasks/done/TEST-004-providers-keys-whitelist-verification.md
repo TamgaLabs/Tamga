@@ -5,6 +5,7 @@ title: Agent providers, API keys & egress whitelist verification
 status: done
 complexity: standard
 assignee: sdlc-developer
+sprint: SPRINT-002
 created: 2026-07-07
 history:
   - {date: 2026-07-07, stage: created, by: architect, note: "task created — Phase 1 (backend verification) sprint, closes out backend coverage"}

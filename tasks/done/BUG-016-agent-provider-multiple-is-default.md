@@ -5,6 +5,7 @@ title: Agent provider Create/Update doesn't enforce is_default exclusivity
 status: done
 complexity: standard
 assignee: sdlc-developer
+sprint: SPRINT-002
 created: 2026-07-07
 history:
   - {date: 2026-07-07, stage: created, by: architect, note: "found during TEST-004's live verification pass; filed separately per that task's rule of not fixing bugs inline — needs a real design decision (transaction/clear-others-first), not a one-line fix"}

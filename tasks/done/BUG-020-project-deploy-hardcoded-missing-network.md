@@ -5,6 +5,7 @@ title: Project deploy hardcodes a Docker network ("tamga-net") that is never cre
 status: done
 complexity: standard
 assignee: sdlc-developer
+sprint: SPRINT-002
 created: 2026-07-07
 history:
   - {date: 2026-07-07, stage: created, by: architect, note: "found during TEST-006's e2e critical path pass; already flagged in passing by FEAT-006's implementer but never filed as its own bug; independently confirmed by the architect directly in source (project_service.go + docker-compose.yml)"}

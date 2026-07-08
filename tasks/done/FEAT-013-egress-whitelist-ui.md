@@ -5,6 +5,7 @@ title: Add settings UI for the agent egress whitelist
 status: done
 complexity: simple
 assignee: sdlc-developer
+sprint: SPRINT-002
 created: 2026-07-07
 history:
   - {date: 2026-07-07, stage: created, by: architect, note: "found during TEST-005's frontend/backend contract audit (Finding 2) — the backend egress-whitelist endpoints (from FEAT-006) have zero frontend callers; this is a missing-UI gap, not a defect, so filed as a feature rather than a bug"}

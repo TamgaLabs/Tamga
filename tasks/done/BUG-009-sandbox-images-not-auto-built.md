@@ -5,6 +5,7 @@ title: tamga-agent and tamga-egress-proxy images aren't built by docker-compose/
 status: done
 complexity: simple
 assignee: sdlc-developer
+sprint: SPRINT-001
 created: 2026-07-06
 history:
   - {date: 2026-07-06, stage: created, by: architect, note: "found by sdlc-reviewer during FEAT-006 review; pre-existing pattern since FEAT-005 (not a new regression), extended by FEAT-006's egress-proxy image, filed here"}

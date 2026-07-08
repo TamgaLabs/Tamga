@@ -5,6 +5,7 @@ title: ApiKeyService.Set panics on nil pointer when no existing key for provider
 status: done
 complexity: simple
 assignee: sdlc-developer
+sprint: SPRINT-001
 created: 2026-07-04
 history:
   - {date: 2026-07-04, stage: created, by: architect, note: "found by sdlc-tester while testing FEAT-001; unrelated to that task's diff, filed separately"}
