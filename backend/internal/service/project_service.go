@@ -141,7 +141,12 @@ func (s *ProjectService) deploy(ctx context.Context, project *domain.Project) er
 		return fmt.Errorf("ensure project network: %w", err)
 	}
 
-	containerID, err := s.docker.CreateContainer(ctx, containerName, tag, nil, "tamga-net")
+	envVars, err := s.db.ListEnvVars(project.ID)
+	if err != nil {
+		return fmt.Errorf("list env vars: %w", err)
+	}
+
+	containerID, err := s.docker.CreateContainer(ctx, containerName, tag, envVarsToSlice(envVars), "tamga-net")
 	if err != nil {
 		return fmt.Errorf("create container: %w", err)
 	}
@@ -318,6 +323,14 @@ func (s *ProjectService) Delete(ctx context.Context, id int64) error {
 	return nil
 }
 
+// Restart recreates the project's container (stop, remove, re-create,
+// start) rather than a plain stop+start. This is intentional, not an
+// accident: Docker has no way to inject env var changes into an
+// already-running container, so recreating from the current DB state on
+// every restart is the only way an env var added/changed after the
+// container was first created can ever actually take effect (BUG-021).
+// The container is re-created from the same already-built image tag, so
+// no rebuild/reclone happens here - this is not a full redeploy.
 func (s *ProjectService) Restart(ctx context.Context, id int64) error {
 	project, err := s.db.FindProject(id)
 	if err != nil {
@@ -329,13 +342,55 @@ func (s *ProjectService) Restart(ctx context.Context, id int64) error {
 	if err := s.requireDocker(); err != nil {
 		return err
 	}
+
+	envVars, err := s.db.ListEnvVars(id)
+	if err != nil {
+		return fmt.Errorf("list env vars: %w", err)
+	}
+
+	containerName := fmt.Sprintf("project-%d", project.ID)
+	tag := fmt.Sprintf("tamga-project-%d", project.ID)
+
 	if err := s.docker.StopContainer(ctx, project.ContainerID); err != nil {
 		return fmt.Errorf("stop container: %w", err)
 	}
-	if err := s.docker.StartContainer(ctx, project.ContainerID); err != nil {
+	if err := s.docker.RemoveContainer(ctx, project.ContainerID); err != nil {
+		return fmt.Errorf("remove container: %w", err)
+	}
+
+	if err := s.docker.EnsureNetwork(ctx, "tamga-net", false); err != nil {
+		return fmt.Errorf("ensure project network: %w", err)
+	}
+
+	containerID, err := s.docker.CreateContainer(ctx, containerName, tag, envVarsToSlice(envVars), "tamga-net")
+	if err != nil {
+		return fmt.Errorf("create container: %w", err)
+	}
+	if err := s.docker.StartContainer(ctx, containerID); err != nil {
 		return fmt.Errorf("start container: %w", err)
 	}
+
+	project.ContainerID = containerID
+	if err := s.db.UpdateProject(project); err != nil {
+		return fmt.Errorf("update project: %w", err)
+	}
+	slog.Info("container recreated on restart", "project_id", project.ID, "container_id", containerID[:12])
+
 	return nil
+}
+
+// envVarsToSlice converts the project's stored env vars into the
+// "KEY=VALUE" string slice format Docker's client expects
+// (docker/client.go's CreateContainer(Opts)).
+func envVarsToSlice(vars []*domain.EnvVar) []string {
+	if len(vars) == 0 {
+		return nil
+	}
+	env := make([]string, 0, len(vars))
+	for _, v := range vars {
+		env = append(env, fmt.Sprintf("%s=%s", v.Key, v.Value))
+	}
+	return env
 }
 
 type UpdateProjectRequest struct {

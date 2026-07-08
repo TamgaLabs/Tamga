@@ -6,8 +6,10 @@
 # into the next call exactly as the frontend's api.ts would: first-run
 # setup/login, create a project from a (fixture) git repo, watch it
 # actually deploy, confirm the deployment record + real container, set an
-# env var and restart, adjust the container's resources, browse/read a
-# file via the code endpoints, then delete and confirm full teardown. This
+# env var on the already-deployed project and restart (step 4), set an env
+# var on a second project BEFORE its first deploy (step 4b), adjust the
+# first project's container resources, browse/read a file via the code
+# endpoints, then delete and confirm full teardown. This
 # is deliberately NOT per-endpoint testing (that's TEST-001..004) - the
 # whole point is catching integration-order bugs a single endpoint check
 # can't see.
@@ -31,31 +33,22 @@
 # registry push, no port publishing, nothing that could collide with the
 # live stack.
 #
-# --- Pre-existing environment gap found while building this script ---
-# ProjectService.deploy (project_service.go:132) hardcodes
-# `s.docker.CreateContainer(ctx, containerName, tag, nil, "tamga-net")` -
-# a Docker network literally named "tamga-net". Nothing in the codebase
-# ever creates a network by that name for project deploys: EnsureNetwork
-# (docker/client.go) is only ever called from agent_service.go's sandbox
-# path, never from project deploy. The project's own docker-compose.yml
-# defines a compose network named "tamga-network" (namespaced by compose
-# to "<project>_tamga-network" at runtime) - a different name. Confirmed
-# directly in this environment: `docker network inspect tamga-net` ->
-# "network tamga-net not found", and a real `docker run --network
-# tamga-net ...` fails the same way. This means: in a fresh/default
-# environment (i.e. what a first real deploy would look like), the very
-# first project's deploy() would fail permanently at CreateContainer,
-# every time, forever - this is exactly the class of bug this task exists
-# to catch. It was already flagged in passing by FEAT-006's implementer
-# (see tasks/done/FEAT-006-agent-network-whitelist.md, "Not done" section:
-# "The pre-existing tamga-net vs actual compose network name mismatch...
-# is a separate, pre-existing bug, not touched here") but was never filed
-# as its own BUG-XXX. Per this task's instructions, not fixed here; this
-# script works around it by hand (`docker network create tamga-net`
-# before triggering deploy, removed again on exit) purely so the rest of
-# the critical path (steps 3-7) can still be exercised for real - that
-# workaround is NOT something the actual deploy path does on its own, and
-# a real fresh install would just be stuck.
+# --- BUG-020 / BUG-021, both since fixed ---
+# This script previously worked around two now-fixed bugs by hand:
+#   - BUG-020: deploy() hardcoded NetworkMode "tamga-net" without ever
+#     creating that network, so a first deploy on a fresh install failed
+#     permanently at CreateContainer. deploy() now calls
+#     s.docker.EnsureNetwork(ctx, "tamga-net", false) itself before
+#     creating the container (project_service.go), so this script no
+#     longer needs to `docker network create tamga-net` by hand.
+#   - BUG-021: env vars stored via POST /projects/{id}/env-vars were never
+#     actually passed to Docker - CreateContainer always got a literal
+#     nil env slice, and Restart only did stop+start on the same
+#     container (Docker has no live env-injection API, so that could
+#     never pick up a change). deploy() now reads the project's env vars
+#     from the DB before CreateContainer, and Restart recreates the
+#     container (stop, remove, re-create with current env vars, start)
+#     instead of a plain stop+start - see step 4 and step 4b below.
 #
 # Usage:
 #   backend/scripts/test-e2e-critical-path.sh
@@ -79,10 +72,11 @@ DATA_DIR="${WORKDIR}/data"
 DB_PATH="${WORKDIR}/data/test.db"
 SERVER_LOG="${WORKDIR}/server.log"
 SERVER_PID=""
-TAMGA_NET_CREATED=false
 PROJECT_ID=""
 CONTAINER_ID=""
 IMAGE_TAG=""
+BEFORE_PROJECT_ID=""
+BEFORE_IMAGE_TAG=""
 
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -106,8 +100,11 @@ cleanup() {
     if [ -n "$IMAGE_TAG" ]; then
         docker rmi -f "$IMAGE_TAG" >/dev/null 2>&1
     fi
-    if [ "$TAMGA_NET_CREATED" = "true" ]; then
-        docker network rm tamga-net >/dev/null 2>&1
+    if [ -n "$BEFORE_PROJECT_ID" ]; then
+        docker rm -f "project-${BEFORE_PROJECT_ID}" >/dev/null 2>&1
+    fi
+    if [ -n "$BEFORE_IMAGE_TAG" ]; then
+        docker rmi -f "$BEFORE_IMAGE_TAG" >/dev/null 2>&1
     fi
     rm -rf "$WORKDIR"
 }
@@ -191,16 +188,6 @@ if ! (cd "$REPO_ROOT" && go build -o "$BIN" ./backend/cmd/api) 2>"${WORKDIR}/bui
 fi
 log_ok "backend binary built"
 PASS=$((PASS + 1))
-
-log_step "Ensuring docker network 'tamga-net' exists (see script header - not created by the app itself)..."
-if docker network inspect tamga-net >/dev/null 2>&1; then
-    log_ok "tamga-net already exists (pre-existing on this host, left as-is)"
-else
-    docker network create tamga-net >/dev/null
-    TAMGA_NET_CREATED=true
-    log_ok "tamga-net created by this script (will be removed on exit)"
-fi
-finding "ProjectService.deploy (project_service.go:132) hardcodes NetworkMode \"tamga-net\", a Docker network that nothing in the codebase ever creates for the project-deploy path (EnsureNetwork in docker/client.go is only ever invoked from agent_service.go's sandbox path). Confirmed directly: 'docker network inspect tamga-net' / 'docker run --network tamga-net ...' both fail with 'network tamga-net not found' on a host that has only run docker-compose up (whose own network is named tamga-network / <project>_tamga-network, a different name). A first real deploy on a fresh install would fail permanently at CreateContainer, every single time. Already flagged in passing by FEAT-006's implementer (tasks/done/FEAT-006-agent-network-whitelist.md, 'Not done' section) but never filed as its own BUG-XXX. This script works around it by hand (docker network create tamga-net) purely so the rest of this critical path could be exercised for real."
 
 log_step "Preparing fixture git repo (real Dockerfile, so deploy actually builds+runs)..."
 GITROOT="${WORKDIR}/gitroot"
@@ -330,42 +317,88 @@ assert_eq "real docker state: container actually running" "true" "$(docker_runni
 assert_true "real docker state: container name matches project-{id} convention" "$(docker inspect -f '{{.Name}}' "$CONTAINER_ID" 2>/dev/null | grep -q "^/project-${PROJECT_ID}\$" && echo true || echo false)"
 
 echo ""
-echo "=== Step 4: set an env var, restart, confirm via logs (+ docker inspect) ==="
+echo "=== Step 4: set an env var on an already-deployed project, restart, confirm via docker inspect (BUG-021) ==="
 req POST "/projects/${PROJECT_ID}/env-vars" '{"key":"FOO","value":"e2e-value"}'
 assert_eq "create env var: 201" "201" "$REQ_STATUS"
 EV_ID=$(json_field "$REQ_BODY" "id")
 assert_true "create env var: got an id" "$([ -n "$EV_ID" ] && echo true || echo false)"
 
-req GET "/projects/${PROJECT_ID}/logs"
-PRE_RESTART_LOGS=$(json_str_field "$REQ_BODY" "logs")
-# Note: the API JSON-encodes the log text, so real newlines arrive here as
-# literal backslash-n (two chars), not actual newlines - the whole value is
-# one "line" as far as grep -c is concerned. Count occurrences with -o |
-# wc -l instead so a restart's second boot marker is actually detected.
-PRE_COUNT=$(echo "$PRE_RESTART_LOGS" | grep -o "tamga-e2e-fixture-boot" | wc -l)
-
-STARTED_BEFORE=$(docker inspect -f '{{.State.StartedAt}}' "$CONTAINER_ID")
+# Restart now recreates the container (stop, remove, re-create with
+# current DB env vars, start) rather than a plain stop+start - Docker has
+# no live env-injection API for a running container, so recreate is the
+# only way a change made after the container already existed can ever
+# take effect. That means the container's ID itself changes across
+# restart now, which is an even stronger proof of a real restart than the
+# old StartedAt-on-the-same-ID check this replaces.
+OLD_CONTAINER_ID="$CONTAINER_ID"
 req POST "/projects/${PROJECT_ID}/restart"
 assert_eq "restart project: 200" "200" "$REQ_STATUS"
 sleep 1
-STARTED_AFTER=$(docker inspect -f '{{.State.StartedAt}}' "$CONTAINER_ID")
-assert_true "restart: real docker StartedAt actually changed (real restart, not a no-op)" "$([ "$STARTED_BEFORE" != "$STARTED_AFTER" ] && echo true || echo false)"
-assert_eq "restart: real docker state is running again" "true" "$(docker_running "$CONTAINER_ID")"
+
+req GET "/projects/${PROJECT_ID}"
+CONTAINER_ID=$(json_str_field "$REQ_BODY" "container_id")
+assert_true "restart: project record has a container_id" "$([ -n "$CONTAINER_ID" ] && echo true || echo false)"
+assert_true "restart: container was actually recreated (new container_id, not the old one)" "$([ "$CONTAINER_ID" != "$OLD_CONTAINER_ID" ] && echo true || echo false)"
+assert_eq "restart: real docker state is running (new container)" "true" "$(docker_running "$CONTAINER_ID")"
+assert_true "restart: old container actually removed" "$(docker inspect "$OLD_CONTAINER_ID" >/dev/null 2>&1 && echo false || echo true)"
 
 req GET "/projects/${PROJECT_ID}/logs"
 assert_eq "logs after restart: 200" "200" "$REQ_STATUS"
 POST_RESTART_LOGS=$(json_str_field "$REQ_BODY" "logs")
 POST_COUNT=$(echo "$POST_RESTART_LOGS" | grep -o "tamga-e2e-fixture-boot" | wc -l)
-assert_true "logs: boot marker count increased after restart (${PRE_COUNT} -> ${POST_COUNT}), proving logs actually reflect the restart" "$([ "$POST_COUNT" -gt "$PRE_COUNT" ] && echo true || echo false)"
+assert_true "logs: recreated container produced its own boot marker" "$([ "$POST_COUNT" -ge 1 ] && echo true || echo false)"
 
 CONTAINER_ENV=$(docker inspect -f '{{json .Config.Env}}' "$CONTAINER_ID")
 if echo "$CONTAINER_ENV" | grep -q "FOO=e2e-value"; then
-    log_ok "env var FOO=e2e-value is present in the real container's env (applied as expected)"
+    log_ok "env var FOO=e2e-value is present in the real container's env after restart (applied as expected)"
     PASS=$((PASS + 1))
 else
     log_fail "env var FOO=e2e-value is NOT present in the real container's env after create + restart"
     FAIL=$((FAIL + 1))
-    finding "POST /projects/{id}/env-vars stores the key/value purely in the env_vars DB table (ProjectService.CreateEnvVar, project_service.go:375-385) and it is NEVER read back anywhere in the deploy path: CreateContainer is always called with a literal nil env slice (project_service.go:132), and Restart (project_service.go:309-327) only does a plain docker stop+start on the SAME existing container - it never recreates it, so there is no code path, ever, that could apply a saved env var to a project's running container. Reproduced directly here: created FOO=e2e-value via the API, restarted the project via the API, and 'docker inspect --format {{json .Config.Env}}' on the real container shows no FOO at all. The env-vars UI/API is fully disconnected from the actual container - it round-trips through the DB (as TEST-002 already confirmed) but has zero runtime effect."
+fi
+
+echo ""
+echo "=== Step 4b: env var set BEFORE first deploy is present at container creation (BUG-021) ==="
+BEFORE_MARKER="tamga-e2e-before-deploy-$$-$RANDOM"
+req POST "/projects" "{\"name\":\"e2e-before-deploy\",\"source_type\":\"remote\",\"repo_url\":\"${FIXTURE_REPO_URL}\",\"branch\":\"main\",\"domain\":\"e2e-before-deploy.local\"}"
+assert_eq "create second project: 201" "201" "$REQ_STATUS"
+BEFORE_PROJECT_ID=$(json_field "$REQ_BODY" "id")
+BEFORE_IMAGE_TAG="tamga-project-${BEFORE_PROJECT_ID}"
+assert_true "create second project: got a project id" "$([ -n "$BEFORE_PROJECT_ID" ] && echo true || echo false)"
+
+if [ -n "$BEFORE_PROJECT_ID" ]; then
+    # Added immediately after creation, well before deploy()'s clone+build
+    # steps reach container creation, so this exercises the "env var set
+    # before the project's very first deploy" path deploy() itself must
+    # now read from the DB (as opposed to step 4's already-deployed path,
+    # which goes through Restart's recreate instead).
+    req POST "/projects/${BEFORE_PROJECT_ID}/env-vars" "{\"key\":\"BEFORE_DEPLOY\",\"value\":\"${BEFORE_MARKER}\"}"
+    assert_eq "create env var before deploy: 201" "201" "$REQ_STATUS"
+
+    BEFORE_STATUS=$(wait_for_terminal_status "$BEFORE_PROJECT_ID" 60)
+    assert_eq "second project deploy: reaches 'running'" "running" "$BEFORE_STATUS"
+
+    req GET "/projects/${BEFORE_PROJECT_ID}"
+    BEFORE_CONTAINER_ID=$(json_str_field "$REQ_BODY" "container_id")
+    assert_true "second project: has a container_id after deploy" "$([ -n "$BEFORE_CONTAINER_ID" ] && echo true || echo false)"
+
+    BEFORE_CONTAINER_ENV=$(docker inspect -f '{{json .Config.Env}}' "$BEFORE_CONTAINER_ID" 2>/dev/null)
+    if echo "$BEFORE_CONTAINER_ENV" | grep -q "BEFORE_DEPLOY=${BEFORE_MARKER}"; then
+        log_ok "env var set before first deploy (BEFORE_DEPLOY=${BEFORE_MARKER}) is present at container creation"
+        PASS=$((PASS + 1))
+    else
+        log_fail "env var set before first deploy is NOT present in the container's real env at creation"
+        FAIL=$((FAIL + 1))
+    fi
+
+    req DELETE "/projects/${BEFORE_PROJECT_ID}"
+    assert_eq "delete second project: 204" "204" "$REQ_STATUS"
+    docker rm -f "project-${BEFORE_PROJECT_ID}" >/dev/null 2>&1
+    docker rmi -f "$BEFORE_IMAGE_TAG" >/dev/null 2>&1
+    # Confirmed torn down above; clear so the cleanup trap's
+    # belt-and-suspenders removal has nothing left to do.
+    BEFORE_PROJECT_ID=""
+    BEFORE_IMAGE_TAG=""
 fi
 
 echo ""
