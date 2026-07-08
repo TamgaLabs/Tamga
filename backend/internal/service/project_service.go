@@ -129,6 +129,18 @@ func (s *ProjectService) deploy(ctx context.Context, project *domain.Project) er
 		s.docker.RemoveContainer(ctx, containerName)
 	}
 
+	// Ensure the shared project network exists before attaching to it.
+	// Nothing else in the codebase creates "tamga-net" (agent_service.go's
+	// EnsureNetwork calls are for the isolated, internal, per-project agent
+	// sandbox networks - a different thing entirely, see BUG-020). Unlike
+	// those sandbox networks, this one is not internal: project containers
+	// generally need real outbound access (installing packages, calling
+	// external APIs, etc.), the same way the compose-managed tamga-network
+	// isn't internal either.
+	if err := s.docker.EnsureNetwork(ctx, "tamga-net", false); err != nil {
+		return fmt.Errorf("ensure project network: %w", err)
+	}
+
 	containerID, err := s.docker.CreateContainer(ctx, containerName, tag, nil, "tamga-net")
 	if err != nil {
 		return fmt.Errorf("create container: %w", err)
