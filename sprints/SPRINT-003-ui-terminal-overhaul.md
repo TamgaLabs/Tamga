@@ -86,7 +86,7 @@ domain lists are stored separately so switching modes never loses entries.
 
 ## Tasks
 - TEST-008 — Frontend layout/routing architecture audit for the restructure — done
-- TEST-009 — Backend terminal, sandbox and egress architecture audit — pending
+- TEST-009 — Backend terminal, sandbox and egress architecture audit — done
 - BUG-022 — Project delete leaves user on deleted project's page — pending
 - BUG-023 — Tamga system codebase never listed on /code even with Show Tamga System on — pending
 - BUG-024 — Project detail page renders permanently blank on fetch failure — pending
