@@ -26,7 +26,23 @@ export async function api<T>(
     const text = await res.text();
     throw new Error(text || `HTTP ${res.status}`);
   }
-  return res.json();
+
+  // Handle empty-body responses (204 No Content, Content-Length: 0, etc.)
+  if (res.status === 204 || res.headers.get("content-length") === "0") {
+    return undefined as T;
+  }
+
+  // For other status codes, attempt to parse JSON, but fall back to undefined
+  // if the body is truly empty (e.g., 200 with no body)
+  try {
+    return await res.json();
+  } catch (e) {
+    // If parsing fails due to empty body, return undefined
+    if (e instanceof SyntaxError && e.message.includes("JSON")) {
+      return undefined as T;
+    }
+    throw e;
+  }
 }
 
 export type User = {
