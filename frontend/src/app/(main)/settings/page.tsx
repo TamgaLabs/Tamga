@@ -17,11 +17,15 @@ import {
   getGitCredential,
   setGitCredential,
   deleteGitCredential,
+  listWhitelist,
+  addWhitelistDomain,
+  deleteWhitelistDomain,
   type DockerInfo,
   type AgentProvider,
   type ApiKeyEntry,
   type ResourceLimit,
   type GitCredential,
+  type WhitelistDomain,
 } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { getShowSystem, setShowSystem } from "@/lib/settings";
@@ -57,6 +61,7 @@ export default function SettingsPage() {
   const [apiKeys, setApiKeys] = useState<ApiKeyEntry[]>([]);
   const [resourceLimit, setResourceLimit] = useState<ResourceLimit | null>(null);
   const [gitCredential, setGitCredentialState] = useState<GitCredential | null>(null);
+  const [whitelist, setWhitelist] = useState<WhitelistDomain[]>([]);
   const [pruneDialogOpen, setPruneDialogOpen] = useState(false);
   const { user, loading: authLoading } = useAuth();
   const router = useRouter();
@@ -77,6 +82,9 @@ export default function SettingsPage() {
   const loadGitCredential = useCallback(() => {
     getGitCredential().then(setGitCredentialState).catch(console.error);
   }, []);
+  const loadWhitelist = useCallback(() => {
+    listWhitelist().then(setWhitelist).catch(console.error);
+  }, []);
 
   useEffect(() => {
     if (!user) return;
@@ -86,7 +94,8 @@ export default function SettingsPage() {
     loadApiKeys();
     loadResourceLimit();
     loadGitCredential();
-  }, [user, loadProviders, loadApiKeys, loadResourceLimit, loadGitCredential]);
+    loadWhitelist();
+  }, [user, loadProviders, loadApiKeys, loadResourceLimit, loadGitCredential, loadWhitelist]);
 
   const handleToggleSystem = () => {
     const next = !showSystemState;
@@ -193,6 +202,7 @@ export default function SettingsPage() {
         <ApiKeysCard keys={apiKeys} onUpdate={loadApiKeys} />
         <ResourceLimitCard limit={resourceLimit} onUpdate={loadResourceLimit} />
         <GitCredentialCard credential={gitCredential} onUpdate={loadGitCredential} />
+        <WhitelistCard domains={whitelist} onUpdate={loadWhitelist} />
       </div>
 
       <AlertDialog open={pruneDialogOpen} onOpenChange={setPruneDialogOpen}>
@@ -671,6 +681,122 @@ function GitCredentialCard({ credential, onUpdate }: { credential: GitCredential
           <AlertDialogFooter>
             <AlertDialogCancel>Cancel</AlertDialogCancel>
             <AlertDialogAction onClick={handleDelete}>Delete</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </Card>
+  );
+}
+
+// Agent sandbox egress whitelist (see FEAT-006): domains the sandbox egress
+// proxy will permit outbound requests to. Listed/added/removed here.
+function WhitelistCard({ domains, onUpdate }: { domains: WhitelistDomain[]; onUpdate: () => void }) {
+  const [domain, setDomain] = useState("");
+  const [showForm, setShowForm] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState<WhitelistDomain | null>(null);
+
+  const resetForm = () => {
+    setDomain("");
+    setError(null);
+    setShowForm(false);
+  };
+
+  const handleAdd = async () => {
+    if (!domain) return;
+    setSaving(true);
+    setError(null);
+    try {
+      await addWhitelistDomain(domain);
+      resetForm();
+      onUpdate();
+    } catch (e) {
+      const errMsg = e instanceof Error ? e.message : String(e);
+      // Check if it's a 409 duplicate domain error from the backend
+      if (errMsg.includes("domain already exists")) {
+        setError("Domain already exists");
+      } else {
+        setError(errMsg || "Failed to add domain");
+      }
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleDelete = async (id: number) => {
+    try {
+      await deleteWhitelistDomain(id);
+      onUpdate();
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  const confirmDelete = async () => {
+    if (!deleteTarget) return;
+    await handleDelete(deleteTarget.id);
+    setDeleteTarget(null);
+  };
+
+  return (
+    <Card>
+      <CardHeader className="flex flex-row items-center justify-between">
+        <CardTitle className="text-sm">Egress Whitelist</CardTitle>
+        <Button size="sm" variant="outline" onClick={() => { resetForm(); setShowForm(!showForm); }}>
+          {showForm ? "Cancel" : "Add Domain"}
+        </Button>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        <p className="text-xs text-muted-foreground">
+          Domains the agent sandbox egress proxy will permit outbound requests to.
+        </p>
+        {showForm && (
+          <div className="space-y-2 p-3 border border-border rounded bg-card">
+            <div className="space-y-1">
+              <Label className="text-xs">Domain</Label>
+              <Input
+                value={domain}
+                onChange={(e) => setDomain(e.target.value)}
+                placeholder="example.com"
+              />
+            </div>
+            {error && (
+              <p className="text-xs text-destructive">{error}</p>
+            )}
+            <Button size="sm" onClick={handleAdd} disabled={saving}>
+              {saving ? "Adding..." : "Add"}
+            </Button>
+          </div>
+        )}
+        {domains.length === 0 ? (
+          <p className="text-sm text-muted-foreground">No domains in whitelist.</p>
+        ) : (
+          <div className="text-sm space-y-2">
+            {domains.map((d) => (
+              <div key={d.id} className="flex items-center justify-between py-1.5 border-b border-border last:border-0">
+                <span className="font-mono text-sm">{d.domain}</span>
+                <Button variant="ghost" size="sm" className="text-destructive" onClick={() => setDeleteTarget(d)}>
+                  Delete
+                </Button>
+              </div>
+            ))}
+          </div>
+        )}
+      </CardContent>
+
+      <AlertDialog open={!!deleteTarget} onOpenChange={(open) => !open && setDeleteTarget(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Remove domain from whitelist?</AlertDialogTitle>
+            <AlertDialogDescription>
+              &quot;{deleteTarget?.domain}&quot; will no longer be accessible from agent sandboxes.
+              This action cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={confirmDelete}>Delete</AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>

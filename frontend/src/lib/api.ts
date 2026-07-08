@@ -316,3 +316,22 @@ export const setGitCredential = (data: { provider: string; username?: string; to
   });
 export const deleteGitCredential = () =>
   api<void>("/system/git-credential", { method: "DELETE" });
+
+// Agent sandbox egress whitelist (see FEAT-006): domains the sandbox
+// egress proxy will permit outbound requests to. Global setting, multiple
+// entries - same list/add/delete pattern as ApiKeys.
+export type WhitelistDomain = {
+  id: number;
+  domain: string;
+  created_at: string;
+};
+
+export const listWhitelist = () =>
+  api<WhitelistDomain[]>("/system/egress-whitelist");
+export const addWhitelistDomain = (domain: string) =>
+  api<WhitelistDomain>("/system/egress-whitelist", {
+    method: "POST",
+    body: JSON.stringify({ domain }),
+  });
+export const deleteWhitelistDomain = (id: number) =>
+  api<void>(`/system/egress-whitelist/${id}`, { method: "DELETE" });
