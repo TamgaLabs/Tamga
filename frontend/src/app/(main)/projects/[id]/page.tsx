@@ -58,6 +58,11 @@ export default function ProjectDetailPage() {
   const [project, setProject] = useState<Project | null>(null);
   const [tab, setTab] = useState("overview");
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [deleteError, setDeleteError] = useState("");
+  const [deleting, setDeleting] = useState(false);
+  const [deleteSuccess, setDeleteSuccess] = useState(false);
+  const [restartError, setRestartError] = useState("");
+  const [restarting, setRestarting] = useState(false);
   const { user, loading: authLoading } = useAuth();
 
   const fetchProject = useCallback(() => {
@@ -74,14 +79,30 @@ export default function ProjectDetailPage() {
 
   const handleRestart = async () => {
     if (!project) return;
-    await restartProject(project.id);
-    fetchProject();
+    setRestartError("");
+    setRestarting(true);
+    try {
+      await restartProject(project.id);
+      fetchProject();
+    } catch (err: unknown) {
+      setRestartError(err instanceof Error ? err.message : "Failed to restart project");
+    } finally {
+      setRestarting(false);
+    }
   };
 
   const handleDelete = async () => {
     if (!project) return;
-    await deleteProject(project.id);
-    router.push("/dashboard");
+    setDeleteError("");
+    setDeleting(true);
+    try {
+      await deleteProject(project.id);
+      setDeleteSuccess(true);
+      setTimeout(() => router.push("/dashboard"), 1500);
+    } catch (err: unknown) {
+      setDeleteError(err instanceof Error ? err.message : "Failed to delete project");
+      setDeleting(false);
+    }
   };
 
   if (authLoading || !user || !project) return null;
@@ -99,6 +120,24 @@ export default function ProjectDetailPage() {
         </div>
         <Badge variant={statusVariant[project.status] || "default"}>{project.status}</Badge>
       </div>
+
+      {deleteSuccess && (
+        <div className="mb-4 p-3 bg-success/10 border border-success/20 rounded text-sm text-success">
+          Project deleted successfully. Redirecting...
+        </div>
+      )}
+      {deleteError && (
+        <div className="mb-4 p-3 bg-destructive/10 border border-destructive/20 rounded text-sm text-destructive flex items-center justify-between">
+          <span>{deleteError}</span>
+          <button onClick={() => setDeleteError("")} className="text-destructive hover:text-destructive/80 ml-2">&times;</button>
+        </div>
+      )}
+      {restartError && (
+        <div className="mb-4 p-3 bg-destructive/10 border border-destructive/20 rounded text-sm text-destructive flex items-center justify-between">
+          <span>{restartError}</span>
+          <button onClick={() => setRestartError("")} className="text-destructive hover:text-destructive/80 ml-2">&times;</button>
+        </div>
+      )}
 
       <Tabs value={tab} onValueChange={setTab}>
         <div className="flex items-center gap-1 mb-6">
@@ -122,6 +161,7 @@ export default function ProjectDetailPage() {
             project={project}
             onRestart={handleRestart}
             onDelete={() => setDeleteDialogOpen(true)}
+            restarting={restarting}
           />
         </TabsContent>
         <TabsContent value="settings">
@@ -143,7 +183,9 @@ export default function ProjectDetailPage() {
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction onClick={handleDelete}>Delete</AlertDialogAction>
+            <AlertDialogAction onClick={handleDelete} disabled={deleting}>
+              {deleting ? "Deleting..." : "Delete"}
+            </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
@@ -151,7 +193,7 @@ export default function ProjectDetailPage() {
   );
 }
 
-function OverviewTab({ project, onRestart, onDelete }: { project: Project; onRestart: () => void; onDelete: () => void }) {
+function OverviewTab({ project, onRestart, onDelete, restarting }: { project: Project; onRestart: () => void; onDelete: () => void; restarting: boolean }) {
   const router = useRouter();
   const [deployments, setDeployments] = useState<Deployment[]>([]);
   const [logs, setLogs] = useState<string>("");
@@ -206,8 +248,8 @@ function OverviewTab({ project, onRestart, onDelete }: { project: Project; onRes
             <FileCode2 className="h-4 w-4 mr-1" />
             Open in Code IDE
           </Button>
-          <Button variant="outline" size="sm" className="w-full" onClick={onRestart}>
-            Restart
+          <Button variant="outline" size="sm" className="w-full" onClick={onRestart} disabled={restarting}>
+            {restarting ? "Restarting..." : "Restart"}
           </Button>
           <Button variant="outline" size="sm" className="w-full" onClick={loadLogs}>
             View Logs
