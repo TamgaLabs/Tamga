@@ -384,6 +384,82 @@ func (c *Client) ExecResize(ctx context.Context, execID string, height, width ui
 	return c.cli.ContainerExecResize(ctx, execID, container.ResizeOptions{Height: height, Width: width})
 }
 
+// ExecRun runs cmd inside containerID to completion (no TTY) and discards
+// its output, blocking until the process exits. Used for short,
+// fire-and-forget maintenance commands (e.g. FEAT-015's terminal session
+// kill, which signals one specific exec's shell process by PID) where
+// nothing needs to be streamed back - just "run this and wait".
+//
+// CRITICAL FIX (FEAT-015 rework 2026-07-09): The original implementation
+// called ContainerExecStart with no ExecStartOptions, which doesn't
+// actually execute the command - it only marks it ready to start. The
+// polling loop then polls ExecInspect indefinitely, never detecting the
+// exec as running or finished (because it never started). Now we attach
+// to the exec (which implicitly starts it with attached output streams),
+// consume the output until EOF (which blocks until the command finishes),
+// then return. This ensures the command actually runs and we wait for it.
+//
+// TIMEOUT FIX (2026-07-09, third review): io.Copy on a hijacked stream
+// can block indefinitely if the Docker daemon hiccups, because the net.Conn
+// returned by ContainerExecAttach has no relationship to ctx — no deadline
+// is ever set on the underlying socket, so context cancellation alone won't
+// interrupt an in-flight Read(). The fix: a watcher goroutine that closes
+// the hijacked connection itself when the timeout fires, so the blocked Read
+// actually unblocks with an error. After io.Copy returns, check execCtx.Err()
+// and treat a deadline-exceeded timeout as a real error (not swallowable as EOF),
+// since a timed-out kill means "we don't know if the shell actually died."
+func (c *Client) ExecRun(ctx context.Context, containerID string, cmd []string) error {
+	// Create a 5s timeout for the entire exec sequence (create, attach, run, drain)
+	execCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+
+	resp, err := c.cli.ContainerExecCreate(execCtx, containerID, container.ExecOptions{
+		AttachStdout: true,
+		AttachStderr: true,
+		Cmd:          cmd,
+	})
+	if err != nil {
+		return fmt.Errorf("exec create: %w", err)
+	}
+	// Attach to the exec - this implicitly starts it and returns hijacked streams
+	hijacked, err := c.cli.ContainerExecAttach(execCtx, resp.ID, container.ExecAttachOptions{})
+	if err != nil {
+		return fmt.Errorf("exec attach: %w", err)
+	}
+	defer hijacked.Close()
+
+	// Watcher goroutine: if the 5s timeout fires, close the hijacked connection
+	// to force-unblock the io.Copy below. The connection has no relationship to
+	// execCtx (confirmed by reading Docker SDK hijack.go), so context cancellation
+	// alone won't interrupt Read() — we must close the connection itself.
+	watchDone := make(chan struct{})
+	defer close(watchDone)
+	go func() {
+		select {
+		case <-execCtx.Done():
+			hijacked.Close()
+		case <-watchDone:
+		}
+	}()
+
+	// Consume all output until EOF (which means the exec finished).
+	// If execCtx times out, the watcher above closes the connection,
+	// which causes this Read to error.
+	_, err = io.Copy(io.Discard, hijacked.Reader)
+	if err != nil && err != io.EOF {
+		return fmt.Errorf("exec output read: %w", err)
+	}
+
+	// After the copy returns, check if the timeout fired. A timed-out kill
+	// is a real error — it means we don't know whether the shell process
+	// actually died, so we must surface it rather than silently returning nil.
+	if execCtx.Err() != nil {
+		return fmt.Errorf("kill command timed out: %w", execCtx.Err())
+	}
+
+	return nil
+}
+
 func (c *Client) DockerInfo(ctx context.Context) (system.Info, error) {
 	info, err := c.cli.Info(ctx)
 	if err != nil {

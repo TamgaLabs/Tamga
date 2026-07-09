@@ -7,9 +7,8 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
-	"sync"
+	"time"
 
-	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/api/types/container"
 
 	"github.com/TamgaLabs/Tamga/backend/internal/config"
@@ -35,8 +34,7 @@ type AgentService struct {
 	resourceLimit *ResourceLimitService
 	gitCredSvc    *GitCredentialService
 
-	mu        sync.Mutex
-	connCount map[string]int
+	sessions *sessionRegistry
 }
 
 func NewAgentService(db *sqlite.DB, docker *dockerclient.Client, cfg config.Config, whitelistSvc *WhitelistService, resourceLimitSvc *ResourceLimitService, gitCredSvc *GitCredentialService) *AgentService {
@@ -47,7 +45,7 @@ func NewAgentService(db *sqlite.DB, docker *dockerclient.Client, cfg config.Conf
 		whitelistSvc:  whitelistSvc,
 		resourceLimit: resourceLimitSvc,
 		gitCredSvc:    gitCredSvc,
-		connCount:     make(map[string]int),
+		sessions:      newSessionRegistry(),
 	}
 }
 
@@ -92,20 +90,6 @@ const (
 // simply aren't on the same network.
 func agentNetworkName(projectID int64) string {
 	return fmt.Sprintf("agent-net-%d", projectID)
-}
-
-// activeAgentNetworks returns the sandbox networks that currently have a
-// running container attached, derived from connCount. Caller must hold
-// s.mu.
-func (s *AgentService) activeAgentNetworks() []string {
-	var nets []string
-	for name := range s.connCount {
-		var projectID int64
-		if _, err := fmt.Sscanf(name, "agent-%d", &projectID); err == nil {
-			nets = append(nets, agentNetworkName(projectID))
-		}
-	}
-	return nets
 }
 
 // ensureEgressProxy makes sure the shared egress-proxy container is
@@ -231,12 +215,11 @@ func (s *AgentService) injectGitCredential(env []string) []string {
 	return append(env, gitEnv...)
 }
 
-// StartSandbox ensures the project's sandbox container is running and
-// registers this caller as an active terminal connection against it, so a
-// later ReleaseSandbox call only stops the container once every terminal
-// connection for the project has closed. It returns the container name and
-// the workspace directory to exec into.
-func (s *AgentService) StartSandbox(ctx context.Context, projectID int64) (containerName, workDir string, err error) {
+// ensureSandbox makes sure the project's sandbox container is running,
+// (re)creating its dedicated network and the shared egress proxy as
+// needed, and returns the container name and the workspace directory to
+// exec into. Callers must hold s.sessions.projectLock(projectID).
+func (s *AgentService) ensureSandbox(ctx context.Context, projectID int64) (containerName, workDir string, err error) {
 	if s.docker == nil {
 		return "", "", fmt.Errorf("docker daemon not available")
 	}
@@ -256,13 +239,6 @@ func (s *AgentService) StartSandbox(ctx context.Context, projectID int64) (conta
 	mounts := []string{fmt.Sprintf("%s/projects/%d:/workspace/%d", s.cfg.HostDataDir, projectID, projectID)}
 	network := agentNetworkName(projectID)
 
-	// Hold the lock across the full ensure-container-then-increment sequence
-	// so a concurrent StartSandbox/ReleaseSandbox for the same container name
-	// can never observe (or act on) a half-finished state - see FEAT-004
-	// review notes for the two races this closes.
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
 	// FEAT-006: this project's sandbox gets its own internal network,
 	// isolated from tamga-net, project containers and every other
 	// project's sandbox. Outbound internet only exists via the shared
@@ -272,7 +248,7 @@ func (s *AgentService) StartSandbox(ctx context.Context, projectID int64) (conta
 	if err := s.docker.EnsureNetwork(ctx, network, true); err != nil {
 		return "", "", fmt.Errorf("ensure sandbox network: %w", err)
 	}
-	networks := append(s.activeAgentNetworks(), network)
+	networks := append(s.sessions.activeNetworks(), network)
 	if err := s.ensureEgressProxy(ctx, networks); err != nil {
 		return "", "", fmt.Errorf("ensure egress proxy: %w", err)
 	}
@@ -281,63 +257,180 @@ func (s *AgentService) StartSandbox(ctx context.Context, projectID int64) (conta
 		return "", "", err
 	}
 
-	s.connCount[containerName]++
-
 	return containerName, fmt.Sprintf("/workspace/%d", projectID), nil
 }
 
-// ReleaseSandbox unregisters an active terminal connection for the project.
-// Once no terminal connections remain, the sandbox container is stopped and
-// removed - this is what makes the sandbox lifecycle ephemeral.
-func (s *AgentService) ReleaseSandbox(ctx context.Context, projectID int64) {
-	containerName := fmt.Sprintf("agent-%d", projectID)
-
-	// Hold the lock across decrement AND the resulting stop/remove so a
-	// StartSandbox that lands in between can't have its (freshly
-	// re-incremented) container yanked out from under it - see FEAT-004
-	// review notes.
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	s.connCount[containerName]--
-	remaining := s.connCount[containerName]
-	if remaining <= 0 {
-		delete(s.connCount, containerName)
-	}
-
-	if remaining > 0 {
-		return
-	}
-	if err := s.StopAgent(ctx, projectID); err != nil {
-		slog.Warn("failed to stop sandbox after terminal closed", "container", containerName, "error", err)
-	}
+// terminalSessionPidFile is where the wrapper command run by execBash
+// records the bash process's own PID, inside the container's own
+// filesystem/PID namespace - see execBash and killSessionProcess for why.
+func terminalSessionPidFile(sessionID string) string {
+	return fmt.Sprintf("/tmp/.tamga-session-%s.pid", sessionID)
 }
 
-// OpenShell starts a shell process (PTY) inside the sandbox container and
-// returns the exec ID, ready to be attached to.
-func (s *AgentService) OpenShell(ctx context.Context, containerName, workDir string) (string, error) {
+// execBash starts the session's shell process. It wraps the actual
+// `/bin/bash` invocation in a tiny `echo $$ > pidfile; exec /bin/bash` so
+// the shell's own PID - as seen inside the *container's* PID namespace - is
+// recorded to a file before `exec` replaces the process image with bash
+// (keeping the same PID). See killSessionProcess for why this is needed:
+// Docker's Exec API has no "kill this exec" call, and ContainerExecInspect's
+// Pid is the PID as seen by the Docker daemon's own (host) namespace, not
+// the container's - not something a second `docker exec` into the same
+// container could use to signal it. Capturing the PID from inside the
+// container's own namespace sidesteps that mismatch entirely.
+func (s *AgentService) execBash(ctx context.Context, containerName, workDir, sessionID string) (string, error) {
+	pidFile := terminalSessionPidFile(sessionID)
+	cmd := []string{"/bin/bash", "-c", fmt.Sprintf("echo $$ > %s; exec /bin/bash", pidFile)}
+	return s.docker.ExecCreate(ctx, containerName, cmd, workDir)
+}
+
+// killSessionProcess terminates one session's bash process without
+// touching any other session sharing the same container, by reading back
+// the PID execBash recorded and signaling it from a second, short-lived
+// exec into the same container (so the kill runs in the same PID
+// namespace as the PID it's targeting).
+//
+// Note: The command does rm -f unconditionally after the kill attempt.
+// This ensures that even if kill somehow fails or becomes a no-op (very
+// unlikely given valid PIDs in the container's namespace), a retry won't
+// get stuck looking for a stale pidfile.
+func (s *AgentService) killSessionProcess(ctx context.Context, sess *TerminalSession) error {
+	pidFile := terminalSessionPidFile(sess.ID)
+	cmd := []string{"/bin/sh", "-c", fmt.Sprintf("kill -9 $(cat %s 2>/dev/null) 2>/dev/null; rm -f %s", pidFile, pidFile)}
+	return s.docker.ExecRun(ctx, sess.ContainerName, cmd)
+}
+
+// CreateSession ensures the project's sandbox is running, starts a new
+// bash session inside it and registers it in the project's session
+// registry. It enforces maxSessionsPerProject, returning
+// ErrSessionCapExceeded rather than silently creating an 11th session.
+func (s *AgentService) CreateSession(ctx context.Context, projectID int64) (*TerminalSession, error) {
 	if s.docker == nil {
-		return "", fmt.Errorf("docker daemon not available")
+		return nil, fmt.Errorf("docker daemon not available")
 	}
-	return s.docker.ExecCreate(ctx, containerName, []string{"/bin/sh"}, workDir)
+
+	// Per-project lock: serializes this project's sandbox
+	// ensure/session-count-and-insert against this project's own
+	// terminate/session-end cleanup, without blocking any other
+	// project's session activity (see sessionRegistry.projectLock).
+	lock := s.sessions.projectLock(projectID)
+	lock.Lock()
+	defer lock.Unlock()
+
+	if s.sessions.count(projectID) >= maxSessionsPerProject {
+		return nil, ErrSessionCapExceeded
+	}
+
+	containerName, workDir, err := s.ensureSandbox(ctx, projectID)
+	if err != nil {
+		return nil, err
+	}
+
+	sessionID, err := newSessionID()
+	if err != nil {
+		return nil, fmt.Errorf("generate session id: %w", err)
+	}
+
+	execID, err := s.execBash(ctx, containerName, workDir, sessionID)
+	if err != nil {
+		return nil, fmt.Errorf("open shell: %w", err)
+	}
+	hijacked, err := s.docker.ExecAttach(ctx, execID)
+	if err != nil {
+		return nil, fmt.Errorf("attach shell: %w", err)
+	}
+
+	sess := &TerminalSession{
+		ID:            sessionID,
+		ProjectID:     projectID,
+		ContainerName: containerName,
+		execID:        execID,
+		hijacked:      hijacked,
+		ring:          newRingBuffer(terminalRingBufferSize),
+		CreatedAt:     time.Now(),
+		done:          make(chan struct{}),
+	}
+	s.sessions.add(projectID, sess)
+	go sess.run(s)
+
+	return sess, nil
 }
 
-// AttachShell attaches to a previously created exec session, returning the
-// hijacked stdio stream to proxy over the terminal WebSocket.
-func (s *AgentService) AttachShell(ctx context.Context, execID string) (types.HijackedResponse, error) {
-	if s.docker == nil {
-		return types.HijackedResponse{}, fmt.Errorf("docker daemon not available")
-	}
-	return s.docker.ExecAttach(ctx, execID)
+// GetSession looks up a live session by project and session id.
+func (s *AgentService) GetSession(projectID int64, sessionID string) (*TerminalSession, bool) {
+	return s.sessions.get(projectID, sessionID)
 }
 
-// ResizeShell resizes the PTY behind an exec session to match the browser
-// terminal's dimensions.
-func (s *AgentService) ResizeShell(ctx context.Context, execID string, rows, cols uint) error {
+// ListSessions returns every live session for a project, oldest first.
+func (s *AgentService) ListSessions(projectID int64) []SessionInfo {
+	sessions := s.sessions.list(projectID)
+	infos := make([]SessionInfo, 0, len(sessions))
+	for _, sess := range sessions {
+		infos = append(infos, SessionInfo{
+			ID:        sess.ID,
+			CreatedAt: sess.CreatedAt,
+			Connected: sess.Connected(),
+		})
+	}
+	sort.Slice(infos, func(i, j int) bool { return infos[i].CreatedAt.Before(infos[j].CreatedAt) })
+	return infos
+}
+
+// TerminateSession explicitly ends one session: it kills the session's
+// bash process (see killSessionProcess) and waits (briefly) for the
+// session's own reader goroutine to notice the process exited and finish
+// its cleanup - which deregisters the session and, if it was the
+// project's last one, stops the sandbox (see endSession). Returns
+// ErrSessionNotFound if no such session exists. Returns an error if the
+// bash process fails to exit within the timeout (the kill didn't work).
+func (s *AgentService) TerminateSession(ctx context.Context, projectID int64, sessionID string) error {
+	sess, ok := s.sessions.get(projectID, sessionID)
+	if !ok {
+		return ErrSessionNotFound
+	}
+
+	if err := s.killSessionProcess(ctx, sess); err != nil {
+		return fmt.Errorf("terminate session: %w", err)
+	}
+
+	select {
+	case <-sess.done:
+		return nil
+	case <-time.After(5 * time.Second):
+		// If the session doesn't end after sending kill, it means the kill
+		// failed - the bash process is still alive. This is a real error.
+		return fmt.Errorf("session did not terminate after kill signal (bash process may still be running)")
+	}
+}
+
+// endSession is run exactly once per session, by that session's own run
+// goroutine after its shell process has exited (naturally, or via
+// TerminateSession's kill). It deregisters the session and, if this was
+// the project's last remaining session, stops the sandbox - the
+// "auto-stop when the last session ends" behavior. Per-project locking
+// here (rather than a single service-wide lock) means this can run for one
+// project while another project's CreateSession/TerminateSession proceeds
+// unblocked.
+func (s *AgentService) endSession(sess *TerminalSession) {
+	lock := s.sessions.projectLock(sess.ProjectID)
+	lock.Lock()
+	defer lock.Unlock()
+
+	s.sessions.remove(sess.ProjectID, sess.ID)
+
+	if s.sessions.count(sess.ProjectID) == 0 {
+		if err := s.StopAgent(context.Background(), sess.ProjectID); err != nil {
+			slog.Warn("failed to stop sandbox after last terminal session ended", "project_id", sess.ProjectID, "error", err)
+		}
+	}
+}
+
+// ResizeShell resizes the PTY behind a session's shell process to match
+// the browser terminal's dimensions.
+func (s *AgentService) ResizeShell(ctx context.Context, sess *TerminalSession, rows, cols uint) error {
 	if s.docker == nil {
 		return fmt.Errorf("docker daemon not available")
 	}
-	return s.docker.ExecResize(ctx, execID, rows, cols)
+	return s.docker.ExecResize(ctx, sess.execID, rows, cols)
 }
 
 func (s *AgentService) StopAgent(ctx context.Context, projectID int64) error {

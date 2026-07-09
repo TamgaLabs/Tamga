@@ -57,6 +57,8 @@ func New(
 			r.Post("/projects/{id}/env-vars", projectHandler.CreateEnvVar)
 			r.Delete("/projects/{id}/env-vars/{envVarId}", projectHandler.DeleteEnvVar)
 			r.Get("/projects/{id}/agent/terminal", terminalHandler.Serve)
+			r.Get("/projects/{id}/agent/sessions", terminalHandler.ListSessions)
+			r.Delete("/projects/{id}/agent/sessions/{sessionId}", terminalHandler.TerminateSession)
 
 			// System / Docker containers
 			r.Get("/system/containers", containerHandler.List)
