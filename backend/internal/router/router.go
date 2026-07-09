@@ -18,6 +18,7 @@ func New(
 	containerHandler *handler.ContainerHandler,
 	codeHandler *handler.CodeHandler,
 	whitelistHandler *handler.WhitelistHandler,
+	egressHandler *handler.EgressHandler,
 	resourceLimitHandler *handler.ResourceLimitHandler,
 	gitCredentialHandler *handler.GitCredentialHandler,
 	authMiddleware func(http.Handler) http.Handler,
@@ -77,6 +78,13 @@ func New(
 			r.Get("/system/egress-whitelist", whitelistHandler.List)
 			r.Post("/system/egress-whitelist", whitelistHandler.Create)
 			r.Delete("/system/egress-whitelist/{id}", whitelistHandler.Delete)
+
+			// Agent egress mode + blacklist (FEAT-016)
+			r.Get("/system/egress/mode", egressHandler.GetMode)
+			r.Put("/system/egress/mode", egressHandler.SetMode)
+			r.Get("/system/egress-blacklist", egressHandler.ListBlacklist)
+			r.Post("/system/egress-blacklist", egressHandler.CreateBlacklist)
+			r.Delete("/system/egress-blacklist/{id}", egressHandler.DeleteBlacklist)
 
 			// Agent sandbox default resource limit
 			r.Get("/system/resource-limits", resourceLimitHandler.Get)

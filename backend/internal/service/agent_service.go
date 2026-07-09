@@ -12,6 +12,7 @@ import (
 	"github.com/docker/docker/api/types/container"
 
 	"github.com/TamgaLabs/Tamga/backend/internal/config"
+	"github.com/TamgaLabs/Tamga/backend/internal/domain"
 	dockerclient "github.com/TamgaLabs/Tamga/backend/internal/repository/docker"
 	"github.com/TamgaLabs/Tamga/backend/internal/repository/sqlite"
 )
@@ -31,18 +32,20 @@ type AgentService struct {
 	docker        *dockerclient.Client
 	cfg           config.Config
 	whitelistSvc  *WhitelistService
+	egressSvc     *EgressService
 	resourceLimit *ResourceLimitService
 	gitCredSvc    *GitCredentialService
 
 	sessions *sessionRegistry
 }
 
-func NewAgentService(db *sqlite.DB, docker *dockerclient.Client, cfg config.Config, whitelistSvc *WhitelistService, resourceLimitSvc *ResourceLimitService, gitCredSvc *GitCredentialService) *AgentService {
+func NewAgentService(db *sqlite.DB, docker *dockerclient.Client, cfg config.Config, whitelistSvc *WhitelistService, egressSvc *EgressService, resourceLimitSvc *ResourceLimitService, gitCredSvc *GitCredentialService) *AgentService {
 	return &AgentService{
 		db:            db,
 		docker:        docker,
 		cfg:           cfg,
 		whitelistSvc:  whitelistSvc,
+		egressSvc:     egressSvc,
 		resourceLimit: resourceLimitSvc,
 		gitCredSvc:    gitCredSvc,
 		sessions:      newSessionRegistry(),
@@ -93,17 +96,36 @@ func agentNetworkName(projectID int64) string {
 }
 
 // ensureEgressProxy makes sure the shared egress-proxy container is
-// running with the current whitelist and is attached to every network in
-// networks. It recreates the container whenever the whitelist has changed
-// since it was last (re)created - this is what makes whitelist edits take
-// effect on the next sandbox creation, per FEAT-006.
+// running with the current egress mode + list(s) and is attached to every
+// network in networks. It recreates the container whenever the wanted env
+// has changed since it was last (re)created - this is what makes mode
+// switches and whitelist/blacklist edits take effect on the next sandbox
+// creation, per FEAT-006/FEAT-016.
 func (s *AgentService) ensureEgressProxy(ctx context.Context, networks []string) error {
-	domains, err := s.whitelistSvc.Domains()
+	mode, err := s.egressSvc.GetMode()
+	if err != nil {
+		return fmt.Errorf("load egress mode: %w", err)
+	}
+
+	whitelistDomains, err := s.whitelistSvc.Domains()
 	if err != nil {
 		return fmt.Errorf("load egress whitelist: %w", err)
 	}
-	sort.Strings(domains)
-	wantEnv := fmt.Sprintf("ALLOWED_DOMAINS=%s", strings.Join(domains, ","))
+	sort.Strings(whitelistDomains)
+
+	wantEnv := []string{
+		fmt.Sprintf("MODE=%s", mode),
+		fmt.Sprintf("ALLOWED_DOMAINS=%s", strings.Join(whitelistDomains, ",")),
+	}
+
+	if mode == domain.EgressModeBlacklist {
+		blacklistDomains, err := s.egressSvc.BlacklistDomains()
+		if err != nil {
+			return fmt.Errorf("load egress blacklist: %w", err)
+		}
+		sort.Strings(blacklistDomains)
+		wantEnv = append(wantEnv, fmt.Sprintf("DENIED_DOMAINS=%s", strings.Join(blacklistDomains, ",")))
+	}
 
 	upToDate := false
 	if s.docker.ContainerIsRunning(ctx, egressProxyName) {
@@ -111,12 +133,7 @@ func (s *AgentService) ensureEgressProxy(ctx context.Context, networks []string)
 		if err != nil {
 			slog.Warn("inspect egress proxy env, recreating", "error", err)
 		} else {
-			for _, e := range currentEnv {
-				if e == wantEnv {
-					upToDate = true
-					break
-				}
-			}
+			upToDate = envContainsAll(currentEnv, wantEnv)
 		}
 	}
 
@@ -127,7 +144,7 @@ func (s *AgentService) ensureEgressProxy(ctx context.Context, networks []string)
 				return fmt.Errorf("remove stale egress proxy: %w", err)
 			}
 		}
-		env := []string{wantEnv, fmt.Sprintf("PORT=%s", egressProxyPort)}
+		env := append(append([]string{}, wantEnv...), fmt.Sprintf("PORT=%s", egressProxyPort))
 		// "bridge" is Docker's always-present default network - this is
 		// the proxy's one and only route to the internet. Per-project
 		// sandbox networks are attached below via NetworkConnect.
@@ -137,7 +154,7 @@ func (s *AgentService) ensureEgressProxy(ctx context.Context, networks []string)
 		if err := s.docker.StartContainer(ctx, egressProxyName); err != nil {
 			return fmt.Errorf("start egress proxy: %w", err)
 		}
-		slog.Info("egress proxy (re)created", "domains", domains)
+		slog.Info("egress proxy (re)created", "mode", mode, "whitelist", whitelistDomains)
 	}
 
 	for _, netName := range networks {
@@ -146,6 +163,22 @@ func (s *AgentService) ensureEgressProxy(ctx context.Context, networks []string)
 		}
 	}
 	return nil
+}
+
+// envContainsAll reports whether every entry of want is present in current
+// (a subset check) - used because current may contain unrelated env vars
+// (e.g. PORT) that aren't part of the diff.
+func envContainsAll(current, want []string) bool {
+	set := make(map[string]bool, len(current))
+	for _, e := range current {
+		set[e] = true
+	}
+	for _, w := range want {
+		if !set[w] {
+			return false
+		}
+	}
+	return true
 }
 
 // egressProxyEnv returns the HTTP(S)_PROXY env vars pointing sandbox

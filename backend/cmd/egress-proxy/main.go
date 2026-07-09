@@ -1,13 +1,15 @@
-// Command egress-proxy is a minimal HTTP/HTTPS forward proxy that only
-// allows CONNECT/requests to a fixed set of whitelisted domains. It is the
-// enforcement point for FEAT-006's agent sandbox egress whitelist: sandbox
-// containers sit on an internal (no direct internet route) Docker network
-// and are pointed at this proxy via HTTP_PROXY/HTTPS_PROXY, so the only way
-// out is through here.
+// Command egress-proxy is a minimal HTTP/HTTPS forward proxy enforcing one
+// of three egress modes (FEAT-016): "open" (everything allowed - the
+// default), "whitelist" (only listed domains allowed) or "blacklist"
+// (everything allowed except listed domains). Sandbox containers sit on an
+// internal (no direct internet route) Docker network and are pointed at
+// this proxy via HTTP_PROXY/HTTPS_PROXY, so the only way out is through
+// here.
 //
-// The whitelist is passed in once via the ALLOWED_DOMAINS env var at
-// container creation - see AgentService.ensureEgressProxy, which recreates
-// this container whenever the whitelist changes.
+// Mode and domain lists are passed in once via the MODE, ALLOWED_DOMAINS
+// and DENIED_DOMAINS env vars at container creation - see
+// AgentService.ensureEgressProxy, which recreates this container whenever
+// they change.
 package main
 
 import (
@@ -24,32 +26,49 @@ import (
 
 func main() {
 	port := getEnv("PORT", "8888")
+	mode := getEnv("MODE", "open")
 	allowed := parseDomains(getEnv("ALLOWED_DOMAINS", ""))
+	denied := parseDomains(getEnv("DENIED_DOMAINS", ""))
 
 	srv := &http.Server{
 		Addr:        ":" + port,
-		Handler:     &proxyHandler{allowed: allowed},
+		Handler:     &proxyHandler{mode: mode, allowed: allowed, denied: denied},
 		ReadTimeout: 30 * time.Second,
 		// No WriteTimeout: CONNECT tunnels are long-lived streams.
 	}
 
-	log.Printf("egress-proxy listening on :%s, %d domain(s) allowed", port, len(allowed))
+	log.Printf("egress-proxy listening on :%s, mode=%s, %d allowed domain(s), %d denied domain(s)", port, mode, len(allowed), len(denied))
 	if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 		log.Fatalf("egress-proxy: %v", err)
 	}
 }
 
 type proxyHandler struct {
+	mode    string
 	allowed map[string]bool
+	denied  map[string]bool
 }
 
+// isAllowed is a 3-way branch on mode: "whitelist" only allows domains on
+// the allowed list, "blacklist" allows everything except domains on the
+// denied list, and everything else (including "open" and an unset/unknown
+// MODE) allows everything - "open by default" is the deliberate system
+// behavior (see FEAT-016).
 func (p *proxyHandler) isAllowed(hostport string) bool {
 	host := hostport
 	if h, _, err := net.SplitHostPort(hostport); err == nil {
 		host = h
 	}
 	host = strings.ToLower(strings.TrimSuffix(host, "."))
-	return p.allowed[host]
+
+	switch p.mode {
+	case "whitelist":
+		return p.allowed[host]
+	case "blacklist":
+		return !p.denied[host]
+	default:
+		return true
+	}
 }
 
 func (p *proxyHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {

@@ -2,8 +2,11 @@ package main
 
 import "testing"
 
-func TestIsAllowed(t *testing.T) {
-	p := &proxyHandler{allowed: parseDomains("api.anthropic.com, api.openai.com ,Generativelanguage.Googleapis.com")}
+func TestIsAllowedWhitelistMode(t *testing.T) {
+	p := &proxyHandler{
+		mode:    "whitelist",
+		allowed: parseDomains("api.anthropic.com, api.openai.com ,Generativelanguage.Googleapis.com"),
+	}
 
 	cases := []struct {
 		hostport string
@@ -20,6 +23,40 @@ func TestIsAllowed(t *testing.T) {
 	for _, c := range cases {
 		if got := p.isAllowed(c.hostport); got != c.want {
 			t.Errorf("isAllowed(%q) = %v, want %v", c.hostport, got, c.want)
+		}
+	}
+}
+
+func TestIsAllowedBlacklistMode(t *testing.T) {
+	p := &proxyHandler{
+		mode:   "blacklist",
+		denied: parseDomains("evil.example.com, Tracker.Example.com"),
+	}
+
+	cases := []struct {
+		hostport string
+		want     bool
+	}{
+		{"evil.example.com:443", false},
+		{"tracker.example.com:443", false}, // case-insensitive
+		{"api.anthropic.com:443", true},    // not on the blacklist - allowed
+		{"evil.example.com.:443", false},   // trailing dot normalized
+	}
+
+	for _, c := range cases {
+		if got := p.isAllowed(c.hostport); got != c.want {
+			t.Errorf("isAllowed(%q) = %v, want %v", c.hostport, got, c.want)
+		}
+	}
+}
+
+func TestIsAllowedOpenMode(t *testing.T) {
+	// Explicit "open" mode and an unset/unknown mode both fall through to
+	// allow-everything - the deliberate default behavior (see FEAT-016).
+	for _, mode := range []string{"open", "", "bogus"} {
+		p := &proxyHandler{mode: mode}
+		if !p.isAllowed("anything.example.com:443") {
+			t.Errorf("isAllowed with mode %q = false, want true", mode)
 		}
 	}
 }
