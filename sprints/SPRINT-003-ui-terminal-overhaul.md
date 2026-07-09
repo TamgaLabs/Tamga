@@ -100,7 +100,7 @@ domain lists are stored separately so switching modes never loses entries.
 - FEAT-015 — Backend terminal session manager (persistent bash sessions) — done
 - FEAT-016 — Egress modes: Open / Whitelist / Blacklist — done
 - FEAT-017 — Settings secondary sidebar + Light/Dark/System theme — done
-- FEAT-018 — Project detail secondary sidebar + project switcher — pending
+- FEAT-018 — Project detail secondary sidebar + project switcher — done
 - FEAT-019 — Containers grouped by project + detail secondary sidebar — pending
 - FEAT-020 — Code page terminal tabs + files sidebar default open — pending
 - BUG-026 — Code editor save failures silent; system codebase saves 500 invisibly — pending
