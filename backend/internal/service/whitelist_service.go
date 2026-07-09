@@ -11,7 +11,7 @@ import (
 // WhitelistService owns the agent sandbox egress whitelist: the set of
 // domains the sandbox egress proxy permits outbound traffic to (see
 // FEAT-006). Defaults are seeded by migration 000010; this just provides
-// add/remove/list on top, same CRUD shape as ApiKeyService.
+// add/remove/list on top.
 type WhitelistService struct {
 	db *sqlite.DB
 }

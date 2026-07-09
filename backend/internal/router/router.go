@@ -17,8 +17,6 @@ func New(
 	terminalHandler *handler.TerminalHandler,
 	containerHandler *handler.ContainerHandler,
 	codeHandler *handler.CodeHandler,
-	agentProviderHandler *handler.AgentProviderHandler,
-	apiKeyHandler *handler.ApiKeyHandler,
 	whitelistHandler *handler.WhitelistHandler,
 	resourceLimitHandler *handler.ResourceLimitHandler,
 	gitCredentialHandler *handler.GitCredentialHandler,
@@ -60,13 +58,6 @@ func New(
 			r.Delete("/projects/{id}/env-vars/{envVarId}", projectHandler.DeleteEnvVar)
 			r.Get("/projects/{id}/agent/terminal", terminalHandler.Serve)
 
-			// Agent Providers
-			r.Get("/agent-providers", agentProviderHandler.List)
-			r.Get("/agent-providers/{id}", agentProviderHandler.Get)
-			r.Post("/agent-providers", agentProviderHandler.Create)
-			r.Put("/agent-providers/{id}", agentProviderHandler.Update)
-			r.Delete("/agent-providers/{id}", agentProviderHandler.Delete)
-
 			// System / Docker containers
 			r.Get("/system/containers", containerHandler.List)
 			r.Get("/system/containers/{id}", containerHandler.Inspect)
@@ -79,11 +70,6 @@ func New(
 			r.Put("/system/containers/{id}/resources", containerHandler.UpdateResources)
 			r.Post("/system/prune", containerHandler.Prune)
 			r.Get("/system/info", containerHandler.Info)
-
-			// API Keys
-			r.Get("/system/api-keys", apiKeyHandler.List)
-			r.Post("/system/api-keys", apiKeyHandler.Set)
-			r.Delete("/system/api-keys/{id}", apiKeyHandler.Delete)
 
 			// Agent egress whitelist
 			r.Get("/system/egress-whitelist", whitelistHandler.List)

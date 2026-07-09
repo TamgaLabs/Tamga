@@ -62,7 +62,6 @@ func newTestAgentService(t *testing.T) (*AgentService, *dockerclient.Client, int
 		t.Fatalf("create project: %v", err)
 	}
 
-	providerSvc := NewAgentProviderService(db)
 	whitelistSvc := NewWhitelistService(db)
 	resourceLimitSvc := NewResourceLimitService(db)
 
@@ -89,7 +88,7 @@ func newTestAgentService(t *testing.T) (*AgentService, *dockerclient.Client, int
 		}
 	})
 
-	agentSvc := NewAgentService(db, docker, cfg, providerSvc, nil, whitelistSvc, resourceLimitSvc, nil)
+	agentSvc := NewAgentService(db, docker, cfg, whitelistSvc, resourceLimitSvc, nil)
 	return agentSvc, docker, project.ID
 }
 

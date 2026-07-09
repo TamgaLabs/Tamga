@@ -5,13 +5,6 @@ import { useRouter } from "next/navigation";
 import {
   systemInfo,
   systemPrune,
-  listAgentProviders,
-  createAgentProvider,
-  updateAgentProvider,
-  deleteAgentProvider,
-  listApiKeys,
-  setApiKey,
-  deleteApiKey,
   getResourceLimit,
   updateResourceLimit,
   getGitCredential,
@@ -21,8 +14,6 @@ import {
   addWhitelistDomain,
   deleteWhitelistDomain,
   type DockerInfo,
-  type AgentProvider,
-  type ApiKeyEntry,
   type ResourceLimit,
   type GitCredential,
   type WhitelistDomain,
@@ -37,13 +28,6 @@ import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Separator } from "@/components/ui/separator";
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import {
   AlertDialog,
   AlertDialogAction,
   AlertDialogCancel,
@@ -57,8 +41,6 @@ import {
 export default function SettingsPage() {
   const [info, setInfo] = useState<DockerInfo | null>(null);
   const [showSystemState, setShowSystemState] = useState(true);
-  const [providers, setProviders] = useState<AgentProvider[]>([]);
-  const [apiKeys, setApiKeys] = useState<ApiKeyEntry[]>([]);
   const [resourceLimit, setResourceLimit] = useState<ResourceLimit | null>(null);
   const [gitCredential, setGitCredentialState] = useState<GitCredential | null>(null);
   const [whitelist, setWhitelist] = useState<WhitelistDomain[]>([]);
@@ -70,12 +52,6 @@ export default function SettingsPage() {
     if (!authLoading && !user) router.replace("/login");
   }, [user, authLoading, router]);
 
-  const loadProviders = useCallback(() => {
-    listAgentProviders().then(setProviders).catch(console.error);
-  }, []);
-  const loadApiKeys = useCallback(() => {
-    listApiKeys().then(setApiKeys).catch(console.error);
-  }, []);
   const loadResourceLimit = useCallback(() => {
     getResourceLimit().then(setResourceLimit).catch(console.error);
   }, []);
@@ -90,12 +66,10 @@ export default function SettingsPage() {
     if (!user) return;
     systemInfo().then(setInfo).catch(console.error);
     setShowSystemState(getShowSystem());
-    loadProviders();
-    loadApiKeys();
     loadResourceLimit();
     loadGitCredential();
     loadWhitelist();
-  }, [user, loadProviders, loadApiKeys, loadResourceLimit, loadGitCredential, loadWhitelist]);
+  }, [user, loadResourceLimit, loadGitCredential, loadWhitelist]);
 
   const handleToggleSystem = () => {
     const next = !showSystemState;
@@ -198,8 +172,6 @@ export default function SettingsPage() {
             </div>
           </CardContent>
         </Card>
-        <AgentProvidersCard providers={providers} onUpdate={loadProviders} />
-        <ApiKeysCard keys={apiKeys} onUpdate={loadApiKeys} />
         <ResourceLimitCard limit={resourceLimit} onUpdate={loadResourceLimit} />
         <GitCredentialCard credential={gitCredential} onUpdate={loadGitCredential} />
         <WhitelistCard domains={whitelist} onUpdate={loadWhitelist} />
@@ -221,256 +193,6 @@ export default function SettingsPage() {
         </AlertDialogContent>
       </AlertDialog>
     </div>
-  );
-}
-
-const PROVIDER_OPTIONS = [
-  { value: "anthropic", label: "Anthropic" },
-  { value: "openai", label: "OpenAI" },
-  { value: "google", label: "Google" },
-  { value: "groq", label: "Groq" },
-  { value: "deepseek", label: "DeepSeek" },
-  { value: "mistral", label: "Mistral" },
-  { value: "cohere", label: "Cohere" },
-  { value: "together", label: "Together" },
-  { value: "openrouter", label: "OpenRouter" },
-  { value: "xai", label: "xAI" },
-  { value: "huggingface", label: "HuggingFace" },
-];
-
-function ApiKeysCard({ keys, onUpdate }: { keys: ApiKeyEntry[]; onUpdate: () => void }) {
-  const [provider, setProvider] = useState("");
-  const [keyValue, setKeyValue] = useState("");
-  const [showForm, setShowForm] = useState(false);
-  const [deleteTarget, setDeleteTarget] = useState<ApiKeyEntry | null>(null);
-
-  const resetForm = () => {
-    setProvider("");
-    setKeyValue("");
-    setShowForm(false);
-  };
-
-  const handleSave = async () => {
-    if (!provider || !keyValue) return;
-    try {
-      await setApiKey(provider, keyValue);
-      resetForm();
-      onUpdate();
-    } catch (e) {
-      console.error(e);
-    }
-  };
-
-  const handleDelete = async (id: string) => {
-    try {
-      await deleteApiKey(id);
-      onUpdate();
-    } catch (e) {
-      console.error(e);
-    }
-  };
-
-  const confirmDelete = async () => {
-    if (!deleteTarget) return;
-    await handleDelete(deleteTarget.id);
-    setDeleteTarget(null);
-  };
-
-  return (
-    <Card>
-      <CardHeader className="flex flex-row items-center justify-between">
-        <CardTitle className="text-sm">API Keys</CardTitle>
-        <Button size="sm" variant="outline" onClick={() => { resetForm(); setShowForm(!showForm); }}>
-          {showForm ? "Cancel" : "Add Key"}
-        </Button>
-      </CardHeader>
-      <CardContent className="space-y-3">
-        {showForm && (
-          <div className="space-y-2 p-3 border border-border rounded bg-card">
-            <div className="space-y-1">
-              <Label className="text-xs">Provider</Label>
-              <Select value={provider} onValueChange={setProvider}>
-                <SelectTrigger className="w-full">
-                  <SelectValue placeholder="Select provider" />
-                </SelectTrigger>
-                <SelectContent>
-                  {PROVIDER_OPTIONS.map((opt) => (
-                    <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-1">
-              <Label className="text-xs">API Key</Label>
-              <Input
-                value={keyValue}
-                onChange={(e) => setKeyValue(e.target.value)}
-                placeholder="sk-..."
-                type="password"
-              />
-            </div>
-            <Button size="sm" onClick={handleSave}>Set Key</Button>
-          </div>
-        )}
-        {keys.length === 0 ? (
-          <p className="text-sm text-muted-foreground">No API keys configured. Add keys for your LLM providers.</p>
-        ) : (
-          <div className="text-sm space-y-2">
-            {keys.map((k) => (
-              <div key={k.id} className="flex items-center justify-between py-1.5 border-b border-border last:border-0">
-                <div className="flex items-center gap-2">
-                  <span className="font-medium capitalize">{k.provider}</span>
-                  <Badge variant="outline" className="text-xs font-mono">
-                    {k.has_key ? "••••••••" : "not set"}
-                  </Badge>
-                </div>
-                <div className="flex gap-1">
-                  <Button variant="ghost" size="sm" onClick={() => { setProvider(k.provider); setKeyValue(""); setShowForm(true); }}>
-                    Update
-                  </Button>
-                  <Button variant="ghost" size="sm" className="text-destructive" onClick={() => setDeleteTarget(k)}>
-                    Delete
-                  </Button>
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-      </CardContent>
-
-      <AlertDialog open={!!deleteTarget} onOpenChange={(open) => !open && setDeleteTarget(null)}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Delete API key?</AlertDialogTitle>
-            <AlertDialogDescription>
-              This will delete the API key for &quot;{deleteTarget?.provider}&quot;.
-              This action cannot be undone.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction onClick={confirmDelete}>Delete</AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
-    </Card>
-  );
-}
-
-function AgentProvidersCard({ providers, onUpdate }: { providers: AgentProvider[]; onUpdate: () => void }) {
-  const [showForm, setShowForm] = useState(false);
-  const [editId, setEditId] = useState<string | null>(null);
-  const [name, setName] = useState("");
-  const [image, setImage] = useState("");
-  const [deleteTarget, setDeleteTarget] = useState<AgentProvider | null>(null);
-
-  const resetForm = () => {
-    setName("");
-    setImage("");
-    setShowForm(false);
-    setEditId(null);
-  };
-
-  const handleEdit = (p: AgentProvider) => {
-    setName(p.name);
-    setImage(p.image || "");
-    setEditId(p.id);
-    setShowForm(true);
-  };
-
-  const handleSave = async () => {
-    const data = { name, image, type: "docker" as const };
-    try {
-      if (editId) {
-        await updateAgentProvider(editId, data);
-      } else {
-        await createAgentProvider(data);
-      }
-      resetForm();
-      onUpdate();
-    } catch (e) {
-      console.error(e);
-    }
-  };
-
-  const handleDelete = async (id: string) => {
-    try {
-      await deleteAgentProvider(id);
-      onUpdate();
-    } catch (e) {
-      console.error(e);
-    }
-  };
-
-  const confirmDelete = async () => {
-    if (!deleteTarget) return;
-    await handleDelete(deleteTarget.id);
-    setDeleteTarget(null);
-  };
-
-  return (
-    <Card>
-      <CardHeader className="flex flex-row items-center justify-between">
-        <CardTitle className="text-sm">Agent Providers</CardTitle>
-        <Button size="sm" variant="outline" onClick={() => { resetForm(); setShowForm(!showForm); }}>
-          {showForm ? "Cancel" : "Add Provider"}
-        </Button>
-      </CardHeader>
-      <CardContent className="space-y-3">
-        {showForm && (
-          <div className="space-y-2 p-3 border border-border rounded bg-card">
-            <div className="space-y-1">
-              <Label className="text-xs">Name</Label>
-              <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="my-agent" />
-            </div>
-            <div className="space-y-1">
-              <Label className="text-xs">Image</Label>
-              <Input value={image} onChange={(e) => setImage(e.target.value)} placeholder="tamga-agent" />
-            </div>
-            <Button size="sm" onClick={handleSave}>{editId ? "Update" : "Create"}</Button>
-          </div>
-        )}
-        {providers.length === 0 ? (
-          <p className="text-sm text-muted-foreground">No custom providers configured.</p>
-        ) : (
-          <div className="text-sm space-y-2">
-            {providers.map((p) => (
-              <div key={p.id} className="flex items-center justify-between py-1.5 border-b border-border last:border-0">
-                <div className="flex items-center gap-2">
-                  <span className="font-medium">{p.name}</span>
-                  <Badge variant="outline" className="text-xs">docker</Badge>
-                  {p.is_default && <Badge variant="success" className="text-xs">default</Badge>}
-                </div>
-                <div className="flex gap-1">
-                  <Button variant="ghost" size="sm" onClick={() => handleEdit(p)}>Edit</Button>
-                  {!p.is_default && (
-                    <Button variant="ghost" size="sm" className="text-destructive" onClick={() => setDeleteTarget(p)}>
-                      Delete
-                    </Button>
-                  )}
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-      </CardContent>
-
-      <AlertDialog open={!!deleteTarget} onOpenChange={(open) => !open && setDeleteTarget(null)}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Delete agent provider?</AlertDialogTitle>
-            <AlertDialogDescription>
-              This will permanently delete &quot;{deleteTarget?.name}&quot;. This
-              action cannot be undone.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction onClick={confirmDelete}>Delete</AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
-    </Card>
   );
 }
 
@@ -549,8 +271,7 @@ function ResourceLimitCard({ limit, onUpdate }: { limit: ResourceLimit | null; o
 // The single global git credential (see FEAT-008), used both by the
 // backend to `git clone`/`pull` private repos and injected into every
 // agent sandbox so `git commit`/`push` works from the terminal. Single
-// value, not a list - shown/edited like ResourceLimitCard, with a delete
-// action like ApiKeysCard's.
+// value, not a list - shown/edited like ResourceLimitCard.
 function GitCredentialCard({ credential, onUpdate }: { credential: GitCredential | null; onUpdate: () => void }) {
   const [showForm, setShowForm] = useState(false);
   const [provider, setProvider] = useState("");

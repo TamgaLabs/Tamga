@@ -7,7 +7,7 @@ import "time"
 // every agent sandbox so a user can `git commit`/`push` from the terminal
 // (agent_service.go). Per architecture.md there is exactly one - not a
 // per-project or per-provider list - so this mirrors the single-row shape
-// of ResourceLimit rather than the list shape of ApiKey/WhitelistDomain.
+// of ResourceLimit rather than the list shape of WhitelistDomain.
 type GitCredential struct {
 	Provider  string    `json:"provider"`
 	Username  string    `json:"username"`

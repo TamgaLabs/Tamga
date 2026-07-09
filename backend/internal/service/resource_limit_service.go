@@ -9,7 +9,7 @@ import (
 
 // ResourceLimitService owns the single global default CPU/memory limit
 // applied to every agent sandbox container at creation time (see
-// FEAT-007). Unlike WhitelistService/ApiKeyService there's exactly one
+// FEAT-007). Unlike WhitelistService there's exactly one
 // setting here (Get/Set), not a list to CRUD.
 type ResourceLimitService struct {
 	db *sqlite.DB

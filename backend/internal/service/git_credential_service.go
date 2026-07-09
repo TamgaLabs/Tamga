@@ -14,8 +14,7 @@ import (
 // of private repos, and injected into every agent sandbox by
 // agent_service.go's StartSandbox so `git commit`/`push` works from the
 // terminal. Same single-row "Get/Set" shape as ResourceLimitService, plus
-// the AES-GCM at-rest encryption pattern from ApiKeyService (shared via
-// crypto.go).
+// the AES-GCM at-rest encryption pattern from crypto.go.
 type GitCredentialService struct {
 	db      *sqlite.DB
 	authKey []byte

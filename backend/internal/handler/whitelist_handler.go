@@ -12,7 +12,7 @@ import (
 )
 
 // WhitelistHandler exposes CRUD for the agent sandbox egress whitelist
-// (see FEAT-006). Same small REST-CRUD shape as AgentProviderHandler.
+// (see FEAT-006).
 type WhitelistHandler struct {
 	svc *service.WhitelistService
 }

@@ -13,9 +13,9 @@ import (
 
 	"github.com/TamgaLabs/Tamga/backend/internal/config"
 	"github.com/TamgaLabs/Tamga/backend/internal/domain"
+	"github.com/TamgaLabs/Tamga/backend/internal/repository/caddy"
 	dockerclient "github.com/TamgaLabs/Tamga/backend/internal/repository/docker"
 	"github.com/TamgaLabs/Tamga/backend/internal/repository/sqlite"
-	"github.com/TamgaLabs/Tamga/backend/internal/repository/caddy"
 )
 
 type ProjectService struct {
@@ -394,12 +394,11 @@ func envVarsToSlice(vars []*domain.EnvVar) []string {
 }
 
 type UpdateProjectRequest struct {
-	Name            *string            `json:"name,omitempty"`
-	SourceType      *domain.SourceType `json:"source_type,omitempty"`
-	RepoURL         *string            `json:"repo_url,omitempty"`
-	Domain          *string            `json:"domain,omitempty"`
-	Branch          *string            `json:"branch,omitempty"`
-	AgentProviderID *string            `json:"agent_provider_id,omitempty"`
+	Name       *string            `json:"name,omitempty"`
+	SourceType *domain.SourceType `json:"source_type,omitempty"`
+	RepoURL    *string            `json:"repo_url,omitempty"`
+	Domain     *string            `json:"domain,omitempty"`
+	Branch     *string            `json:"branch,omitempty"`
 }
 
 func (s *ProjectService) Update(ctx context.Context, id int64, req UpdateProjectRequest) (*domain.Project, error) {
@@ -421,9 +420,6 @@ func (s *ProjectService) Update(ctx context.Context, id int64, req UpdateProject
 	}
 	if req.Branch != nil {
 		project.Branch = *req.Branch
-	}
-	if req.AgentProviderID != nil {
-		project.AgentProviderID = req.AgentProviderID
 	}
 	if err := s.db.UpdateProject(project); err != nil {
 		return nil, fmt.Errorf("update project: %w", err)

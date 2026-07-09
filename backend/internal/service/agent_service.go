@@ -2,7 +2,6 @@ package service
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"log/slog"
 	"path/filepath"
@@ -14,7 +13,6 @@ import (
 	"github.com/docker/docker/api/types/container"
 
 	"github.com/TamgaLabs/Tamga/backend/internal/config"
-	"github.com/TamgaLabs/Tamga/backend/internal/domain"
 	dockerclient "github.com/TamgaLabs/Tamga/backend/internal/repository/docker"
 	"github.com/TamgaLabs/Tamga/backend/internal/repository/sqlite"
 )
@@ -33,8 +31,6 @@ type AgentService struct {
 	db            *sqlite.DB
 	docker        *dockerclient.Client
 	cfg           config.Config
-	providerSvc   *AgentProviderService
-	apiKeySvc     *ApiKeyService
 	whitelistSvc  *WhitelistService
 	resourceLimit *ResourceLimitService
 	gitCredSvc    *GitCredentialService
@@ -43,13 +39,11 @@ type AgentService struct {
 	connCount map[string]int
 }
 
-func NewAgentService(db *sqlite.DB, docker *dockerclient.Client, cfg config.Config, providerSvc *AgentProviderService, apiKeySvc *ApiKeyService, whitelistSvc *WhitelistService, resourceLimitSvc *ResourceLimitService, gitCredSvc *GitCredentialService) *AgentService {
+func NewAgentService(db *sqlite.DB, docker *dockerclient.Client, cfg config.Config, whitelistSvc *WhitelistService, resourceLimitSvc *ResourceLimitService, gitCredSvc *GitCredentialService) *AgentService {
 	return &AgentService{
 		db:            db,
 		docker:        docker,
 		cfg:           cfg,
-		providerSvc:   providerSvc,
-		apiKeySvc:     apiKeySvc,
 		whitelistSvc:  whitelistSvc,
 		resourceLimit: resourceLimitSvc,
 		gitCredSvc:    gitCredSvc,
@@ -221,21 +215,6 @@ func (s *AgentService) ensureContainerRunning(ctx context.Context, containerName
 	return nil
 }
 
-func (s *AgentService) injectApiKeys(env []string) []string {
-	if s.apiKeySvc == nil {
-		return env
-	}
-	keyEnv, err := s.apiKeySvc.GetAllAsEnv()
-	if err != nil {
-		slog.Warn("failed to get api keys for injection", "error", err)
-		return env
-	}
-	for k, v := range keyEnv {
-		env = append(env, fmt.Sprintf("%s=%s", k, v))
-	}
-	return env
-}
-
 // injectGitCredential appends the env vars that configure git inside the
 // sandbox to authenticate as the global git credential (see FEAT-008), so
 // `git commit`/`push` works from the terminal without manual auth. No-op
@@ -252,14 +231,6 @@ func (s *AgentService) injectGitCredential(env []string) []string {
 	return append(env, gitEnv...)
 }
 
-func (s *AgentService) resolveProviderForProject(ctx context.Context, projectID int64) (*domain.AgentProvider, error) {
-	project, err := s.db.FindProject(projectID)
-	if err != nil {
-		return nil, fmt.Errorf("find project: %w", err)
-	}
-	return s.providerSvc.ResolveProvider(safeDeref(project.AgentProviderID))
-}
-
 // StartSandbox ensures the project's sandbox container is running and
 // registers this caller as an active terminal connection against it, so a
 // later ReleaseSandbox call only stops the container once every terminal
@@ -270,27 +241,9 @@ func (s *AgentService) StartSandbox(ctx context.Context, projectID int64) (conta
 		return "", "", fmt.Errorf("docker daemon not available")
 	}
 
-	provider, err := s.resolveProviderForProject(ctx, projectID)
-	if err != nil {
-		return "", "", fmt.Errorf("resolve provider: %w", err)
-	}
-
 	containerName = fmt.Sprintf("agent-%d", projectID)
-	image := provider.Image
-	if image == "" {
-		image = agentImage
-	}
 
 	var env []string
-	if provider.Env != "" {
-		var envMap map[string]string
-		if jerr := json.Unmarshal([]byte(provider.Env), &envMap); jerr == nil {
-			for k, v := range envMap {
-				env = append(env, fmt.Sprintf("%s=%s", k, v))
-			}
-		}
-	}
-	env = s.injectApiKeys(env)
 	env = s.injectGitCredential(env)
 	env = append(env, egressProxyEnv()...)
 
@@ -324,7 +277,7 @@ func (s *AgentService) StartSandbox(ctx context.Context, projectID int64) (conta
 		return "", "", fmt.Errorf("ensure egress proxy: %w", err)
 	}
 
-	if err := s.ensureContainerRunning(ctx, containerName, mounts, image, env, network, s.sandboxResources()); err != nil {
+	if err := s.ensureContainerRunning(ctx, containerName, mounts, agentImage, env, network, s.sandboxResources()); err != nil {
 		return "", "", err
 	}
 
@@ -415,20 +368,4 @@ func (s *AgentService) StopAgent(ctx context.Context, projectID int64) error {
 		slog.Warn("remove sandbox network", "network", network, "error", err)
 	}
 	return nil
-}
-
-func safeDeref(s *string) string {
-	if s == nil {
-		return ""
-	}
-	return *s
-}
-
-func (s *AgentService) UpdateProjectProvider(ctx context.Context, projectID int64, providerID string) error {
-	project, err := s.db.FindProject(projectID)
-	if err != nil {
-		return fmt.Errorf("find project: %w", err)
-	}
-	project.AgentProviderID = &providerID
-	return s.db.UpdateProject(project)
 }

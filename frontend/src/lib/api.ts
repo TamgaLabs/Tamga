@@ -50,16 +50,6 @@ export type User = {
   created_at: string;
 };
 
-export type AgentProvider = {
-  id: string;
-  name: string;
-  type: "docker";
-  image?: string;
-  is_default: boolean;
-  created_at: string;
-  updated_at: string;
-};
-
 export type Project = {
   id: number;
   name: string;
@@ -69,7 +59,6 @@ export type Project = {
   domain: string;
   status: string;
   container_id?: string;
-  agent_provider_id?: string;
   created_at: string;
   updated_at: string;
 };
@@ -239,48 +228,6 @@ export function agentTerminalUrl(projectId: number): string {
   return `${proto}//${host}/api/projects/${projectId}/agent/terminal?token=${encodeURIComponent(token)}`;
 }
 
-// Agent Providers
-export const listAgentProviders = () =>
-  api<AgentProvider[]>("/agent-providers");
-export const getAgentProvider = (id: string) =>
-  api<AgentProvider>(`/agent-providers/${id}`);
-export const createAgentProvider = (data: {
-  name: string;
-  image?: string;
-  type?: string;
-}) =>
-  api<AgentProvider>("/agent-providers", {
-    method: "POST",
-    body: JSON.stringify(data),
-  });
-export const updateAgentProvider = (id: string, data: Partial<AgentProvider>) =>
-  api<AgentProvider>(`/agent-providers/${id}`, {
-    method: "PUT",
-    body: JSON.stringify(data),
-  });
-export const deleteAgentProvider = (id: string) =>
-  api<void>(`/agent-providers/${id}`, { method: "DELETE" });
-
-// API Keys
-export type ApiKeyEntry = {
-  id: string;
-  provider: string;
-  label?: string;
-  has_key: boolean;
-  created_at: string;
-  updated_at: string;
-};
-
-export const listApiKeys = () =>
-  api<ApiKeyEntry[]>("/system/api-keys");
-export const setApiKey = (provider: string, key: string, label?: string) =>
-  api<ApiKeyEntry>("/system/api-keys", {
-    method: "POST",
-    body: JSON.stringify({ provider, key, label }),
-  });
-export const deleteApiKey = (id: string) =>
-  api<void>(`/system/api-keys/${id}`, { method: "DELETE" });
-
 // Agent sandbox default resource limit (see FEAT-007)
 export type ResourceLimit = {
   memory_bytes: number;
@@ -319,7 +266,7 @@ export const deleteGitCredential = () =>
 
 // Agent sandbox egress whitelist (see FEAT-006): domains the sandbox
 // egress proxy will permit outbound requests to. Global setting, multiple
-// entries - same list/add/delete pattern as ApiKeys.
+// entries.
 export type WhitelistDomain = {
   id: number;
   domain: string;

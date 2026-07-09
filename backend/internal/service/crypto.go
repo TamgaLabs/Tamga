@@ -10,9 +10,9 @@ import (
 )
 
 // encryptSecret/decryptSecret implement the AES-GCM "encrypt a single
-// secret with a key derived from JWTSecret" pattern shared by
-// ApiKeyService and GitCredentialService. There's no per-record key
-// management here - each service derives its own key (both currently via
+// secret with a key derived from JWTSecret" pattern used by
+// GitCredentialService. There's no per-record key
+// management here - the service derives its own key (currently via
 // sha256(jwtSecret)) and passes it in, so this file owns only the
 // encrypt/decrypt mechanics, not key derivation.
 func encryptSecret(key []byte, plaintext string) (string, error) {

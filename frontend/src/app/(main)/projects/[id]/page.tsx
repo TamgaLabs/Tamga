@@ -15,8 +15,6 @@ import {
   type Project,
   type Deployment,
   type EnvVar,
-  listAgentProviders,
-  type AgentProvider,
 } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { Button } from "@/components/ui/button";
@@ -25,13 +23,6 @@ import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -331,20 +322,13 @@ function ProjectSettingsTab({ project, onUpdate }: { project: Project; onUpdate:
   const [editName, setEditName] = useState(project.name);
   const [editDomain, setEditDomain] = useState(project.domain);
   const [editBranch, setEditBranch] = useState(project.branch);
-  const [providers, setProviders] = useState<AgentProvider[]>([]);
-  const [editProviderId, setEditProviderId] = useState(project.agent_provider_id || "");
-
-  useEffect(() => {
-    listAgentProviders().then(setProviders).catch(console.error);
-  }, []);
 
   const handleSaveProject = async () => {
     await updateProject(project.id, {
       name: editName,
       domain: editDomain,
       branch: editBranch,
-      agent_provider_id: editProviderId || null,
-    } as any);
+    });
     onUpdate();
   };
 
@@ -366,20 +350,6 @@ function ProjectSettingsTab({ project, onUpdate }: { project: Project; onUpdate:
           <div className="space-y-1">
             <Label className="text-xs">Branch</Label>
             <Input value={editBranch} onChange={(e) => setEditBranch(e.target.value)} />
-          </div>
-          <div className="space-y-1">
-            <Label className="text-xs">Agent Provider</Label>
-            <Select value={editProviderId} onValueChange={setEditProviderId}>
-              <SelectTrigger>
-                <SelectValue placeholder="Default (builtin-opencode)" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="">Default (builtin-opencode)</SelectItem>
-                {providers.map((p) => (
-                  <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
           </div>
           <Button size="sm" onClick={handleSaveProject}>Save</Button>
         </CardContent>

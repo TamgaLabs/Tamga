@@ -39,11 +39,6 @@ func main() {
 	}
 	slog.Info("database migrations completed")
 
-	if err := db.EnsureTables(); err != nil {
-		slog.Error("failed to ensure tables", "error", err)
-		os.Exit(1)
-	}
-
 	authService := service.NewAuthService(db, cfg)
 
 	if err := authService.AutoSetup(); err != nil {
@@ -58,13 +53,11 @@ func main() {
 	}
 	caddyClient := caddyrepo.New(cfg.CaddyAdminURL)
 
-	agentProviderService := service.NewAgentProviderService(db)
-	apiKeyService := service.NewApiKeyService(db, cfg.JWTSecret)
 	whitelistService := service.NewWhitelistService(db)
 	resourceLimitService := service.NewResourceLimitService(db)
 	gitCredentialService := service.NewGitCredentialService(db, cfg.JWTSecret)
 	projectService := service.NewProjectService(db, dockerClient, caddyClient, cfg, gitCredentialService)
-	agentService := service.NewAgentService(db, dockerClient, cfg, agentProviderService, apiKeyService, whitelistService, resourceLimitService, gitCredentialService)
+	agentService := service.NewAgentService(db, dockerClient, cfg, whitelistService, resourceLimitService, gitCredentialService)
 
 	if err := setupCaddyRoutes(caddyClient, cfg); err != nil {
 		slog.Warn("caddy route setup", "error", err)
@@ -79,8 +72,6 @@ func main() {
 	projectHandler := handler.NewProjectHandler(projectService)
 	terminalHandler := handler.NewTerminalHandler(agentService)
 	codeHandler := handler.NewCodeHandler(projectService, cfg)
-	agentProviderHandler := handler.NewAgentProviderHandler(agentProviderService)
-	apiKeyHandler := handler.NewApiKeyHandler(apiKeyService)
 	whitelistHandler := handler.NewWhitelistHandler(whitelistService)
 	resourceLimitHandler := handler.NewResourceLimitHandler(resourceLimitService)
 	gitCredentialHandler := handler.NewGitCredentialHandler(gitCredentialService)
@@ -93,7 +84,7 @@ func main() {
 		containerHandler = handler.NewContainerHandler(nil)
 	}
 
-	r := router.New(authHandler, systemHandler, projectHandler, terminalHandler, containerHandler, codeHandler, agentProviderHandler, apiKeyHandler, whitelistHandler, resourceLimitHandler, gitCredentialHandler, authMiddleware)
+	r := router.New(authHandler, systemHandler, projectHandler, terminalHandler, containerHandler, codeHandler, whitelistHandler, resourceLimitHandler, gitCredentialHandler, authMiddleware)
 
 	srv := &http.Server{
 		Addr:         fmt.Sprintf(":%d", cfg.Port),
