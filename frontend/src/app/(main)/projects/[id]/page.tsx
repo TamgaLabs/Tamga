@@ -56,6 +56,7 @@ export default function ProjectDetailPage() {
   const params = useParams();
   const router = useRouter();
   const [project, setProject] = useState<Project | null>(null);
+  const [loading, setLoading] = useState(true);
   const [tab, setTab] = useState("overview");
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [deleteError, setDeleteError] = useState("");
@@ -67,7 +68,11 @@ export default function ProjectDetailPage() {
 
   const fetchProject = useCallback(() => {
     if (user && params.id) {
-      getProject(Number(params.id)).then(setProject).catch(console.error);
+      setLoading(true);
+      getProject(Number(params.id))
+        .then(setProject)
+        .catch(console.error)
+        .finally(() => setLoading(false));
     }
   }, [user, params.id]);
 
@@ -105,7 +110,23 @@ export default function ProjectDetailPage() {
     }
   };
 
-  if (authLoading || !user || !project) return null;
+  if (authLoading || !user) return null;
+
+  if (loading) {
+    return (
+      <div className="min-h-screen p-6 max-w-5xl mx-auto">
+        <p className="text-muted-foreground">Loading...</p>
+      </div>
+    );
+  }
+
+  if (!project) {
+    return (
+      <div className="min-h-screen p-6 max-w-5xl mx-auto">
+        <p className="text-muted-foreground">Project not found.</p>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen p-6 max-w-5xl mx-auto">
