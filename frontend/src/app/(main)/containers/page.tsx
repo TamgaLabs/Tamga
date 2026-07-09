@@ -2,27 +2,20 @@
 
 import { useEffect, useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import {
   listContainers,
+  listProjects,
   startContainer,
   stopContainer,
   restartContainer,
   removeContainer,
   type ContainerInfo,
+  type Project,
 } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { getShowSystem } from "@/lib/settings";
-import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -33,17 +26,19 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { MoreVertical, Search } from "lucide-react";
+import { Search } from "lucide-react";
+import { ContainerRow } from "../projects/[id]/container-row";
 
-const statusVariant: Record<string, "success" | "warning" | "error" | "info" | "default"> = {
-  running: "success",
-  paused: "warning",
-  exited: "error",
-  created: "info",
-};
+// Grouped view: the containers list API already carries a numeric
+// project_id per container (derived by the backend from the
+// project-<id>/agent-<id> name convention - see TEST-008 §4), but not the
+// project's name, so groups are labeled via a client-side join against
+// listProjects() by id.
+type Group = { projectId: number; name: string; containers: ContainerInfo[] };
 
 export default function ContainersPage() {
   const [containers, setContainers] = useState<ContainerInfo[]>([]);
+  const [projects, setProjects] = useState<Project[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [deleteTarget, setDeleteTarget] = useState<ContainerInfo | null>(null);
@@ -54,32 +49,26 @@ export default function ContainersPage() {
     if (!authLoading && !user) router.replace("/login");
   }, [user, authLoading, router]);
 
-  const fetch = useCallback(() => {
+  const fetchAll = useCallback(() => {
     if (!user) return;
     setLoading(true);
-    listContainers()
-      .then(setContainers)
+    Promise.all([listContainers(), listProjects()])
+      .then(([c, p]) => {
+        setContainers(c);
+        setProjects(p);
+      })
       .catch(console.error)
       .finally(() => setLoading(false));
   }, [user]);
 
-  useEffect(fetch, [fetch]);
+  useEffect(fetchAll, [fetchAll]);
 
   const handleAction = async (id: string, action: "start" | "stop" | "restart") => {
     try {
       if (action === "start") await startContainer(id);
       else if (action === "stop") await stopContainer(id);
       else await restartContainer(id);
-      fetch();
-    } catch (e) {
-      console.error(e);
-    }
-  };
-
-  const handleDelete = async (id: string) => {
-    try {
-      await removeContainer(id);
-      fetch();
+      fetchAll();
     } catch (e) {
       console.error(e);
     }
@@ -87,8 +76,14 @@ export default function ContainersPage() {
 
   const confirmDelete = async () => {
     if (!deleteTarget) return;
-    await handleDelete(deleteTarget.id);
-    setDeleteTarget(null);
+    try {
+      await removeContainer(deleteTarget.id);
+      fetchAll();
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setDeleteTarget(null);
+    }
   };
 
   const showSystem = getShowSystem();
@@ -100,6 +95,26 @@ export default function ContainersPage() {
     if (search && !name.toLowerCase().includes(search.toLowerCase())) return false;
     return true;
   });
+
+  const projectsById = new Map(projects.map((p) => [p.id, p]));
+  const groupsById = new Map<number, ContainerInfo[]>();
+  const nonProject: ContainerInfo[] = [];
+  for (const c of filtered) {
+    if (c.project_id) {
+      const list = groupsById.get(c.project_id) || [];
+      list.push(c);
+      groupsById.set(c.project_id, list);
+    } else {
+      nonProject.push(c);
+    }
+  }
+  const groups: Group[] = Array.from(groupsById.entries())
+    .map(([projectId, list]) => ({
+      projectId,
+      name: projectsById.get(projectId)?.name || `Project #${projectId}`,
+      containers: list,
+    }))
+    .sort((a, b) => a.name.localeCompare(b.name));
 
   if (authLoading || !user) return null;
 
@@ -124,73 +139,32 @@ export default function ContainersPage() {
       ) : filtered.length === 0 ? (
         <p className="text-muted-foreground">No containers found.</p>
       ) : (
-        <div className="space-y-2">
-          {filtered.map((c) => {
-            const name = c.name || c.id.slice(0, 12);
-            const ports = c.ports || [];
-            return (
-              <Card
-                key={c.id}
-                className="cursor-pointer hover:bg-muted/50 transition-colors"
-                onClick={() => router.push(`/containers/${c.id}`)}
+        <div className="space-y-8">
+          {groups.map((g) => (
+            <section key={g.projectId}>
+              <Link
+                href={`/projects/${g.projectId}`}
+                className="inline-block text-sm font-semibold text-foreground hover:text-accent transition-colors mb-3"
               >
-                <CardContent className="p-4">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-3 min-w-0">
-                      <span className="font-mono text-sm text-foreground truncate max-w-48">
-                        {name}
-                      </span>
-                      <Badge variant={statusVariant[c.state] || "default"}>{c.state}</Badge>
-                    </div>
-                    <div className="flex items-center gap-4 text-sm text-muted-foreground">
-                      <span className="hidden md:inline truncate max-w-40">{c.image}</span>
-                      {ports.length > 0 && (
-                        <span className="hidden lg:inline text-xs font-mono text-muted-foreground">
-                          {ports.join(", ")}
-                        </span>
-                      )}
-                      <div className="flex gap-1 items-center" onClick={(e) => e.stopPropagation()}>
-                        {c.state === "running" && (
-                          <Button variant="outline" size="sm" onClick={() => handleAction(c.id, "stop")}>
-                            Stop
-                          </Button>
-                        )}
-                        {c.state === "exited" && (
-                          <Button variant="outline" size="sm" onClick={() => handleAction(c.id, "start")}>
-                            Start
-                          </Button>
-                        )}
-                        <Button variant="outline" size="sm" onClick={() => handleAction(c.id, "restart")}>
-                          Restart
-                        </Button>
-                        <DropdownMenu>
-                          <DropdownMenuTrigger asChild>
-                            <Button variant="ghost" size="icon" className="h-8 w-8">
-                              <MoreVertical className="h-4 w-4" />
-                            </Button>
-                          </DropdownMenuTrigger>
-                          <DropdownMenuContent align="end">
-                            <DropdownMenuItem
-                              className="text-destructive"
-                              onClick={() => setDeleteTarget(c)}
-                            >
-                              Delete
-                            </DropdownMenuItem>
-                          </DropdownMenuContent>
-                        </DropdownMenu>
-                      </div>
-                    </div>
-                  </div>
-                  {c.system_type && (
-                    <p className="text-xs text-muted-foreground mt-1">system: {c.system_type}</p>
-                  )}
-                  {c.project_id && (
-                    <p className="text-xs text-muted-foreground mt-1">project: {c.project_id}</p>
-                  )}
-                </CardContent>
-              </Card>
-            );
-          })}
+                {g.name}
+              </Link>
+              <div className="space-y-2">
+                {g.containers.map((c) => (
+                  <ContainerRow key={c.id} container={c} onAction={handleAction} onDelete={setDeleteTarget} />
+                ))}
+              </div>
+            </section>
+          ))}
+          {nonProject.length > 0 && (
+            <section>
+              <h2 className="text-sm font-semibold text-foreground mb-3">Non-project</h2>
+              <div className="space-y-2">
+                {nonProject.map((c) => (
+                  <ContainerRow key={c.id} container={c} onAction={handleAction} onDelete={setDeleteTarget} />
+                ))}
+              </div>
+            </section>
+          )}
         </div>
       )}
 

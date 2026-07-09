@@ -101,7 +101,7 @@ domain lists are stored separately so switching modes never loses entries.
 - FEAT-016 — Egress modes: Open / Whitelist / Blacklist — done
 - FEAT-017 — Settings secondary sidebar + Light/Dark/System theme — done
 - FEAT-018 — Project detail secondary sidebar + project switcher — done
-- FEAT-019 — Containers grouped by project + detail secondary sidebar — pending
+- FEAT-019 — Containers grouped by project + detail secondary sidebar — done
 - FEAT-020 — Code page terminal tabs + files sidebar default open — pending
 - BUG-026 — Code editor save failures silent; system codebase saves 500 invisibly — pending
 - FEAT-021 — Relocate backend Go tests out of production packages into internal/tests — pending
