@@ -79,17 +79,30 @@ domain lists are stored separately so switching modes never loses entries.
    the restructure tasks are planned against reality; plus the two
    already-reproducible bugs filed directly (no audit needed to know
    they're bugs).
-2. Findings-driven implementation — planned after phase 1 lands: the
-   nested-layout/secondary-sidebar rework, terminal session manager,
-   egress modes, provider/API-key removal, split into reviewable tasks
-   using phase 1's actual findings.
+2. Findings-driven implementation (planned 2026-07-08 from TEST-008 +
+   TEST-009 findings). Intended order (bugs first, then features whose
+   dependencies point backward):
+   BUG-022/023/024/025 → FEAT-014 (remove providers/API keys; unblocks
+   the settings + project-detail restructures) → FEAT-015 (terminal
+   session manager; unblocks FEAT-020) → FEAT-016 (egress modes backend;
+   unblocks FEAT-017's Network UI) → FEAT-017 (settings restructure +
+   theme) → FEAT-018 (project detail sidebar) → FEAT-019 (containers
+   grouping + detail sidebar) → FEAT-020 (terminal tabs UI).
 
 ## Tasks
 - TEST-008 — Frontend layout/routing architecture audit for the restructure — done
 - TEST-009 — Backend terminal, sandbox and egress architecture audit — done
-- BUG-022 — Project delete leaves user on deleted project's page — pending
+- BUG-022 — Project delete leaves user on deleted project's page — done
 - BUG-023 — Tamga system codebase never listed on /code even with Show Tamga System on — pending
 - BUG-024 — Project detail page renders permanently blank on fetch failure — pending
+- BUG-025 — Sandbox container stop takes ~10s after terminal WS closes — pending
+- FEAT-014 — Remove Agent Providers and API Keys entirely — pending
+- FEAT-015 — Backend terminal session manager (persistent bash sessions) — pending
+- FEAT-016 — Egress modes: Open / Whitelist / Blacklist — pending
+- FEAT-017 — Settings secondary sidebar + Light/Dark/System theme — pending
+- FEAT-018 — Project detail secondary sidebar + project switcher — pending
+- FEAT-019 — Containers grouped by project + detail secondary sidebar — pending
+- FEAT-020 — Code page terminal tabs + files sidebar default open — pending
 
 ## Release Notes
 <filled in at sprint completion>
