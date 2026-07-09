@@ -93,7 +93,7 @@ domain lists are stored separately so switching modes never loses entries.
 - TEST-008 — Frontend layout/routing architecture audit for the restructure — done
 - TEST-009 — Backend terminal, sandbox and egress architecture audit — done
 - BUG-022 — Project delete leaves user on deleted project's page — done
-- BUG-023 — Tamga system codebase never listed on /code even with Show Tamga System on — pending
+- BUG-023 — Tamga system codebase never listed on /code even with Show Tamga System on — done
 - BUG-024 — Project detail page renders permanently blank on fetch failure — pending
 - BUG-025 — Sandbox container stop takes ~10s after terminal WS closes — pending
 - FEAT-014 — Remove Agent Providers and API Keys entirely — pending
@@ -103,6 +103,7 @@ domain lists are stored separately so switching modes never loses entries.
 - FEAT-018 — Project detail secondary sidebar + project switcher — pending
 - FEAT-019 — Containers grouped by project + detail secondary sidebar — pending
 - FEAT-020 — Code page terminal tabs + files sidebar default open — pending
+- BUG-026 — Code editor save failures silent; system codebase saves 500 invisibly — pending
 
 ## Release Notes
 <filled in at sprint completion>
