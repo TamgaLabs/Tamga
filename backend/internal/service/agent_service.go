@@ -144,7 +144,7 @@ func (s *AgentService) ensureEgressProxy(ctx context.Context, networks []string)
 
 	if !upToDate {
 		if s.docker.ContainerExists(ctx, egressProxyName) {
-			s.docker.StopContainer(ctx, egressProxyName)
+			s.docker.StopContainerTimeout(ctx, egressProxyName, 2)
 			if err := s.docker.RemoveContainer(ctx, egressProxyName); err != nil {
 				return fmt.Errorf("remove stale egress proxy: %w", err)
 			}
@@ -153,7 +153,7 @@ func (s *AgentService) ensureEgressProxy(ctx context.Context, networks []string)
 		// "bridge" is Docker's always-present default network - this is
 		// the proxy's one and only route to the internet. Per-project
 		// sandbox networks are attached below via NetworkConnect.
-		if _, err := s.docker.CreateContainerOpts(ctx, egressProxyName, egressProxyImage, env, "bridge", nil, container.Resources{}); err != nil {
+		if _, err := s.docker.CreateContainerOpts(ctx, egressProxyName, egressProxyImage, env, "bridge", nil, container.Resources{}, true); err != nil {
 			return fmt.Errorf("create egress proxy: %w", err)
 		}
 		if err := s.docker.StartContainer(ctx, egressProxyName); err != nil {
@@ -199,7 +199,7 @@ func (s *AgentService) ensureContainerRunning(ctx context.Context, containerName
 		if err := s.docker.StartContainer(ctx, containerName); err != nil {
 			slog.Warn("failed to start existing agent container, recreating", "container", containerName, "error", err)
 			s.docker.RemoveContainer(ctx, containerName)
-			if _, err := s.docker.CreateContainerOpts(ctx, containerName, image, env, network, mounts, resources); err != nil {
+			if _, err := s.docker.CreateContainerOpts(ctx, containerName, image, env, network, mounts, resources, true); err != nil {
 				return fmt.Errorf("recreate agent container: %w", err)
 			}
 			if err := s.docker.StartContainer(ctx, containerName); err != nil {
@@ -211,7 +211,7 @@ func (s *AgentService) ensureContainerRunning(ctx context.Context, containerName
 		slog.Info("agent container restarted", "container", containerName)
 		return nil
 	}
-	if _, err := s.docker.CreateContainerOpts(ctx, containerName, image, env, network, mounts, resources); err != nil {
+	if _, err := s.docker.CreateContainerOpts(ctx, containerName, image, env, network, mounts, resources, true); err != nil {
 		return fmt.Errorf("create agent container: %w", err)
 	}
 	if err := s.docker.StartContainer(ctx, containerName); err != nil {
@@ -397,7 +397,7 @@ func (s *AgentService) StopAgent(ctx context.Context, projectID int64) error {
 	if !s.docker.ContainerExists(ctx, containerName) {
 		return nil
 	}
-	if err := s.docker.StopContainer(ctx, containerName); err != nil {
+	if err := s.docker.StopContainerTimeout(ctx, containerName, 2); err != nil {
 		return fmt.Errorf("stop agent: %w", err)
 	}
 	if err := s.docker.RemoveContainer(ctx, containerName); err != nil {

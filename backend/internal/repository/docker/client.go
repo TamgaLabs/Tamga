@@ -47,7 +47,7 @@ func (c *Client) BuildImage(ctx context.Context, tag, dockerfile string, buildCt
 }
 
 func (c *Client) CreateContainer(ctx context.Context, name, imageName string, env []string, network string) (string, error) {
-	return c.CreateContainerOpts(ctx, name, imageName, env, network, nil, container.Resources{})
+	return c.CreateContainerOpts(ctx, name, imageName, env, network, nil, container.Resources{}, false)
 }
 
 // CreateContainerOpts creates a container with the given mounts and
@@ -55,11 +55,15 @@ func (c *Client) CreateContainer(ctx context.Context, name, imageName string, en
 // limit - i.e. Docker's own default). See FEAT-007: agent sandbox creation
 // always passes a non-zero Resources so no sandbox is ever created
 // unlimited.
-func (c *Client) CreateContainerOpts(ctx context.Context, name, imageName string, env []string, network string, mounts []string, resources container.Resources) (string, error) {
+func (c *Client) CreateContainerOpts(ctx context.Context, name, imageName string, env []string, network string, mounts []string, resources container.Resources, initProcess bool) (string, error) {
 	hostCfg := &container.HostConfig{
 		NetworkMode:   container.NetworkMode(network),
 		RestartPolicy: container.RestartPolicy{Name: container.RestartPolicyUnlessStopped},
 		Resources:     resources,
+	}
+	if initProcess {
+		initVal := true
+		hostCfg.Init = &initVal
 	}
 	for _, m := range mounts {
 		parts := strings.SplitN(m, ":", 2)
@@ -83,6 +87,11 @@ func (c *Client) StartContainer(ctx context.Context, containerID string) error {
 
 func (c *Client) StopContainer(ctx context.Context, containerID string) error {
 	return c.cli.ContainerStop(ctx, containerID, container.StopOptions{})
+}
+
+func (c *Client) StopContainerTimeout(ctx context.Context, containerID string, timeoutSecs int) error {
+	timeout := timeoutSecs
+	return c.cli.ContainerStop(ctx, containerID, container.StopOptions{Timeout: &timeout})
 }
 
 func (c *Client) RemoveContainer(ctx context.Context, containerID string) error {

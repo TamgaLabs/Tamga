@@ -95,7 +95,7 @@ domain lists are stored separately so switching modes never loses entries.
 - BUG-022 — Project delete leaves user on deleted project's page — done
 - BUG-023 — Tamga system codebase never listed on /code even with Show Tamga System on — done
 - BUG-024 — Project detail page renders permanently blank on fetch failure — done
-- BUG-025 — Sandbox container stop takes ~10s after terminal WS closes — pending
+- BUG-025 — Sandbox container stop takes ~10s after terminal WS closes — done
 - FEAT-014 — Remove Agent Providers and API Keys entirely — pending
 - FEAT-015 — Backend terminal session manager (persistent bash sessions) — pending
 - FEAT-016 — Egress modes: Open / Whitelist / Blacklist — pending
