@@ -98,8 +98,8 @@ domain lists are stored separately so switching modes never loses entries.
 - BUG-025 — Sandbox container stop takes ~10s after terminal WS closes — done
 - FEAT-014 — Remove Agent Providers and API Keys entirely — done
 - FEAT-015 — Backend terminal session manager (persistent bash sessions) — done
-- FEAT-016 — Egress modes: Open / Whitelist / Blacklist — pending
-- FEAT-017 — Settings secondary sidebar + Light/Dark/System theme — pending
+- FEAT-016 — Egress modes: Open / Whitelist / Blacklist — done
+- FEAT-017 — Settings secondary sidebar + Light/Dark/System theme — done
 - FEAT-018 — Project detail secondary sidebar + project switcher — pending
 - FEAT-019 — Containers grouped by project + detail secondary sidebar — pending
 - FEAT-020 — Code page terminal tabs + files sidebar default open — pending

@@ -282,3 +282,38 @@ export const addWhitelistDomain = (domain: string) =>
   });
 export const deleteWhitelistDomain = (id: number) =>
   api<void>(`/system/egress-whitelist/${id}`, { method: "DELETE" });
+
+// Agent sandbox egress mode + blacklist (see FEAT-016): the mode setting
+// picks which of the whitelist/blacklist lists (if either) the sandbox
+// egress proxy enforces. Blacklist is a mirror of the whitelist list
+// above, kept as a separate endpoint/type since the two lists are edited
+// independently.
+export type EgressMode = "open" | "whitelist" | "blacklist";
+
+export type EgressSettings = {
+  mode: EgressMode;
+};
+
+export const getEgressMode = () =>
+  api<EgressSettings>("/system/egress/mode");
+export const setEgressMode = (mode: EgressMode) =>
+  api<EgressSettings>("/system/egress/mode", {
+    method: "PUT",
+    body: JSON.stringify({ mode }),
+  });
+
+export type BlacklistDomain = {
+  id: number;
+  domain: string;
+  created_at: string;
+};
+
+export const listBlacklist = () =>
+  api<BlacklistDomain[]>("/system/egress-blacklist");
+export const addBlacklistDomain = (domain: string) =>
+  api<BlacklistDomain>("/system/egress-blacklist", {
+    method: "POST",
+    body: JSON.stringify({ domain }),
+  });
+export const deleteBlacklistDomain = (id: number) =>
+  api<void>(`/system/egress-blacklist/${id}`, { method: "DELETE" });

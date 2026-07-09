@@ -31,7 +31,7 @@ export default function CodeIDEPage() {
   const projectId = Number(params.id);
   const isProject = projectId > 0;
   const { user, loading: authLoading } = useAuth();
-  const { theme } = useTheme();
+  const { resolvedTheme } = useTheme();
 
   const [mode, setMode] = useState<"terminal" | "code">(isProject ? "terminal" : "code");
 
@@ -248,7 +248,7 @@ export default function CodeIDEPage() {
                 <div className="flex-1">
                   <MonacoEditor
                     language={detectLanguage(currentPath)}
-                    theme={theme === "dark" ? "vs-dark" : "vs"}
+                    theme={resolvedTheme === "dark" ? "vs-dark" : "vs"}
                     value={content}
                     onChange={(v) => {
                       setContent(v || "");

@@ -1,22 +1,26 @@
 "use client";
 
-"use client";
-
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useAuth } from "@/lib/auth";
-import { useTheme } from "@/lib/theme";
+import { Button } from "@/components/ui/button";
+import {
+  LayoutDashboard,
+  Container,
+  Code2,
+  Settings,
+  LogOut,
+} from "lucide-react";
 
 export function Sidebar() {
   const pathname = usePathname();
   const { logout } = useAuth();
-  const { theme, toggleTheme } = useTheme();
 
   const navItems = [
-    { href: "/dashboard", label: "Projects", icon: "▦" },
-    { href: "/containers", label: "Containers", icon: "▭" },
-    { href: "/code", label: "Code", icon: "◇" },
-    { href: "/settings", label: "Settings", icon: "⚙" },
+    { href: "/dashboard", label: "Projects", icon: LayoutDashboard },
+    { href: "/containers", label: "Containers", icon: Container },
+    { href: "/code", label: "Code", icon: Code2 },
+    { href: "/settings", label: "Settings", icon: Settings },
   ];
 
   return (
@@ -30,6 +34,7 @@ export function Sidebar() {
       <nav className="flex-1 p-2 space-y-1">
         {navItems.map((item) => {
           const active = pathname.startsWith(item.href);
+          const Icon = item.icon;
           return (
             <Link
               key={item.href}
@@ -40,7 +45,7 @@ export function Sidebar() {
                   : "text-muted-foreground hover:text-foreground hover:bg-muted"
               }`}
             >
-              <span className="w-5 text-center">{item.icon}</span>
+              <Icon className="h-4 w-4" />
               {item.label}
             </Link>
           );
@@ -48,20 +53,14 @@ export function Sidebar() {
       </nav>
 
       <div className="p-2 border-t border-border space-y-1">
-        <button
-          onClick={toggleTheme}
-          className="flex items-center gap-3 px-3 py-2 rounded-md text-sm text-muted-foreground hover:text-foreground hover:bg-muted w-full transition-colors"
-        >
-          <span className="w-5 text-center">{theme === "dark" ? "☀️" : "🌙"}</span>
-          {theme === "dark" ? "Light Mode" : "Dark Mode"}
-        </button>
-        <button
+        <Button
+          variant="ghost"
+          className="w-full justify-start gap-3 px-3 text-muted-foreground"
           onClick={() => { logout(); window.location.href = "/login"; }}
-          className="flex items-center gap-3 px-3 py-2 rounded-md text-sm text-muted-foreground hover:text-foreground hover:bg-muted w-full transition-colors"
         >
-          <span className="w-5 text-center">⎋</span>
+          <LogOut className="h-4 w-4" />
           Logout
-        </button>
+        </Button>
       </div>
     </aside>
   );
