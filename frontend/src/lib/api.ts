@@ -221,12 +221,31 @@ export const writeFile = (projectId: number, path: string, content: string) =>
 // Agent terminal: WebSocket into an on-demand sandbox container. Built as a
 // plain URL (not via the `api()` json helper) since the browser WebSocket API
 // can't set an Authorization header - the token travels as a query param.
-export function agentTerminalUrl(projectId: number): string {
+//
+// With no `sessionId`, the backend creates a brand new session. Passing a
+// `sessionId` reattaches to an existing, still-live session instead (the
+// backend replays its scrollback before streaming live) - see FEAT-015.
+export function agentTerminalUrl(projectId: number, sessionId?: string): string {
   const token = getToken() || "";
   const proto = typeof window !== "undefined" && window.location.protocol === "https:" ? "wss:" : "ws:";
   const host = typeof window !== "undefined" ? window.location.host : "";
-  return `${proto}//${host}/api/projects/${projectId}/agent/terminal?token=${encodeURIComponent(token)}`;
+  const session = sessionId ? `&session=${encodeURIComponent(sessionId)}` : "";
+  return `${proto}//${host}/api/projects/${projectId}/agent/terminal?token=${encodeURIComponent(token)}${session}`;
 }
+
+// Agent terminal sessions (see FEAT-015): a project can have multiple
+// concurrent, server-persisted terminal sessions (capped at 10). These
+// mirror backend/internal/service/terminal_session.go's SessionInfo.
+export type AgentSession = {
+  id: string;
+  created_at: string;
+  connected: boolean;
+};
+
+export const listAgentSessions = (projectId: number) =>
+  api<AgentSession[]>(`/projects/${projectId}/agent/sessions`);
+export const terminateAgentSession = (projectId: number, sessionId: string) =>
+  api<void>(`/projects/${projectId}/agent/sessions/${sessionId}`, { method: "DELETE" });
 
 // Agent sandbox default resource limit (see FEAT-007)
 export type ResourceLimit = {

@@ -6,12 +6,25 @@ import {
   getFileTree,
   readFile,
   writeFile,
+  listAgentSessions,
+  terminateAgentSession,
   type FileEntry,
+  type AgentSession,
 } from "@/lib/api";
 import { AgentTerminal } from "@/components/agent-terminal";
 import { useAuth } from "@/lib/auth";
 import { useTheme } from "@/lib/theme";
 import { Button } from "@/components/ui/button";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import {
   SquareTerminal,
   Code2,
@@ -20,8 +33,18 @@ import {
   FileIcon,
   FolderIcon,
   FolderOpenIcon,
+  Plus,
+  X,
 } from "lucide-react";
 import dynamic from "next/dynamic";
+
+const MAX_TERMINAL_SESSIONS = 10;
+
+// A tab either mirrors a real server-side session (id = the session's real
+// id) or is a "pending" tab for a session that's still being created (id =
+// a locally generated placeholder, swapped for the real id once
+// AgentTerminal resolves it - see agent-terminal.tsx).
+type TerminalTab = { id: string; pending: boolean };
 
 const MonacoEditor = dynamic(() => import("@monaco-editor/react"), { ssr: false });
 
@@ -41,16 +64,105 @@ export default function CodeIDEPage() {
   const [originalContent, setOriginalContent] = useState("");
   const [dirty, setDirty] = useState(false);
   const [expandedDirs, setExpandedDirs] = useState<Set<string>>(new Set());
-  const [showFileTree, setShowFileTree] = useState(false);
+  const [showFileTree, setShowFileTree] = useState(true);
+
+  // Terminal tabs: fetched once on entry (mirrors the server's session
+  // list from then on via local updates on create/terminate), not
+  // re-fetched on every mode/tab switch - see Proposed Solution.
+  const [tabs, setTabs] = useState<TerminalTab[]>([]);
+  const [activeTabId, setActiveTabId] = useState<string | null>(null);
+  const [terminalError, setTerminalError] = useState<string | null>(null);
+  const [tabPendingClose, setTabPendingClose] = useState<string | null>(null);
 
   useEffect(() => {
     if (!authLoading && !user) router.replace("/login");
   }, [user, authLoading, router]);
 
   useEffect(() => {
+    if (!user || !isProject) return;
+    listAgentSessions(projectId)
+      .then((sessions: AgentSession[]) => {
+        const sorted = [...sessions].sort((a, b) => a.created_at.localeCompare(b.created_at));
+        // Merge server sessions with any existing tabs (e.g., pending tabs created
+        // while this fetch was in flight). Preserve pending tabs, add server sessions
+        // that aren't already tracked.
+        setTabs((prev) => {
+          const pendingTabs = prev.filter((t) => t.pending);
+          const existingRealIds = new Set(prev.filter((t) => !t.pending).map((t) => t.id));
+          const newRealTabs = sorted
+            .filter((s) => !existingRealIds.has(s.id))
+            .map((s) => ({ id: s.id, pending: false }));
+          return [...pendingTabs, ...newRealTabs];
+        });
+        // Only set activeTabId if nothing is selected yet (user hasn't created or
+        // switched to a tab).
+        setActiveTabId((cur) => {
+          if (cur !== null) return cur;
+          return sorted[0]?.id || null;
+        });
+      })
+      .catch((e) => setTerminalError(e instanceof Error ? e.message : "Failed to load terminal sessions"));
+    // Fetch once on entry only - tabs are then kept in sync locally.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [projectId, user, isProject]);
+
+  useEffect(() => {
     if (!user || mode !== "code") return;
     getFileTree(projectId).then(setFiles).catch(console.error);
   }, [projectId, user, mode]);
+
+  const handleNewTab = () => {
+    setTerminalError(null);
+    if (tabs.length >= MAX_TERMINAL_SESSIONS) {
+      setTerminalError(`Maximum of ${MAX_TERMINAL_SESSIONS} terminal sessions reached for this project.`);
+      return;
+    }
+    const pendingId = `pending-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    setTabs((prev) => [...prev, { id: pendingId, pending: true }]);
+    setActiveTabId(pendingId);
+  };
+
+  const handleSessionResolved = (pendingId: string, realId: string) => {
+    setTabs((prev) => {
+      // Dedup: if realId already exists as a real tab (e.g., from the seed
+      // merge during concurrent WS creation), drop the pending tab instead of
+      // renaming it into a duplicate.
+      const realIdAlreadyExists = prev.some((t) => !t.pending && t.id === realId);
+      if (realIdAlreadyExists) {
+        return prev.filter((t) => t.id !== pendingId);
+      }
+      // Normal case: rename pending tab to real id
+      return prev.map((t) => (t.id === pendingId ? { id: realId, pending: false } : t));
+    });
+    // Switch activeTabId if the pending tab was active (points to realId either way)
+    setActiveTabId((prev) => (prev === pendingId ? realId : prev));
+  };
+
+  const handleConnectFailed = (pendingId: string) => {
+    setTerminalError("Could not open a new terminal session (the server's 10-session limit may have been reached).");
+    setTabs((prev) => {
+      const next = prev.filter((t) => t.id !== pendingId);
+      setActiveTabId((cur) => (cur === pendingId ? (next[0]?.id ?? null) : cur));
+      return next;
+    });
+  };
+
+  const handleTerminateTab = async (id: string) => {
+    setTabPendingClose(null);
+    try {
+      await terminateAgentSession(projectId, id);
+    } catch (e) {
+      setTerminalError(e instanceof Error ? e.message : "Failed to terminate session");
+      return;
+    }
+    setTabs((prev) => {
+      const next = prev.filter((t) => t.id !== id);
+      setActiveTabId((cur) => (cur === id ? (next[0]?.id ?? null) : cur));
+      return next;
+    });
+  };
+
+  const activeTab = tabs.find((t) => t.id === activeTabId) || null;
 
   const openFile = async (path: string) => {
     if (dirty && !confirm("Discard unsaved changes?")) return;
@@ -189,8 +301,92 @@ export default function CodeIDEPage() {
       </div>
 
       {mode === "terminal" ? (
-        <div className="flex-1 min-h-0">
-          <AgentTerminal projectId={projectId} />
+        <div className="flex-1 min-h-0 flex flex-col">
+          <div className="flex items-center gap-1 px-2 py-1 bg-card border-b border-border overflow-x-auto">
+            {tabs.map((tab, i) => (
+              <div
+                key={tab.id}
+                className={`group flex items-center gap-1 pl-3 pr-1 py-1 rounded text-xs cursor-pointer shrink-0 ${
+                  activeTabId === tab.id
+                    ? "bg-muted text-foreground"
+                    : "text-muted-foreground hover:bg-muted/50"
+                }`}
+                onClick={() => setActiveTabId(tab.id)}
+              >
+                <SquareTerminal className="h-3 w-3" />
+                <span>{tab.pending ? "connecting…" : `Session ${i + 1}`}</span>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-4 w-4 opacity-60 hover:opacity-100"
+                  disabled={tab.pending}
+                  title="Terminate session"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setTabPendingClose(tab.id);
+                  }}
+                >
+                  <X className="h-3 w-3" />
+                </Button>
+              </div>
+            ))}
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-6 w-6 shrink-0"
+              title="New terminal session"
+              onClick={handleNewTab}
+            >
+              <Plus className="h-4 w-4" />
+            </Button>
+          </div>
+
+          {terminalError && (
+            <div className="px-3 py-1.5 text-xs text-destructive bg-destructive/10 border-b border-border flex items-center justify-between">
+              <span>{terminalError}</span>
+              <Button variant="ghost" size="icon" className="h-4 w-4" onClick={() => setTerminalError(null)}>
+                <X className="h-3 w-3" />
+              </Button>
+            </div>
+          )}
+
+          <div className="flex-1 min-h-0">
+            {activeTab ? (
+              <AgentTerminal
+                key={activeTab.id}
+                projectId={projectId}
+                sessionId={activeTab.pending ? undefined : activeTab.id}
+                knownSessionIds={tabs.filter((t) => !t.pending).map((t) => t.id)}
+                onSessionResolved={(realId) => handleSessionResolved(activeTab.id, realId)}
+                onConnectFailed={() => handleConnectFailed(activeTab.id)}
+              />
+            ) : (
+              <div className="h-full w-full flex items-center justify-center text-muted-foreground text-sm">
+                <Button variant="outline" size="sm" onClick={handleNewTab}>
+                  <Plus className="h-4 w-4 mr-1" />
+                  New terminal session
+                </Button>
+              </div>
+            )}
+          </div>
+
+          <AlertDialog open={tabPendingClose !== null} onOpenChange={(open) => !open && setTabPendingClose(null)}>
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>Terminate this session?</AlertDialogTitle>
+                <AlertDialogDescription>
+                  This ends the shell process for real - it isn&apos;t just closing the tab. If it&apos;s the
+                  project&apos;s last session, the sandbox container is stopped too.
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel>Cancel</AlertDialogCancel>
+                <AlertDialogAction onClick={() => tabPendingClose && handleTerminateTab(tabPendingClose)}>
+                  Terminate
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
         </div>
       ) : (
         <div className="flex flex-1 min-h-0">

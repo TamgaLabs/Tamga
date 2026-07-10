@@ -4,7 +4,7 @@ import { useEffect, useRef } from "react";
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import "@xterm/xterm/css/xterm.css";
-import { agentTerminalUrl } from "@/lib/api";
+import { agentTerminalUrl, listAgentSessions } from "@/lib/api";
 
 // Wire protocol: the server streams raw shell output as WebSocket binary
 // frames. The browser sends JSON text frames for keystrokes and resize
@@ -13,12 +13,34 @@ type ClientMessage =
   | { type: "input"; data: string }
   | { type: "resize"; cols: number; rows: number };
 
-export function AgentTerminal({ projectId }: { projectId: number }) {
+export function AgentTerminal({
+  projectId,
+  sessionId,
+  knownSessionIds,
+  onSessionResolved,
+  onConnectFailed,
+}: {
+  projectId: number;
+  /** Reattach to this existing session. Omit to create a brand new one. */
+  sessionId?: string;
+  /**
+   * Session ids already known to the caller at mount time. Only used when
+   * `sessionId` is omitted (new-session mode), to figure out which session
+   * the backend just created for us - see the id-resolution note below.
+   */
+  knownSessionIds?: string[];
+  /** New-session mode only: fires once the new session's real id is known. */
+  onSessionResolved?: (id: string) => void;
+  /** Fires if the socket never opens (e.g. the 10-session cap was hit). */
+  onConnectFailed?: () => void;
+}) {
   const containerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const el = containerRef.current;
     if (!el) return;
+
+    const isNewSession = !sessionId;
 
     const term = new Terminal({
       cursorBlink: true,
@@ -31,22 +53,50 @@ export function AgentTerminal({ projectId }: { projectId: number }) {
     term.open(el);
     fitAddon.fit();
 
-    const ws = new WebSocket(agentTerminalUrl(projectId));
+    const ws = new WebSocket(agentTerminalUrl(projectId, sessionId));
     ws.binaryType = "arraybuffer";
+    let opened = false;
 
     const send = (msg: ClientMessage) => {
       if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(msg));
     };
 
     ws.onopen = () => {
+      opened = true;
       fitAddon.fit();
       send({ type: "resize", cols: term.cols, rows: term.rows });
+
+      // The WS handshake doesn't tell us the new session's id (server ->
+      // client is a raw byte stream, no envelope - see terminal_handler.go).
+      // So once the socket is open (meaning the backend has already created
+      // and registered the session), we re-fetch the session list and treat
+      // whichever id we didn't already know about as ours. This assumes the
+      // caller isn't racing another tab creation for the same project at
+      // the same instant, which is fine for a single-user local tool.
+      if (isNewSession && onSessionResolved) {
+        const known = new Set(knownSessionIds || []);
+        listAgentSessions(projectId)
+          .then((sessions) => {
+            const fresh = sessions.filter((s) => !known.has(s.id));
+            if (fresh.length === 0) return;
+            const newest = fresh.reduce((a, b) =>
+              a.created_at > b.created_at ? a : b
+            );
+            onSessionResolved(newest.id);
+          })
+          .catch(() => {});
+      }
     };
     ws.onmessage = (ev) => {
       term.write(ev.data instanceof ArrayBuffer ? new Uint8Array(ev.data) : ev.data);
     };
-    ws.onclose = () => term.writeln("\r\n\x1b[90m[connection closed]\x1b[0m");
-    ws.onerror = () => term.writeln("\r\n\x1b[31m[connection error]\x1b[0m");
+    ws.onclose = () => {
+      term.writeln("\r\n\x1b[90m[connection closed]\x1b[0m");
+      if (isNewSession && !opened) onConnectFailed?.();
+    };
+    ws.onerror = () => {
+      term.writeln("\r\n\x1b[31m[connection error]\x1b[0m");
+    };
 
     const onData = term.onData((data) => send({ type: "input", data }));
 
@@ -60,10 +110,14 @@ export function AgentTerminal({ projectId }: { projectId: number }) {
     return () => {
       resizeObserver.disconnect();
       onData.dispose();
+      // Closing the socket only detaches - the session itself keeps running
+      // server-side (FEAT-015) until explicitly terminated via the REST
+      // endpoint, so this is safe on tab switch / unmount / navigation.
       ws.close();
       term.dispose();
     };
-  }, [projectId]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [projectId, sessionId]);
 
   return <div ref={containerRef} className="h-full w-full bg-black p-2" />;
 }
