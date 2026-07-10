@@ -155,6 +155,12 @@ project secondary sidebar (a user's own architecture/traffic).
 - TEST-012 — Docker enumeration/stats + topology audit for the infra map — done
 - BUG-028 — Caddy/project network isolation (routes can't reach projects) — done (closed by C1)
 - BUG-029 — All projects share one flat network, no isolation — pending (folds into compose-deploy)
+- FEAT-025 — [C2] Schema + domain model for compose projects — pending
+- FEAT-026 — [C2] Docker-client compose primitives (ImagePull/depends_on/multi-net) — pending
+- FEAT-027 — [C2] Parse the compose subset (compose-go/v2) — pending
+- FEAT-028 — [C2] Unified compose deploy engine (per-project net, exposed-service routing) — pending
+- FEAT-029 — [C2] Compose-project create/deploy UI — pending
+- TEST-014 — [C2] Integration: multi-service deploy, isolation (closes BUG-029) — pending
 - FEAT-023 — [C1] Traefik service in docker-compose + static config — done
 - FEAT-024 — [C1] Backend Traefik file-provider routing (replaces caddy) — done
 - TEST-013 — [C1] Integration: Traefik migration end-to-end (closes BUG-028) — done
