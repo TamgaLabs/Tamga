@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bytes"
 	"context"
 	"fmt"
 	"log/slog"
@@ -14,9 +13,9 @@ import (
 	"github.com/TamgaLabs/Tamga/backend/internal/config"
 	"github.com/TamgaLabs/Tamga/backend/internal/domain"
 	"github.com/TamgaLabs/Tamga/backend/internal/handler"
-	caddyrepo "github.com/TamgaLabs/Tamga/backend/internal/repository/caddy"
 	dockerrepo "github.com/TamgaLabs/Tamga/backend/internal/repository/docker"
 	"github.com/TamgaLabs/Tamga/backend/internal/repository/sqlite"
+	traefikrepo "github.com/TamgaLabs/Tamga/backend/internal/repository/traefik"
 	"github.com/TamgaLabs/Tamga/backend/internal/router"
 	"github.com/TamgaLabs/Tamga/backend/internal/service"
 )
@@ -51,23 +50,28 @@ func main() {
 	if err != nil {
 		slog.Warn("docker client not available, deploy disabled", "error", err)
 	}
-	caddyClient := caddyrepo.New(cfg.CaddyAdminURL)
+	traefikClient := traefikrepo.New(cfg.TraefikDynamicDir)
+	if err := traefikClient.EnsureDir(); err != nil {
+		slog.Warn("ensure traefik dynamic dir", "error", err)
+	}
 
 	whitelistService := service.NewWhitelistService(db)
 	egressService := service.NewEgressService(db)
 	resourceLimitService := service.NewResourceLimitService(db)
 	idleTimeoutService := service.NewIdleTimeoutService(db)
 	gitCredentialService := service.NewGitCredentialService(db, cfg.JWTSecret)
-	projectService := service.NewProjectService(db, dockerClient, caddyClient, cfg, gitCredentialService)
+	projectService := service.NewProjectService(db, dockerClient, traefikClient, cfg, gitCredentialService)
 	agentService := service.NewAgentService(db, dockerClient, cfg, whitelistService, egressService, resourceLimitService, gitCredentialService, idleTimeoutService)
 
-	if err := setupCaddyRoutes(caddyClient, cfg); err != nil {
-		slog.Warn("caddy route setup", "error", err)
-	} else {
-		// Reconcile existing project routes after LoadConfig
-		// (LoadConfig replaces Caddy's entire config, so we need to restore per-project routes)
-		reconcileProjectRoutes(projectService, dockerClient, caddyClient)
-	}
+	// Re-write every running project's route file on boot. Unlike Caddy's
+	// admin API (whose config lived entirely in the Caddy process's
+	// memory, wiped and reloaded on every backend restart), Traefik's
+	// file-provider routes persist on disk across backend restarts by
+	// themselves - this isn't a reconcile-after-wipe like Caddy needed,
+	// it's a defensive re-write in case the dynamic dir was ever cleared
+	// or a file is missing/stale (e.g. the container's port changed since
+	// the file was last written), so it can't drift silently.
+	reconcileProjectRoutes(projectService, dockerClient, traefikClient)
 
 	systemHandler := handler.NewSystemHandler()
 	authHandler := handler.NewAuthHandler(authService)
@@ -121,56 +125,19 @@ func main() {
 	slog.Info("server stopped")
 }
 
-const caddyfilePath = "/Caddyfile"
-
-func setupCaddyRoutes(c *caddyrepo.Client, cfg config.Config) error {
-	var buf bytes.Buffer
-
-	buf.WriteString("{\n")
-	buf.WriteString("\tadmin :2019\n")
-	if cfg.CaddyAutoSSL {
-		buf.WriteString(fmt.Sprintf("\temail %s\n", cfg.CaddyEmail))
-	} else {
-		buf.WriteString("\tauto_https off\n")
-	}
-	buf.WriteString("}\n\n")
-
-	if !cfg.CaddyAutoSSL {
-		buf.WriteString(fmt.Sprintf("%s:80 {\n", cfg.UIDomain))
-	} else {
-		buf.WriteString(fmt.Sprintf("%s {\n", cfg.UIDomain))
-	}
-	buf.WriteString("\t@api path /api/*\n")
-	buf.WriteString("\thandle @api {\n")
-	buf.WriteString("\t\treverse_proxy backend:8080\n")
-	buf.WriteString("\t}\n")
-	buf.WriteString("\thandle {\n")
-	buf.WriteString("\t\treverse_proxy frontend:3000\n")
-	buf.WriteString("\t}\n")
-	buf.WriteString("}\n")
-
-	caddyfileContent := buf.Bytes()
-
-	// Write Caddyfile to disk for reference/debugging
-	if err := os.WriteFile(caddyfilePath, caddyfileContent, 0644); err != nil {
-		return fmt.Errorf("write caddyfile: %w", err)
-	}
-	slog.Info("caddyfile written", "path", caddyfilePath)
-
-	// Load config via Caddy admin API (POST /load with Caddyfile format)
-	if err := c.LoadConfig(caddyfileContent); err != nil {
-		slog.Warn("caddy config load failed", "error", err)
-		return err
-	}
-	slog.Info("caddy config loaded successfully")
-
-	return nil
-}
-
-// reconcileProjectRoutes restores all deployed project routes after LoadConfig
-// replaces Caddy's entire configuration. This ensures that backend restarts
-// don't wipe out live routing for deployed projects.
-func reconcileProjectRoutes(ps *service.ProjectService, dc *dockerrepo.Client, cc *caddyrepo.Client) {
+// reconcileProjectRoutes re-writes the dynamic-config route file for every
+// currently-running project on backend startup. This is not a Caddy-style
+// "restore everything after the whole config got wiped" reconcile - each
+// project's Traefik route file is independent and Traefik's file-provider
+// watcher (providers.file.watch, traefik/traefik.yml) hot-reloads on
+// change with no coordination needed between files, so a backend restart
+// alone can never wipe another project's route. Rewriting on boot instead
+// guards against drift: the dynamic dir is a bind mount that could be
+// cleared/tampered with outside the backend's control, and a project's
+// upstream port is re-derived fresh from the live container rather than
+// trusted from whatever was last written, so a stale/missing file self-heals
+// on the next restart.
+func reconcileProjectRoutes(ps *service.ProjectService, dc *dockerrepo.Client, tc *traefikrepo.Client) {
 	if ps == nil || dc == nil {
 		return
 	}
@@ -197,8 +164,8 @@ func reconcileProjectRoutes(ps *service.ProjectService, dc *dockerrepo.Client, c
 		// Reconstruct the exact upstream string that would have been used
 		upstream := fmt.Sprintf("project-%d:%s", p.ID, port)
 
-		// Re-add the route (non-fatal if it fails)
-		if err := cc.AddRoute(p.Domain, upstream); err != nil {
+		// Re-write the route (non-fatal if it fails)
+		if err := tc.AddRoute(p.ID, p.Domain, upstream); err != nil {
 			slog.Warn("reconcile project route", "project_id", p.ID, "domain", p.Domain, "error", err)
 		} else {
 			slog.Info("reconciled project route", "project_id", p.ID, "domain", p.Domain, "upstream", upstream)

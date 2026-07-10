@@ -2,13 +2,14 @@
 id: BUG-028
 type: bug
 title: Caddy cannot reach deployed project containers — caddy and project containers are on two disjoint Docker networks
-status: pending
+status: done
 complexity: standard
-assignee: unassigned
+assignee: architect
 sprint: SPRINT-004
 created: 2026-07-10
 history:
   - {date: 2026-07-10, stage: created, by: sdlc-developer, note: "surfaced during TEST-010's Caddy integration audit"}
+  - {date: 2026-07-10, stage: done, by: architect, note: "closed by C1 cluster (Traefik on tamga-net); verified live by TEST-013"}
 ---
 
 > **Architect note (2026-07-10):** SPRINT-004 replaces Caddy with Traefik
@@ -132,3 +133,12 @@ and the project container share a network.
 
 ## Test Notes
 <filled in by tester>
+
+## Resolution
+Closed by SPRINT-004 cluster C1 (the Caddy→Traefik migration), not fixed on
+Caddy. FEAT-023 puts Traefik on both the core network AND `tamga-net` (where
+project containers live); FEAT-024's routing points at the project upstream.
+TEST-013 verified live: a container on `tamga-net` with a Traefik route
+returns the app (HTTP 200), not the 502 that Caddy's disjoint-network setup
+made structurally impossible. (Note: per-project network *isolation* is a
+separate concern tracked by BUG-029, closing in cluster C2.)

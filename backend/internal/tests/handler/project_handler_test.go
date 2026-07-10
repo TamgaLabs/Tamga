@@ -14,8 +14,8 @@ import (
 	"github.com/TamgaLabs/Tamga/backend/internal/config"
 	"github.com/TamgaLabs/Tamga/backend/internal/domain"
 	"github.com/TamgaLabs/Tamga/backend/internal/handler"
-	"github.com/TamgaLabs/Tamga/backend/internal/repository/caddy"
 	"github.com/TamgaLabs/Tamga/backend/internal/repository/sqlite"
+	"github.com/TamgaLabs/Tamga/backend/internal/repository/traefik"
 	"github.com/TamgaLabs/Tamga/backend/internal/service"
 )
 
@@ -40,10 +40,10 @@ func newTestProjectService(t *testing.T) (*service.ProjectService, *sqlite.DB) {
 	}
 
 	cfg := config.Config{DataDir: t.TempDir()}
-	caddyClient := caddy.New("http://127.0.0.1:1")
+	traefikClient := traefik.New(t.TempDir())
 	gitCred := service.NewGitCredentialService(db, "test-jwt-secret")
 
-	return service.NewProjectService(db, nil, caddyClient, cfg, gitCred), db
+	return service.NewProjectService(db, nil, traefikClient, cfg, gitCred), db
 }
 
 func setupRouter(h *handler.ProjectHandler) *chi.Mux {

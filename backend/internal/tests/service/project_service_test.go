@@ -8,17 +8,17 @@ import (
 
 	"github.com/TamgaLabs/Tamga/backend/internal/config"
 	"github.com/TamgaLabs/Tamga/backend/internal/domain"
-	"github.com/TamgaLabs/Tamga/backend/internal/repository/caddy"
 	"github.com/TamgaLabs/Tamga/backend/internal/repository/sqlite"
+	"github.com/TamgaLabs/Tamga/backend/internal/repository/traefik"
 	"github.com/TamgaLabs/Tamga/backend/internal/service"
 )
 
 // newTestProjectService builds a ProjectService with a real throwaway
 // SQLite DB, no Docker client (docker is nil, matching how the service
 // behaves when Docker isn't available - deploy() bails out early via
-// requireDocker) and a Caddy client pointed at an address nothing ever
-// connects to (RemoveRoute is only invoked when a project has a non-empty
-// Domain, which the tests below avoid).
+// requireDocker) and a Traefik client pointed at a throwaway temp
+// directory (RemoveRoute/AddRoute are only invoked when a project has a
+// container, which the tests below avoid).
 func newTestProjectService(t *testing.T) (*service.ProjectService, config.Config) {
 	t.Helper()
 	dbPath := "/tmp/test_project_service_" + t.Name() + ".db"
@@ -40,15 +40,15 @@ func newTestProjectService(t *testing.T) (*service.ProjectService, config.Config
 	}
 
 	cfg := config.Config{DataDir: t.TempDir()}
-	caddyClient := caddy.New("http://127.0.0.1:1")
+	traefikClient := traefik.New(t.TempDir())
 	gitCred := service.NewGitCredentialService(db, "test-jwt-secret")
 
-	return service.NewProjectService(db, nil, caddyClient, cfg, gitCred), cfg
+	return service.NewProjectService(db, nil, traefikClient, cfg, gitCred), cfg
 }
 
 // TestProjectServiceCRUD covers create/read/update/delete, plus the env
 // var CRUD that hangs off a project. Domain is left empty throughout so
-// Delete() never calls out to the (unreachable) Caddy admin API.
+// Delete()'s Traefik RemoveRoute call is just a no-op file removal.
 func TestProjectServiceCRUD(t *testing.T) {
 	svc, _ := newTestProjectService(t)
 	ctx := context.Background()

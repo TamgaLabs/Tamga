@@ -1,5 +1,4 @@
 DOMAIN ?= localhost
-CADDY_EMAIL ?= admin@example.com
 
 .PHONY: setup up down logs test build clean smoke-test
 

@@ -13,21 +13,21 @@ import (
 
 	"github.com/TamgaLabs/Tamga/backend/internal/config"
 	"github.com/TamgaLabs/Tamga/backend/internal/domain"
-	"github.com/TamgaLabs/Tamga/backend/internal/repository/caddy"
 	dockerclient "github.com/TamgaLabs/Tamga/backend/internal/repository/docker"
 	"github.com/TamgaLabs/Tamga/backend/internal/repository/sqlite"
+	"github.com/TamgaLabs/Tamga/backend/internal/repository/traefik"
 )
 
 type ProjectService struct {
 	db      *sqlite.DB
 	docker  *dockerclient.Client
-	caddy   *caddy.Client
+	traefik *traefik.Client
 	cfg     config.Config
 	gitCred *GitCredentialService
 }
 
-func NewProjectService(db *sqlite.DB, docker *dockerclient.Client, caddyClient *caddy.Client, cfg config.Config, gitCred *GitCredentialService) *ProjectService {
-	return &ProjectService{db: db, docker: docker, caddy: caddyClient, cfg: cfg, gitCred: gitCred}
+func NewProjectService(db *sqlite.DB, docker *dockerclient.Client, traefikClient *traefik.Client, cfg config.Config, gitCred *GitCredentialService) *ProjectService {
+	return &ProjectService{db: db, docker: docker, traefik: traefikClient, cfg: cfg, gitCred: gitCred}
 }
 
 func (s *ProjectService) requireDocker() error {
@@ -156,17 +156,17 @@ func (s *ProjectService) deploy(ctx context.Context, project *domain.Project) er
 	project.ContainerID = containerID
 	slog.Info("container started", "project_id", project.ID, "container_id", containerID[:12])
 
-	// 4. Register Caddy route
+	// 4. Register Traefik route
 	port, err := s.docker.GetContainerPort(ctx, containerID)
 	if err != nil {
 		port = "80"
 	}
 	upstream := fmt.Sprintf("%s:%s", containerName, port)
-	if err := s.caddy.AddRoute(project.Domain, upstream); err != nil {
-		slog.Warn("caddy route failed", "domain", project.Domain, "error", err)
+	if err := s.traefik.AddRoute(project.ID, project.Domain, upstream); err != nil {
+		slog.Warn("traefik route failed", "project_id", project.ID, "domain", project.Domain, "error", err)
 		// non-fatal: container is running, route can be added manually
 	}
-	slog.Info("caddy route added", "domain", project.Domain, "upstream", upstream)
+	slog.Info("traefik route added", "project_id", project.ID, "domain", project.Domain, "upstream", upstream)
 
 	// 5. Done
 	project.Status = domain.ProjectStatusRunning
@@ -300,10 +300,8 @@ func (s *ProjectService) Delete(ctx context.Context, id int64) error {
 		}
 	}
 
-	if project.Domain != "" {
-		if err := s.caddy.RemoveRoute(project.Domain); err != nil {
-			slog.Warn("caddy remove route error", "domain", project.Domain, "error", err)
-		}
+	if err := s.traefik.RemoveRoute(project.ID); err != nil {
+		slog.Warn("traefik remove route error", "project_id", project.ID, "domain", project.Domain, "error", err)
 	}
 
 	if err := s.db.DeleteDeploymentsByProject(id); err != nil {
@@ -406,6 +404,8 @@ func (s *ProjectService) Update(ctx context.Context, id int64, req UpdateProject
 	if err != nil {
 		return nil, fmt.Errorf("find project: %w", err)
 	}
+	oldDomain := project.Domain
+
 	if req.Name != nil {
 		project.Name = *req.Name
 	}
@@ -424,6 +424,33 @@ func (s *ProjectService) Update(ctx context.Context, id int64, req UpdateProject
 	if err := s.db.UpdateProject(project); err != nil {
 		return nil, fmt.Errorf("update project: %w", err)
 	}
+
+	// Move the Traefik route when a deployed project's domain actually
+	// changes - the gap TEST-010 found: the old Caddy-based code never
+	// touched routing here at all, leaving the old domain's route
+	// dangling and the new domain unrouted until a backend restart. Since
+	// each project's route file is keyed by project ID, not domain,
+	// "moving" the route is just overwriting project-<id>.yml with the
+	// new Host() rule - no separate remove-old step needed unless the
+	// domain was cleared entirely.
+	if req.Domain != nil && project.Domain != oldDomain && project.ContainerID != "" && s.docker != nil {
+		if project.Domain == "" {
+			if err := s.traefik.RemoveRoute(project.ID); err != nil {
+				slog.Warn("traefik remove route on domain change", "project_id", project.ID, "error", err)
+			}
+		} else {
+			containerName := fmt.Sprintf("project-%d", project.ID)
+			port, err := s.docker.GetContainerPort(ctx, project.ContainerID)
+			if err != nil {
+				port = "80"
+			}
+			upstream := fmt.Sprintf("%s:%s", containerName, port)
+			if err := s.traefik.AddRoute(project.ID, project.Domain, upstream); err != nil {
+				slog.Warn("traefik update route on domain change", "project_id", project.ID, "domain", project.Domain, "error", err)
+			}
+		}
+	}
+
 	return project, nil
 }
 

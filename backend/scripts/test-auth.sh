@@ -100,7 +100,7 @@ mkdir -p "${WORKDIR}/data"
     DB_PATH="${WORKDIR}/data/test.db" \
     JWT_SECRET="$JWT_SECRET" \
     ADMIN_PASSWORD="$ADMIN_PASSWORD" \
-    CADDY_ADMIN_URL="http://127.0.0.1:1" \
+    TRAEFIK_DYNAMIC_DIR="${WORKDIR}/traefik-dynamic" \
     "$BIN" >"$SERVER_LOG" 2>&1 &
     echo $! >"${WORKDIR}/pid"
 )

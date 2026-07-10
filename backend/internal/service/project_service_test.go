@@ -8,8 +8,8 @@ import (
 	"testing"
 
 	"github.com/TamgaLabs/Tamga/backend/internal/config"
-	"github.com/TamgaLabs/Tamga/backend/internal/repository/caddy"
 	"github.com/TamgaLabs/Tamga/backend/internal/repository/sqlite"
+	"github.com/TamgaLabs/Tamga/backend/internal/repository/traefik"
 )
 
 // This file is a deliberate exception to FEAT-021's move of tests into
@@ -25,9 +25,9 @@ import (
 // newTestProjectService builds a ProjectService with a real throwaway
 // SQLite DB, no Docker client (docker is nil, matching how the service
 // behaves when Docker isn't available - deploy() bails out early via
-// requireDocker) and a Caddy client pointed at an address nothing ever
-// connects to (RemoveRoute is only invoked when a project has a non-empty
-// Domain, which the tests below avoid).
+// requireDocker) and a Traefik client pointed at a throwaway temp
+// directory (RemoveRoute/AddRoute are only invoked when a project has a
+// container, which the tests below avoid).
 func newTestProjectService(t *testing.T) (*ProjectService, config.Config) {
 	t.Helper()
 	dbPath := "/tmp/test_project_service_" + t.Name() + ".db"
@@ -49,10 +49,10 @@ func newTestProjectService(t *testing.T) (*ProjectService, config.Config) {
 	}
 
 	cfg := config.Config{DataDir: t.TempDir()}
-	caddyClient := caddy.New("http://127.0.0.1:1")
+	traefikClient := traefik.New(t.TempDir())
 	gitCred := NewGitCredentialService(db, "test-jwt-secret")
 
-	return NewProjectService(db, nil, caddyClient, cfg, gitCred), cfg
+	return NewProjectService(db, nil, traefikClient, cfg, gitCred), cfg
 }
 
 // TestProjectServiceCloneRepo exercises the git-clone-on-create path

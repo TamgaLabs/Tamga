@@ -1,16 +1,23 @@
 services:
-  caddy:
-    image: caddy:alpine
+  traefik:
+    image: traefik:v3.7
     restart: unless-stopped
     ports:
       - "80:80"
       - "443:443"
+      # No port published for the `traefik` entrypoint (dashboard/api/
+      # metrics, :8080 internally) - admin-only, same posture Caddy's :2019
+      # had: reachable from other containers on tamga-network, not the host.
     volumes:
-      - ./Caddyfile:/etc/caddy/Caddyfile
-      - caddy_data:/data
-      - caddy_config:/config
+      - ./traefik/traefik.yml:/etc/traefik/traefik.yml:ro
+      - ./traefik/dynamic:/etc/traefik/dynamic:ro
+      - traefik_acme:/data
     networks:
       - tamga-network
+      # Also joins tamga-net (the network project containers live on) so
+      # routes to project upstreams are actually reachable - the infra-level
+      # BUG-028 fix. Caddy never joined this network; Traefik must.
+      - tamga-net
 
   backend:
     build:
@@ -20,7 +27,9 @@ services:
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - ./data:/data
-      - ./Caddyfile:/Caddyfile
+      # Read-write: the backend writes per-project route files here
+      # (FEAT-024). Same host directory Traefik's file provider watches.
+      - ./traefik/dynamic:/etc/traefik/dynamic
       - .:/tamga-src:ro
     env_file: .env
     environment:
@@ -54,12 +63,20 @@ services:
       - build-only
 
 volumes:
-  caddy_data:
-  caddy_config:
+  traefik_acme:
 
 networks:
   tamga-network:
-    # Not internal: Caddy needs outbound access for Let's Encrypt, and the
+    # Not internal: Traefik needs outbound access for Let's Encrypt, and the
     # backend needs it for git clone/pull. Egress isolation belongs on the
     # separate agent-sandbox network (see FEAT-006), not here.
+    driver: bridge
+  tamga-net:
+    # The network project containers join (ProjectService.deploy's
+    # EnsureNetwork("tamga-net", ...), backend/internal/service/project_service.go).
+    # Declared here (not `external: true`) with an explicit `name:` so a
+    # from-scratch `docker compose up` creates it directly - EnsureNetwork's
+    # exists-check then finds it already present and is a no-op, so compose
+    # and the backend's runtime network creation agree on the same object.
+    name: tamga-net
     driver: bridge

@@ -1,0 +1,55 @@
+# Traefik v3 static configuration.
+#
+# Entrypoints:
+#   web/websecure  - host-published (80/443), the same ports Caddy used.
+#   traefik        - dashboard + api + Prometheus metrics; deliberately NOT
+#                     published to the host (see docker-compose.yml), same
+#                     admin-only posture Caddy's :2019 had.
+#
+# Dynamic routing comes from the file provider watching /etc/traefik/dynamic
+# (bind-mounted from ./traefik/dynamic). tamga.yml in that dir is Tamga's own
+# UI/API routing (the Caddyfile equivalent); per-project route files are
+# written there by the backend (FEAT-024, out of scope here).
+entryPoints:
+  web:
+    address: ":80"
+  websecure:
+    address: ":443"
+  traefik:
+    address: ":8080"
+
+providers:
+  file:
+    directory: /etc/traefik/dynamic
+    watch: true
+
+api:
+  dashboard: true
+  # insecure: true auto-binds the dashboard/api router to the `traefik`
+  # entrypoint above with no further config, the same throwaway setup
+  # TEST-010's audit empirically confirmed. Safe here because that
+  # entrypoint is never published to the host (see docker-compose.yml) -
+  # it's only reachable from other containers on the compose networks,
+  # matching Caddy's admin-API posture. A JWT-gated proxy through the
+  # backend (TEST-010 section 5, option 1) can replace this later without
+  # changing this file.
+  insecure: true
+
+metrics:
+  prometheus:
+    entryPoint: traefik
+    addRoutersLabels: true
+
+# ACME (Let's Encrypt) resolver for real project/prod domains. Dev/localhost
+# needs none of this - Traefik serves its default self-signed cert on
+# websecure automatically for any router with `tls: {}` and no certResolver.
+# email below mirrors the current Caddyfile's bootstrap default
+# (admin@example.com); replace with a real address before using this
+# resolver against a public domain.
+certificatesResolvers:
+  leresolver:
+    acme:
+      email: admin@example.com
+      storage: /data/acme.json
+      httpChallenge:
+        entryPoint: web

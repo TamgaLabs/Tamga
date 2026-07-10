@@ -120,7 +120,7 @@ mkdir -p "${DATA_DIR}"
     HOST_DATA_DIR="$DATA_DIR" \
     JWT_SECRET="$JWT_SECRET" \
     ADMIN_PASSWORD="$ADMIN_PASSWORD" \
-    CADDY_ADMIN_URL="http://127.0.0.1:1" \
+    TRAEFIK_DYNAMIC_DIR="${WORKDIR}/traefik-dynamic" \
     "$BIN" >"$SERVER_LOG" 2>&1 &
     echo $! >"${WORKDIR}/pid"
 )

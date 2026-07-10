@@ -19,8 +19,9 @@
 # random port. Docker is genuinely available and reachable in this
 # environment, and a live `tamga-*` compose stack is already running
 # separately - this script never touches it (own isolated tmp DATA_DIR,
-# own fixture git repo, own project, unreachable CADDY_ADMIN_URL so Caddy
-# route registration is a harmless no-op exactly like TEST-002/003/004).
+# own fixture git repo, own project, isolated TRAEFIK_DYNAMIC_DIR under
+# WORKDIR so Traefik route-file writes are a harmless no-op that never
+# touches the real host filesystem, exactly like TEST-002/003/004).
 #
 # Unlike TEST-002 (which deliberately used a Dockerfile-less fixture so
 # buildImage fails fast, right after clone, and a container is never
@@ -227,7 +228,7 @@ mkdir -p "${DATA_DIR}"
     HOST_DATA_DIR="$DATA_DIR" \
     JWT_SECRET="$JWT_SECRET" \
     ADMIN_PASSWORD="$ADMIN_PASSWORD" \
-    CADDY_ADMIN_URL="http://127.0.0.1:1" \
+    TRAEFIK_DYNAMIC_DIR="${WORKDIR}/traefik-dynamic" \
     "$BIN" >"$SERVER_LOG" 2>&1 &
     echo $! >"${WORKDIR}/pid"
 )

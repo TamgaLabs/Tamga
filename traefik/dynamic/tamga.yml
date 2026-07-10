@@ -1,0 +1,54 @@
+# Base dynamic routing for Tamga's own UI/API - the Traefik equivalent of
+# the old Caddyfile's `localhost { @api path /api/*; reverse_proxy ... }`.
+#
+# Per-project route files (project-<id>.yml) are written into this same
+# directory by the backend at deploy/delete/update time (FEAT-024, out of
+# scope here) - this file only covers Tamga's own dashboard, not project
+# domains.
+#
+# Split into separate plain-HTTP and TLS routers per name (rather than one
+# router listing both `web` and `websecure`) - empirically confirmed while
+# validating this task: a router with `tls: {}` does not actually attach to
+# a non-TLS entrypoint even though it lists it in `entryPoints` (Traefik
+# only serves it on TLS-terminating entrypoints), so a single shared router
+# silently 404s on plain HTTP. Two routers per route is the documented
+# Traefik pattern and matches Caddy's current behavior of serving both
+# `http://localhost` and `https://localhost` (self-signed) side by side,
+# with no forced redirect.
+http:
+  routers:
+    tamga-api:
+      rule: "Host(`localhost`) && PathPrefix(`/api`)"
+      service: tamga-backend
+      entryPoints:
+        - web
+      priority: 10
+    tamga-api-secure:
+      rule: "Host(`localhost`) && PathPrefix(`/api`)"
+      service: tamga-backend
+      entryPoints:
+        - websecure
+      tls: {}
+      priority: 10
+    tamga-ui:
+      rule: "Host(`localhost`)"
+      service: tamga-frontend
+      entryPoints:
+        - web
+      priority: 1
+    tamga-ui-secure:
+      rule: "Host(`localhost`)"
+      service: tamga-frontend
+      entryPoints:
+        - websecure
+      tls: {}
+      priority: 1
+  services:
+    tamga-backend:
+      loadBalancer:
+        servers:
+          - url: "http://backend:8080"
+    tamga-frontend:
+      loadBalancer:
+        servers:
+          - url: "http://frontend:3000"
