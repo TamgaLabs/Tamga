@@ -94,12 +94,60 @@ project secondary sidebar (a user's own architecture/traffic).
    pipeline and how to fold it into a unified compose model; (c) the docker
    enumeration/stats surface for the infra map (nodes, network-derived
    edges, image classification, live status).
-2. Findings-driven implementation — planned after phase 1 lands, decomposed
-   into a cluster of smaller tasks (per the pipeline's decomposition rule —
-   this is a large sprint; prefer several small dev+review units with a
-   shared integration test over mega-tasks). Rough tracks: Traefik
-   migration → unified compose deploy → metrics scraper + time-series →
-   analytics UI → infra map + overlay → domain-binding edit.
+2. Findings-driven implementation — planned 2026-07-10 from TEST-010/011/012.
+   Decomposed into six clusters (per the decomposition rule: each cluster is
+   several small dev+review tasks that HOLD in review, then ONE integration
+   test verifies the cluster live before the whole cluster commits). Ordered
+   by dependency:
+
+   **C1 — Traefik migration** (foundation; keeps today's single-container
+   deploy working through the swap): Traefik service in docker-compose
+   (entrypoints 80/443, file provider watching a dir, metrics entrypoint,
+   admin-only dashboard, default/self-signed cert + ACME config) · backend
+   `repository/traefik` writing/removing per-project dynamic-config files
+   (router+service `project-<id>`), replacing `repository/caddy`; wire into
+   deploy/delete AND fix the Update-domain gap; remove Caddyfile +
+   setupCaddyRoutes/reconcile · make Traefik share the project network so it
+   can actually reach the exposed container (closes BUG-028). Integration
+   test: deploy a project, hit its domain → app responds (not 502), Traefik
+   /metrics shows the `project-<id>` router, localhost TLS works.
+
+   **C2 — Unified compose deploy** (builds on C1 routing): schema migration
+   (`projects.compose_yaml`/`exposed_service` + `project_service_containers`
+   child table) · `compose-spec/compose-go/v2` parsing of the subset
+   (image/ports/env/volumes/networks/depends_on) · docker-client plumbing
+   for the gaps (ImagePull, depends_on ordering, multi-network) · per-project
+   network (closes BUG-029) with services resolving each other by name ·
+   fold git-build into a 1-service compose (one deploy path) · exposed-service
+   heuristic + whole-stack lifecycle/status · compose-project create UI.
+   Integration test: deploy a multi-service stack (e.g. web+redis), services
+   reach each other, exposed service routed, another project can't reach it.
+
+   **C3 — Metrics scraper + time-series store**: periodic scrape of Traefik
+   `/metrics` → parse the `project-<id>` router/service families → SQLite
+   time-series with minute→hour→day rollup + a query API. Integration test:
+   generate traffic, confirm samples stored + rolled up + queryable per
+   project and global.
+
+   **C4 — Analytics UI**: global Analytics page + per-project Analytics tab;
+   panels (request rate, status/error, latency p50/p95/p99, bandwidth) from
+   C3's query API. Integration test: browser — panels render real data.
+
+   **C5 — Infra map API + UI + overlay**: `repository/docker` network-list
+   wrapper (edge source) + image classification + `GET /api/system/topology`
+   & `/api/projects/{id}/topology` · global Infrastructure page + per-project
+   Map tab (graph render, auto-refresh, node classification/status,
+   click-through to container detail) · live traffic overlay joining topology
+   ↔ C3 metrics (`project_id`→`project-<id>`). Integration test: browser —
+   map shows real containers/edges, overlay reflects traffic.
+
+   **C6 — Domain-binding edit**: the one map/UI edit action — bind/unbind a
+   domain to a service, updating C1's Traefik routing. Integration test:
+   rebind a domain via UI, the route actually moves.
+
+   BUG-028 closes in C1, BUG-029 in C2. Each cluster's tasks get filed when
+   its predecessor lands (or up-front if independent), following the
+   "hold-in-review → cluster integration test → commit together" flow.
 
 ## Tasks
 - TEST-010 — Reverse-proxy/routing/TLS audit + Traefik migration requirements — done
