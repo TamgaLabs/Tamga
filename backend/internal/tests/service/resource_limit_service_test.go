@@ -1,10 +1,11 @@
-package service
+package service_test
 
 import (
 	"os"
 	"testing"
 
 	"github.com/TamgaLabs/Tamga/backend/internal/repository/sqlite"
+	"github.com/TamgaLabs/Tamga/backend/internal/service"
 )
 
 func TestResourceLimitServiceGetSet(t *testing.T) {
@@ -23,7 +24,7 @@ func TestResourceLimitServiceGetSet(t *testing.T) {
 		t.Fatalf("migrate: %v", err)
 	}
 
-	svc := NewResourceLimitService(db)
+	svc := service.NewResourceLimitService(db)
 
 	// Migration seeds a non-zero default.
 	rl, err := svc.Get()

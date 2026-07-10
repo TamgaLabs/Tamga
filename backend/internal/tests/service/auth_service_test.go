@@ -1,4 +1,4 @@
-package service
+package service_test
 
 import (
 	"os"
@@ -8,10 +8,11 @@ import (
 	"github.com/TamgaLabs/Tamga/backend/internal/config"
 	"github.com/TamgaLabs/Tamga/backend/internal/domain"
 	"github.com/TamgaLabs/Tamga/backend/internal/repository/sqlite"
+	"github.com/TamgaLabs/Tamga/backend/internal/service"
 	"github.com/golang-jwt/jwt/v5"
 )
 
-func newTestAuthService(t *testing.T) (*AuthService, config.Config) {
+func newTestAuthService(t *testing.T) (*service.AuthService, config.Config) {
 	t.Helper()
 	dbPath := "/tmp/test_auth_service_" + t.Name() + ".db"
 	os.Remove(dbPath)
@@ -32,7 +33,7 @@ func newTestAuthService(t *testing.T) (*AuthService, config.Config) {
 	}
 
 	cfg := config.Config{JWTSecret: "test-jwt-secret"}
-	return NewAuthService(db, cfg), cfg
+	return service.NewAuthService(db, cfg), cfg
 }
 
 // TestAuthServiceSetupAndLogin covers the happy path: first-run setup,

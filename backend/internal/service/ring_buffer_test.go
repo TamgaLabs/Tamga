@@ -6,6 +6,11 @@ import (
 	"testing"
 )
 
+// This file is a deliberate exception to FEAT-021's move of tests into
+// internal/tests/: ringBuffer and newRingBuffer are both unexported, with
+// no exported constructor or interface anywhere in the package - there is
+// no black-box way to construct one at all, so these tests stay colocated.
+
 func TestRingBufferUnderCapacity(t *testing.T) {
 	r := newRingBuffer(16)
 	r.Write([]byte("hello"))

@@ -5,6 +5,16 @@ import (
 	"testing"
 )
 
+// This file is a deliberate exception to FEAT-021's move of tests into
+// internal/tests/: sessionRegistry is unexported with no exported
+// constructor, and these tests build TerminalSession values by setting its
+// unexported ring/done fields directly (fakeSession, below) and reach for
+// the unexported maxSessionsPerProject/agentNetworkName - deliberately, so
+// the registry's bookkeeping (add/get/remove/count/list/projectLock/
+// activeNetworks) and the session cap can be unit tested without a Docker
+// daemon (see FEAT-015). There is no exported surface to drive any of this
+// through, so it stays colocated.
+
 // fakeSession builds a TerminalSession with just enough fields set to
 // exercise the registry (no Docker exec/hijacked stream involved) - the
 // registry itself doesn't touch those fields.

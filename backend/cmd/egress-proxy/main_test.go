@@ -2,6 +2,14 @@ package main
 
 import "testing"
 
+// This file is a deliberate exception to FEAT-021's move of tests into
+// internal/tests/: it lives in cmd/egress-proxy, a `package main`, which
+// Go's build system will not let any other package import - "main" is not
+// an importable package path, so there is no way for a black-box test to
+// reach proxyHandler/isAllowed/parseDomains from outside. Colocation here
+// isn't a judgment call the way the internal/service exceptions are; it's
+// the only option Go allows for testing a main package's own code at all.
+
 func TestIsAllowedWhitelistMode(t *testing.T) {
 	p := &proxyHandler{
 		mode:    "whitelist",

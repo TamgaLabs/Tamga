@@ -14,6 +14,16 @@ import (
 	"github.com/TamgaLabs/Tamga/backend/internal/repository/sqlite"
 )
 
+// This file is a deliberate exception to FEAT-021's move of tests into
+// internal/tests/: TestAgentServiceSessionCapEnforcement populates
+// AgentService's unexported sessions registry and builds TerminalSession
+// values via their unexported ring/done fields directly, and reaches for
+// the unexported maxSessionsPerProject - on purpose, so the cap check can
+// be verified without going through a real (Docker-dependent) session
+// create for every one of the maxSessionsPerProject+1 sessions it needs.
+// There is no exported way to seed the registry like this, so it stays
+// colocated.
+
 // newTestAgentService builds an AgentService backed by a real throwaway
 // SQLite DB and a real Docker client talking to the daemon available in
 // this environment (see Proposed Solution: AgentService's docker field is

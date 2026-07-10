@@ -1,4 +1,4 @@
-package service
+package service_test
 
 import (
 	"os"
@@ -6,9 +6,10 @@ import (
 
 	"github.com/TamgaLabs/Tamga/backend/internal/domain"
 	"github.com/TamgaLabs/Tamga/backend/internal/repository/sqlite"
+	"github.com/TamgaLabs/Tamga/backend/internal/service"
 )
 
-func newTestEgressService(t *testing.T) *EgressService {
+func newTestEgressService(t *testing.T) *service.EgressService {
 	t.Helper()
 	dbPath := "/tmp/test_egress_service_" + t.Name() + ".db"
 	os.Remove(dbPath)
@@ -28,7 +29,7 @@ func newTestEgressService(t *testing.T) *EgressService {
 		t.Fatalf("migrate: %v", err)
 	}
 
-	return NewEgressService(db)
+	return service.NewEgressService(db)
 }
 
 func TestEgressServiceModeGetSet(t *testing.T) {

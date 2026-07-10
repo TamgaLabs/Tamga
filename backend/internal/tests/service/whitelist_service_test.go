@@ -1,10 +1,11 @@
-package service
+package service_test
 
 import (
 	"os"
 	"testing"
 
 	"github.com/TamgaLabs/Tamga/backend/internal/repository/sqlite"
+	"github.com/TamgaLabs/Tamga/backend/internal/service"
 )
 
 func TestWhitelistServiceCRUD(t *testing.T) {
@@ -23,7 +24,7 @@ func TestWhitelistServiceCRUD(t *testing.T) {
 		t.Fatalf("migrate: %v", err)
 	}
 
-	svc := NewWhitelistService(db)
+	svc := service.NewWhitelistService(db)
 
 	// Migration seeds the defaults.
 	domains, err := svc.Domains()

@@ -11,7 +11,7 @@
 #
 # What this script deliberately does NOT (re)test, because it's already
 # covered with more precise control at the service layer in
-# backend/internal/service/auth_service_test.go:
+# backend/internal/tests/service/auth_service_test.go:
 #   - the true "before setup" -> "after setup" flip of IsSetup()/auth-status.
 #     In this real binary, main.go calls AuthService.AutoSetup() unconditionally
 #     on boot (see cmd/api/main.go), and config.Load()'s ADMIN_PASSWORD default
