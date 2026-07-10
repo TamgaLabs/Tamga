@@ -1,9 +1,9 @@
 ---
 id: SPRINT-003
 name: UI Restructure & Persistent Terminals
-status: active
+status: complete
 created: 2026-07-08
-completed:
+completed: 2026-07-10
 ---
 
 ## Goal
@@ -109,4 +109,81 @@ domain lists are stored separately so switching modes never loses entries.
 - BUG-027 — Terminal session orphaned when WS upgrade fails after CreateSession — done
 
 ## Release Notes
-<filled in at sprint completion>
+
+A substantial restructure of Tamga's UI plus a ground-up rework of the
+in-browser terminal.
+
+### Added
+- **Persistent terminal sessions with tabs.** The code page now supports
+  multiple terminal tabs per project. Sessions run **bash** and survive
+  closing the tab or the whole browser — reopen the page and your sessions
+  are still there, with their scrollback replayed. Sessions end only when
+  you explicitly terminate them (with a confirm), and terminating a
+  project's last session stops its sandbox. Up to 10 concurrent sessions
+  per project. (FEAT-015, FEAT-020)
+- **Configurable idle timeout for detached sessions.** Settings → Sandbox
+  now has a "Session Idle Timeout" — how long a session with no open tab
+  may sit before it's auto-terminated. Defaults to **Never** (sessions
+  persist until you end them); pick 30m/1h/8h/24h if you'd rather they
+  self-clean. (FEAT-022)
+- **Selectable egress modes.** Settings → Network lets you choose how
+  sandboxes reach the internet: **Open** (everything allowed — the new
+  default), **Whitelist** (only listed domains), or **Blacklist**
+  (everything except listed domains). The whitelist and blacklist are kept
+  separately, so switching modes never loses your entries. (FEAT-016)
+- **Light / Dark / System theme.** The theme control moved into Settings →
+  Appearance and now offers a System option that follows your OS
+  preference live. (FEAT-017)
+- **Project switcher & richer project pages.** Each project detail page has
+  a secondary sidebar with a searchable project switcher at the top and
+  Overview / Containers / Settings / Environment / Actions / Code sections.
+  A project's containers now appear right on the project — a summary on the
+  Overview plus a full Containers list. (FEAT-018)
+- The code editor's file tree is now open by default. (FEAT-020)
+
+### Changed
+- **Settings is now sectioned.** The single long settings page became five
+  sub-pages — Appearance, Sandbox, Network, Git, System — each with its own
+  URL you can link to and refresh. (FEAT-017)
+- **Containers are grouped by project.** The Containers list now groups
+  running containers under the project they belong to (with a "Non-project"
+  group for the rest), and each container's detail page is split into
+  Inspect / Logs / Stats / Resources sub-pages with a back-link to its
+  project. (FEAT-019)
+- **Sandboxes stop almost instantly.** Closing a terminal used to leave the
+  sandbox lingering ~10 seconds; it now stops in a fraction of a second.
+  (BUG-025)
+- **Faster, clearer terminal shell.** Sandboxes now use bash instead of a
+  minimal shell. (FEAT-015)
+- Deleting a project now redirects you back to the dashboard with a
+  confirmation instead of leaving you on the dead page. (BUG-022)
+
+### Removed
+- **Agent Providers and API Keys** are gone — leftover concepts from the
+  removed agent bridge that nothing used. Their settings sections,
+  endpoints, and stored data are removed. On upgrade, the related tables
+  are dropped automatically. (FEAT-014)
+
+### Fixed
+- The Tamga system codebase now actually shows on the Code page when "Show
+  Tamga System" is on, and opens in the editor. (BUG-023)
+- Opening a project that failed to load no longer shows a permanently blank
+  page — you get a clear "Project not found" instead. (BUG-024)
+- Saving a file in the editor now surfaces failures with a visible,
+  dismissible error instead of failing silently; the read-only system
+  codebase rejects writes with a clear message rather than an opaque
+  server error. (BUG-026)
+- Terminal sessions can no longer be orphaned by a dropped connection
+  during setup (which previously ate a slot toward the session cap and kept
+  a sandbox alive). (BUG-027)
+
+### Internal
+- Upgrade behavior note: existing installs move to egress **Open** mode on
+  upgrade — if you relied on the old always-on whitelist, re-select
+  Whitelist mode in Settings → Network. (FEAT-016)
+- Backend Go tests were relocated out of the production packages into a
+  dedicated `internal/tests/` tree (black-box), with a few unavoidable
+  exceptions kept in place and documented. (FEAT-021)
+- This sprint began with two codebase audits (frontend architecture and
+  backend terminal/sandbox/egress) that the implementation tasks were
+  planned from. (TEST-008, TEST-009)
