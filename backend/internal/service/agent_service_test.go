@@ -75,6 +75,7 @@ func newTestAgentService(t *testing.T) (*AgentService, *dockerclient.Client, int
 	whitelistSvc := NewWhitelistService(db)
 	egressSvc := NewEgressService(db)
 	resourceLimitSvc := NewResourceLimitService(db)
+	idleTimeoutSvc := NewIdleTimeoutService(db)
 
 	hostDataDir := t.TempDir()
 	cfg := config.Config{HostDataDir: hostDataDir}
@@ -99,7 +100,7 @@ func newTestAgentService(t *testing.T) (*AgentService, *dockerclient.Client, int
 		}
 	})
 
-	agentSvc := NewAgentService(db, docker, cfg, whitelistSvc, egressSvc, resourceLimitSvc, nil)
+	agentSvc := NewAgentService(db, docker, cfg, whitelistSvc, egressSvc, resourceLimitSvc, nil, idleTimeoutSvc)
 	return agentSvc, docker, project.ID
 }
 

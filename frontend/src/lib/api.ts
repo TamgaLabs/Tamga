@@ -336,3 +336,19 @@ export const addBlacklistDomain = (domain: string) =>
   });
 export const deleteBlacklistDomain = (id: number) =>
   api<void>(`/system/egress-blacklist/${id}`, { method: "DELETE" });
+
+// Detached terminal session idle timeout (see FEAT-022): how long a
+// session may sit with no attached WebSocket before the backend
+// auto-terminates it. Global setting, single value. 0 means Never (the
+// default) - sessions persist until explicitly terminated.
+export type IdleTimeoutSettings = {
+  timeout_seconds: number;
+};
+
+export const getIdleTimeout = () =>
+  api<IdleTimeoutSettings>("/system/session-idle-timeout");
+export const setIdleTimeout = (timeoutSeconds: number) =>
+  api<IdleTimeoutSettings>("/system/session-idle-timeout", {
+    method: "PUT",
+    body: JSON.stringify({ timeout_seconds: timeoutSeconds }),
+  });

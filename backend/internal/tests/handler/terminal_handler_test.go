@@ -67,6 +67,7 @@ func newTestTerminalHandler(t *testing.T) (*handler.TerminalHandler, *service.Ag
 	whitelistSvc := service.NewWhitelistService(db)
 	egressSvc := service.NewEgressService(db)
 	resourceLimitSvc := service.NewResourceLimitService(db)
+	idleTimeoutSvc := service.NewIdleTimeoutService(db)
 
 	hostDataDir := t.TempDir()
 	cfg := config.Config{HostDataDir: hostDataDir}
@@ -89,7 +90,7 @@ func newTestTerminalHandler(t *testing.T) (*handler.TerminalHandler, *service.Ag
 		}
 	})
 
-	agentSvc := service.NewAgentService(db, docker, cfg, whitelistSvc, egressSvc, resourceLimitSvc, nil)
+	agentSvc := service.NewAgentService(db, docker, cfg, whitelistSvc, egressSvc, resourceLimitSvc, nil, idleTimeoutSvc)
 	return handler.NewTerminalHandler(agentSvc), agentSvc, docker, project.ID
 }
 

@@ -20,6 +20,7 @@ func New(
 	whitelistHandler *handler.WhitelistHandler,
 	egressHandler *handler.EgressHandler,
 	resourceLimitHandler *handler.ResourceLimitHandler,
+	idleTimeoutHandler *handler.IdleTimeoutHandler,
 	gitCredentialHandler *handler.GitCredentialHandler,
 	authMiddleware func(http.Handler) http.Handler,
 ) *chi.Mux {
@@ -89,6 +90,10 @@ func New(
 			// Agent sandbox default resource limit
 			r.Get("/system/resource-limits", resourceLimitHandler.Get)
 			r.Put("/system/resource-limits", resourceLimitHandler.Update)
+
+			// Detached terminal session idle timeout (FEAT-022)
+			r.Get("/system/session-idle-timeout", idleTimeoutHandler.Get)
+			r.Put("/system/session-idle-timeout", idleTimeoutHandler.Update)
 
 			// Global git credential (clone/pull + sandbox commit/push)
 			r.Get("/system/git-credential", gitCredentialHandler.Get)

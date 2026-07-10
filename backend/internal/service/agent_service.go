@@ -35,12 +35,13 @@ type AgentService struct {
 	egressSvc     *EgressService
 	resourceLimit *ResourceLimitService
 	gitCredSvc    *GitCredentialService
+	idleTimeout   *IdleTimeoutService
 
 	sessions *sessionRegistry
 }
 
-func NewAgentService(db *sqlite.DB, docker *dockerclient.Client, cfg config.Config, whitelistSvc *WhitelistService, egressSvc *EgressService, resourceLimitSvc *ResourceLimitService, gitCredSvc *GitCredentialService) *AgentService {
-	return &AgentService{
+func NewAgentService(db *sqlite.DB, docker *dockerclient.Client, cfg config.Config, whitelistSvc *WhitelistService, egressSvc *EgressService, resourceLimitSvc *ResourceLimitService, gitCredSvc *GitCredentialService, idleTimeoutSvc *IdleTimeoutService) *AgentService {
+	s := &AgentService{
 		db:            db,
 		docker:        docker,
 		cfg:           cfg,
@@ -48,7 +49,78 @@ func NewAgentService(db *sqlite.DB, docker *dockerclient.Client, cfg config.Conf
 		egressSvc:     egressSvc,
 		resourceLimit: resourceLimitSvc,
 		gitCredSvc:    gitCredSvc,
+		idleTimeout:   idleTimeoutSvc,
 		sessions:      newSessionRegistry(),
+	}
+	s.startIdleSweep()
+	return s
+}
+
+// idleSweepInterval is how often the background sweep (see startIdleSweep)
+// checks detached sessions against the configured idle timeout (FEAT-022).
+const idleSweepInterval = 60 * time.Second
+
+// startIdleSweep launches the long-lived background goroutine that
+// periodically terminates detached terminal sessions that have exceeded
+// the configured idle timeout. It is started once, at construction, and
+// runs for the lifetime of the process - there is no graceful-shutdown
+// plumbing for services in cmd/api/main.go (only the HTTP server itself is
+// shut down), so a plain unstoppable goroutine is the KISS choice here; it
+// exits when the process does. A nil idleTimeout (e.g. in tests that don't
+// wire one) disables the sweep entirely rather than panicking.
+func (s *AgentService) startIdleSweep() {
+	if s.idleTimeout == nil {
+		return
+	}
+	go func() {
+		ticker := time.NewTicker(idleSweepInterval)
+		defer ticker.Stop()
+		for range ticker.C {
+			s.sweepIdleSessions(time.Now())
+		}
+	}()
+}
+
+// idleSessions returns the sessions in `sessions` that are currently
+// detached (see TerminalSession.IdleSince) and have been so for at least
+// `timeout`, as of `now`. A timeout <= 0 means Never - nothing is ever
+// selected. Pure/stateless on purpose so it can be unit tested without a
+// running ticker or a Docker daemon (see FEAT-022).
+func idleSessions(sessions []*TerminalSession, timeout time.Duration, now time.Time) []*TerminalSession {
+	if timeout <= 0 {
+		return nil
+	}
+	var out []*TerminalSession
+	for _, sess := range sessions {
+		idleSince, detached := sess.IdleSince()
+		if !detached {
+			continue
+		}
+		if now.Sub(idleSince) >= timeout {
+			out = append(out, sess)
+		}
+	}
+	return out
+}
+
+// sweepIdleSessions terminates every currently-detached session that has
+// exceeded the configured idle timeout, via the exact same TerminateSession
+// path an explicit terminate uses - so last-session-stops-sandbox semantics
+// hold here too. A Never (0) timeout is a no-op. Errors terminating an
+// individual session are logged and don't stop the sweep from considering
+// the rest.
+func (s *AgentService) sweepIdleSessions(now time.Time) {
+	settings, err := s.idleTimeout.Get()
+	if err != nil {
+		slog.Warn("idle sweep: load idle timeout setting", "error", err)
+		return
+	}
+	timeout := time.Duration(settings.TimeoutSeconds) * time.Second
+
+	for _, sess := range idleSessions(s.sessions.all(), timeout, now) {
+		if err := s.TerminateSession(context.Background(), sess.ProjectID, sess.ID); err != nil {
+			slog.Warn("idle sweep: terminate session failed", "project_id", sess.ProjectID, "session_id", sess.ID, "error", err)
+		}
 	}
 }
 
@@ -389,6 +461,7 @@ func (s *AgentService) CreateSession(ctx context.Context, projectID int64) (*Ter
 		return nil, fmt.Errorf("attach shell: %w", err)
 	}
 
+	now := time.Now()
 	sess := &TerminalSession{
 		ID:            sessionID,
 		ProjectID:     projectID,
@@ -396,8 +469,12 @@ func (s *AgentService) CreateSession(ctx context.Context, projectID int64) (*Ter
 		execID:        execID,
 		hijacked:      hijacked,
 		ring:          newRingBuffer(terminalRingBufferSize),
-		CreatedAt:     time.Now(),
+		CreatedAt:     now,
 		done:          make(chan struct{}),
+		// A session starts out detached - CreateSession returns before any
+		// WebSocket has attached - so its idle clock (FEAT-022) starts
+		// running immediately.
+		lastDetachAt: now,
 	}
 	s.sessions.add(projectID, sess)
 	go sess.run(s)

@@ -56,10 +56,21 @@ type TerminalSession struct {
 	// connection, or nil) and serializes all writes onto it - both the
 	// live output relay (from run) and the handler's own ping keepalive
 	// go through this same lock so they never race as concurrent
-	// gorilla/websocket writers.
+	// gorilla/websocket writers. It also guards lastDetachAt (FEAT-022),
+	// since detach state and "when did we last become detached" always
+	// change together.
 	wsMu  sync.Mutex
 	ws    *websocket.Conn
 	ended bool
+
+	// lastDetachAt is the time this session most recently had no attached
+	// WebSocket (see FEAT-022's idle-timeout sweep). It is set at session
+	// creation (a session starts out detached - CreateSession returns
+	// before any WebSocket has attached) and updated every time Detach
+	// runs. While a WebSocket is attached this field is stale/unused -
+	// callers must check IdleSince's ok return rather than reading it
+	// directly.
+	lastDetachAt time.Time
 }
 
 func newSessionID() (string, error) {
@@ -109,7 +120,22 @@ func (s *TerminalSession) Detach(conn *websocket.Conn) {
 	defer s.wsMu.Unlock()
 	if s.ws == conn {
 		s.ws = nil
+		s.lastDetachAt = time.Now()
 	}
+}
+
+// IdleSince reports how long this session has had no attached WebSocket
+// (see FEAT-022's idle-timeout sweep). ok is false - and the time value
+// meaningless - when a WebSocket is currently attached or the session has
+// already ended (an attached/ending session is never idle, regardless of
+// how long ago it was last detached).
+func (s *TerminalSession) IdleSince() (t time.Time, ok bool) {
+	s.wsMu.Lock()
+	defer s.wsMu.Unlock()
+	if s.ws != nil || s.ended {
+		return time.Time{}, false
+	}
+	return s.lastDetachAt, true
 }
 
 // Ping sends a WebSocket ping control frame on the attached connection, if
@@ -156,7 +182,14 @@ func (s *TerminalSession) relay(p []byte) {
 	s.ring.Write(p)
 	if s.ws != nil {
 		if err := s.ws.WriteMessage(websocket.BinaryMessage, p); err != nil {
+			// This drop is itself a detach (see doc comment above), but it
+			// doesn't go through Detach() - the handler's own Detach(conn)
+			// call, once its read loop notices the closed connection, will
+			// be a no-op by then (s.ws already != conn). Record
+			// lastDetachAt here so FEAT-022's idle sweep still sees this
+			// session go idle at the right time instead of never.
 			s.ws = nil
+			s.lastDetachAt = time.Now()
 		}
 	}
 }
@@ -291,6 +324,23 @@ func (r *sessionRegistry) list(projectID int64) []*TerminalSession {
 	out := make([]*TerminalSession, 0, len(m))
 	for _, s := range m {
 		out = append(out, s)
+	}
+	return out
+}
+
+// all returns every live session across every project, flattened - used by
+// the idle-timeout sweep (FEAT-022), which needs to consider every session
+// regardless of which project it belongs to. Each TerminalSession already
+// carries its own ProjectID, so no project grouping is needed by the
+// caller.
+func (r *sessionRegistry) all() []*TerminalSession {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	var out []*TerminalSession
+	for _, m := range r.byProject {
+		for _, s := range m {
+			out = append(out, s)
+		}
 	}
 	return out
 }

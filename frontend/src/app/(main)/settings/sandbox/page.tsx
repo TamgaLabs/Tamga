@@ -2,15 +2,30 @@
 
 import { useEffect, useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
-import { getResourceLimit, updateResourceLimit, type ResourceLimit } from "@/lib/api";
+import {
+  getResourceLimit,
+  updateResourceLimit,
+  getIdleTimeout,
+  setIdleTimeout,
+  type ResourceLimit,
+  type IdleTimeoutSettings,
+} from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 
 export default function SandboxSettingsPage() {
   const [resourceLimit, setResourceLimit] = useState<ResourceLimit | null>(null);
+  const [idleTimeout, setIdleTimeoutState] = useState<IdleTimeoutSettings | null>(null);
   const { user, loading: authLoading } = useAuth();
   const router = useRouter();
 
@@ -22,10 +37,15 @@ export default function SandboxSettingsPage() {
     getResourceLimit().then(setResourceLimit).catch(console.error);
   }, []);
 
+  const loadIdleTimeout = useCallback(() => {
+    getIdleTimeout().then(setIdleTimeoutState).catch(console.error);
+  }, []);
+
   useEffect(() => {
     if (!user) return;
     loadResourceLimit();
-  }, [user, loadResourceLimit]);
+    loadIdleTimeout();
+  }, [user, loadResourceLimit, loadIdleTimeout]);
 
   if (authLoading || !user) return null;
 
@@ -35,8 +55,77 @@ export default function SandboxSettingsPage() {
 
       <div className="grid gap-4">
         <ResourceLimitCard limit={resourceLimit} onUpdate={loadResourceLimit} />
+        <IdleTimeoutCard settings={idleTimeout} onUpdate={loadIdleTimeout} />
       </div>
     </div>
+  );
+}
+
+// Presets for the detached terminal session idle timeout (see FEAT-022).
+// "0" means Never - it must always be present and default.
+const IDLE_TIMEOUT_PRESETS: { value: string; label: string }[] = [
+  { value: "0", label: "Never" },
+  { value: String(30 * 60), label: "30 minutes" },
+  { value: String(60 * 60), label: "1 hour" },
+  { value: String(8 * 60 * 60), label: "8 hours" },
+  { value: String(24 * 60 * 60), label: "24 hours" },
+];
+
+// How long a detached terminal session (no attached WebSocket) may sit
+// before the backend auto-terminates it (see FEAT-022). Global setting,
+// applies on the next background sweep - no restart needed. Defaults to
+// Never: sessions persist until explicitly terminated.
+function IdleTimeoutCard({ settings, onUpdate }: { settings: IdleTimeoutSettings | null; onUpdate: () => void }) {
+  const [saving, setSaving] = useState(false);
+
+  const handleChange = async (value: string) => {
+    setSaving(true);
+    try {
+      await setIdleTimeout(parseInt(value, 10));
+      onUpdate();
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const value = settings ? String(settings.timeout_seconds) : "0";
+  // A saved value that isn't one of the presets (shouldn't normally
+  // happen, since this UI only ever writes presets) still needs *a*
+  // matching item to render a label instead of a blank trigger.
+  const knownValues = IDLE_TIMEOUT_PRESETS.map((p) => p.value);
+  const options = knownValues.includes(value)
+    ? IDLE_TIMEOUT_PRESETS
+    : [...IDLE_TIMEOUT_PRESETS, { value, label: `${value}s` }];
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-sm">Session Idle Timeout</CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        <p className="text-xs text-muted-foreground">
+          How long a detached terminal session (no browser tab attached) may
+          sit before it&apos;s automatically terminated. Never (default)
+          means sessions persist until you close them.
+        </p>
+        <div className="max-w-xs">
+          <Select value={value} onValueChange={handleChange} disabled={saving}>
+            <SelectTrigger>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {options.map((opt) => (
+                <SelectItem key={opt.value} value={opt.value}>
+                  {opt.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+      </CardContent>
+    </Card>
   );
 }
 
