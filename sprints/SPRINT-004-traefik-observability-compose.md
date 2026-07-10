@@ -103,9 +103,10 @@ project secondary sidebar (a user's own architecture/traffic).
 
 ## Tasks
 - TEST-010 — Reverse-proxy/routing/TLS audit + Traefik migration requirements — done
-- TEST-011 — Project deploy pipeline audit → unified compose-based model design — pending
+- TEST-011 — Project deploy pipeline audit → unified compose-based model design — done
 - TEST-012 — Docker enumeration/stats + topology audit for the infra map — pending
 - BUG-028 — Caddy/project network isolation (routes can't reach projects) — pending (folds into Traefik migration)
+- BUG-029 — All projects share one flat network, no isolation — pending (folds into compose-deploy)
 
 ## Release Notes
 <filled in at sprint completion>
