@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"log/slog"
@@ -13,6 +14,13 @@ import (
 
 	"github.com/TamgaLabs/Tamga/backend/internal/service"
 )
+
+// unattachedSessionCleanupTimeout bounds how long Serve's deferred cleanup
+// (see BUG-027) will wait for a just-created-but-never-attached session to
+// terminate. It uses its own context rather than the request's, since the
+// request's context is commonly already canceled in exactly the scenario
+// this cleanup exists for (aborted handshake / failed upgrade).
+const unattachedSessionCleanupTimeout = 5 * time.Second
 
 // Keepalive tuning for the terminal WebSocket: if a client disconnects
 // without sending a close frame (laptop sleep, network drop), the periodic
@@ -74,6 +82,12 @@ func (h *TerminalHandler) Serve(w http.ResponseWriter, r *http.Request) {
 
 	sessionID := r.URL.Query().Get("session")
 
+	// attached flips true only once a newly-created session's WebSocket
+	// has successfully Attach()'d (see below). It's declared here, at
+	// function scope, so both the create branch's deferred cleanup and the
+	// later Attach call can see it.
+	attached := false
+
 	var sess *service.TerminalSession
 	if sessionID != "" {
 		var ok bool
@@ -92,6 +106,27 @@ func (h *TerminalHandler) Serve(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, err.Error(), status)
 			return
 		}
+
+		// BUG-027: a session created above only becomes useful once a
+		// WebSocket successfully attaches to it below. If the upgrade
+		// fails, the client aborts the handshake, or Attach itself fails,
+		// this newly-created session must not be left registered - it
+		// would orphan (invisible to any client, eating a cap slot,
+		// keeping the sandbox alive) forever. Until attached flips true,
+		// this deferred cleanup terminates the session on any early
+		// return. A reattach (sessionID != "") never runs this - a failed
+		// reattach must not tear down an existing, possibly-in-use
+		// session.
+		defer func() {
+			if attached {
+				return
+			}
+			cleanupCtx, cancel := context.WithTimeout(context.Background(), unattachedSessionCleanupTimeout)
+			defer cancel()
+			if terr := h.agentSvc.TerminateSession(cleanupCtx, projectID, sess.ID); terr != nil {
+				slog.Warn("failed to clean up unattached terminal session", "session_id", sess.ID, "project_id", projectID, "error", terr)
+			}
+		}()
 	}
 
 	conn, err := terminalUpgrader.Upgrade(w, r, nil)
@@ -106,6 +141,7 @@ func (h *TerminalHandler) Serve(w http.ResponseWriter, r *http.Request) {
 		conn.WriteMessage(websocket.TextMessage, []byte(err.Error()))
 		return
 	}
+	attached = true
 	defer sess.Detach(conn)
 
 	// Ping/pong keepalive: without this, an ungraceful disconnect (no close

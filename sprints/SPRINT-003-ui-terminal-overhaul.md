@@ -106,7 +106,7 @@ domain lists are stored separately so switching modes never loses entries.
 - BUG-026 — Code editor save failures silent; system codebase saves 500 invisibly — done
 - FEAT-021 — Relocate backend Go tests out of production packages into internal/tests — pending
 - FEAT-022 — Detached terminal session idle-timeout setting (default Never) — pending
-- BUG-027 — Terminal session orphaned when WS upgrade fails after CreateSession — pending
+- BUG-027 — Terminal session orphaned when WS upgrade fails after CreateSession — done
 
 ## Release Notes
 <filled in at sprint completion>

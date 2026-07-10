@@ -326,9 +326,26 @@ func (s *AgentService) execBash(ctx context.Context, containerName, workDir, ses
 // This ensures that even if kill somehow fails or becomes a no-op (very
 // unlikely given valid PIDs in the container's namespace), a retry won't
 // get stuck looking for a stale pidfile.
+//
+// PID-FILE RACE FIX (BUG-027 cleanup path): execBash's "echo $$ > pidfile;
+// exec /bin/bash" wrapper writes the pidfile asynchronously, just after
+// ExecAttach starts it - there's a brief window right after CreateSession
+// returns where the pidfile doesn't exist yet. Session termination used to
+// assume enough real-world time (at least a WebSocket round trip) always
+// elapsed before anyone tried to kill a session, so this window never
+// mattered in practice. BUG-027's terminal_handler.go now calls
+// TerminateSession on a just-created session essentially immediately when
+// its WebSocket upgrade fails, which hits this window reliably: without a
+// wait, `cat pidfile` fails, `kill -9` gets no PID and is a silent no-op,
+// and the bash process is never actually killed. The loop below polls (up
+// to 2s, well inside ExecRun's own 5s timeout) for the pidfile to appear
+// before attempting the kill.
 func (s *AgentService) killSessionProcess(ctx context.Context, sess *TerminalSession) error {
 	pidFile := terminalSessionPidFile(sess.ID)
-	cmd := []string{"/bin/sh", "-c", fmt.Sprintf("kill -9 $(cat %s 2>/dev/null) 2>/dev/null; rm -f %s", pidFile, pidFile)}
+	cmd := []string{"/bin/sh", "-c", fmt.Sprintf(
+		"i=0; while [ ! -f %s ] && [ $i -lt 20 ]; do sleep 0.1; i=$((i+1)); done; kill -9 $(cat %s 2>/dev/null) 2>/dev/null; rm -f %s",
+		pidFile, pidFile, pidFile,
+	)}
 	return s.docker.ExecRun(ctx, sess.ContainerName, cmd)
 }
 
