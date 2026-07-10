@@ -72,6 +72,7 @@ export default function CodeIDEPage() {
   const [tabs, setTabs] = useState<TerminalTab[]>([]);
   const [activeTabId, setActiveTabId] = useState<string | null>(null);
   const [terminalError, setTerminalError] = useState<string | null>(null);
+  const [saveError, setSaveError] = useState<string | null>(null);
   const [tabPendingClose, setTabPendingClose] = useState<string | null>(null);
 
   useEffect(() => {
@@ -184,7 +185,7 @@ export default function CodeIDEPage() {
       setOriginalContent(content);
       setDirty(false);
     } catch (e) {
-      console.error(e);
+      setSaveError(e instanceof Error ? e.message : "Failed to save file");
     }
   };
 
@@ -441,6 +442,16 @@ export default function CodeIDEPage() {
                     </Button>
                   </div>
                 </div>
+
+                {saveError && (
+                  <div className="px-3 py-1.5 text-xs text-destructive bg-destructive/10 border-b border-border flex items-center justify-between">
+                    <span>{saveError}</span>
+                    <Button variant="ghost" size="icon" className="h-4 w-4" onClick={() => setSaveError(null)}>
+                      <X className="h-3 w-3" />
+                    </Button>
+                  </div>
+                )}
+
                 <div className="flex-1">
                   <MonacoEditor
                     language={detectLanguage(currentPath)}

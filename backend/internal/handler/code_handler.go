@@ -171,6 +171,12 @@ func (h *CodeHandler) WriteFile(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "invalid project id", http.StatusBadRequest)
 		return
 	}
+
+	if pid == 0 {
+		http.Error(w, "system codebase is read-only", http.StatusForbidden)
+		return
+	}
+
 	filePath := r.URL.Query().Get("path")
 	if filePath == "" {
 		http.Error(w, "path is required", http.StatusBadRequest)

@@ -103,7 +103,7 @@ domain lists are stored separately so switching modes never loses entries.
 - FEAT-018 — Project detail secondary sidebar + project switcher — done
 - FEAT-019 — Containers grouped by project + detail secondary sidebar — done
 - FEAT-020 — Code page terminal tabs + files sidebar default open — done
-- BUG-026 — Code editor save failures silent; system codebase saves 500 invisibly — pending
+- BUG-026 — Code editor save failures silent; system codebase saves 500 invisibly — done
 - FEAT-021 — Relocate backend Go tests out of production packages into internal/tests — pending
 - FEAT-022 — Detached terminal session idle-timeout setting (default Never) — pending
 - BUG-027 — Terminal session orphaned when WS upgrade fails after CreateSession — pending
