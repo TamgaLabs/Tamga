@@ -14,10 +14,14 @@ services:
       - traefik_acme:/data
     networks:
       - tamga-network
-      # Also joins tamga-net (the network project containers live on) so
-      # routes to project upstreams are actually reachable - the infra-level
-      # BUG-028 fix. Caddy never joined this network; Traefik must.
-      - tamga-net
+      # No static "tamga-net" membership here (that flat, project-shared
+      # network is gone - FEAT-028 closed BUG-029 by giving every project
+      # its own "project-net-<id>" instead, see project_service.go's
+      # deployStack). Traefik reaches each project's exposed service by
+      # being dynamically ConnectNetworks'd onto that one project's network
+      # at deploy time (and re-attached on backend restart by
+      # ProjectService.ReconcileRoutes) - not declared statically here,
+      # since the set of project networks isn't known at compose-up time.
 
   backend:
     build:
@@ -71,12 +75,10 @@ networks:
     # backend needs it for git clone/pull. Egress isolation belongs on the
     # separate agent-sandbox network (see FEAT-006), not here.
     driver: bridge
-  tamga-net:
-    # The network project containers join (ProjectService.deploy's
-    # EnsureNetwork("tamga-net", ...), backend/internal/service/project_service.go).
-    # Declared here (not `external: true`) with an explicit `name:` so a
-    # from-scratch `docker compose up` creates it directly - EnsureNetwork's
-    # exists-check then finds it already present and is a no-op, so compose
-    # and the backend's runtime network creation agree on the same object.
-    name: tamga-net
-    driver: bridge
+  # No "tamga-net" here anymore: FEAT-028 replaced the single shared,
+  # unparameterized project network (BUG-029) with one "project-net-<id>"
+  # network per project, created on demand by ProjectService.deployStack's
+  # EnsureNetwork call - there's no fixed set of these to pre-declare in
+  # compose, and Traefik joins each one dynamically via ConnectNetworks
+  # rather than a static compose network membership (see the traefik
+  # service's comment above).

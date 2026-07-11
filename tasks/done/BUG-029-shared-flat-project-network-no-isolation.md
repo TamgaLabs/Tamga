@@ -2,9 +2,9 @@
 id: BUG-029
 type: bug
 title: All deployed projects share one flat Docker network ("tamga-net") — no inter-project network isolation
-status: pending
+status: done
 complexity: standard
-assignee: unassigned
+assignee: architect
 sprint: SPRINT-004
 created: 2026-07-10
 history:
@@ -147,3 +147,11 @@ project's exposed service post-fix.
 
 ## Test Notes
 <filled in by tester>
+
+## Resolution
+Closed by SPRINT-004 cluster C2 (unified compose deploy). FEAT-028 gives
+each project its OWN network `project-net-<id>` (no shared flat tamga-net,
+which was removed). TEST-014 verified live: services within a project reach
+each other by name, but project A's containers cannot resolve or reach
+project B's containers (different per-project networks) — cross-project
+isolation holds.

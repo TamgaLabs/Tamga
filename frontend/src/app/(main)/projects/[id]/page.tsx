@@ -74,10 +74,17 @@ export default function ProjectOverviewPage() {
               <span>Domain</span>
               <span className="text-accent">{project.domain || "-"}</span>
             </div>
-            <div className="flex justify-between">
-              <span>Branch</span>
-              <span>{project.branch}</span>
-            </div>
+            {project.compose_yaml ? (
+              <div className="flex justify-between">
+                <span>Exposed Service</span>
+                <span className="font-mono text-xs">{project.exposed_service || "-"}</span>
+              </div>
+            ) : (
+              <div className="flex justify-between">
+                <span>Branch</span>
+                <span>{project.branch}</span>
+              </div>
+            )}
             <div className="flex justify-between">
               <span>Container</span>
               <span className="font-mono text-xs">{project.container_id?.slice(0, 12) || "-"}</span>

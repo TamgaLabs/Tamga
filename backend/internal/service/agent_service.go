@@ -220,7 +220,7 @@ func (s *AgentService) ensureEgressProxy(ctx context.Context, networks []string)
 		// "bridge" is Docker's always-present default network - this is
 		// the proxy's one and only route to the internet. Per-project
 		// sandbox networks are attached below via NetworkConnect.
-		if _, err := s.docker.CreateContainerOpts(ctx, egressProxyName, egressProxyImage, env, "bridge", nil, container.Resources{}, true); err != nil {
+		if _, err := s.docker.CreateContainerOpts(ctx, egressProxyName, egressProxyImage, env, "bridge", nil, container.Resources{}, true, nil); err != nil {
 			return fmt.Errorf("create egress proxy: %w", err)
 		}
 		if err := s.docker.StartContainer(ctx, egressProxyName); err != nil {
@@ -230,7 +230,7 @@ func (s *AgentService) ensureEgressProxy(ctx context.Context, networks []string)
 	}
 
 	for _, netName := range networks {
-		if err := s.docker.NetworkConnect(ctx, netName, egressProxyName); err != nil {
+		if err := s.docker.NetworkConnect(ctx, netName, egressProxyName, nil); err != nil {
 			slog.Warn("connect egress proxy to sandbox network", "network", netName, "error", err)
 		}
 	}
@@ -282,7 +282,7 @@ func (s *AgentService) ensureContainerRunning(ctx context.Context, containerName
 		if err := s.docker.StartContainer(ctx, containerName); err != nil {
 			slog.Warn("failed to start existing agent container, recreating", "container", containerName, "error", err)
 			s.docker.RemoveContainer(ctx, containerName)
-			if _, err := s.docker.CreateContainerOpts(ctx, containerName, image, env, network, mounts, resources, true); err != nil {
+			if _, err := s.docker.CreateContainerOpts(ctx, containerName, image, env, network, mounts, resources, true, nil); err != nil {
 				return fmt.Errorf("recreate agent container: %w", err)
 			}
 			if err := s.docker.StartContainer(ctx, containerName); err != nil {
@@ -294,7 +294,7 @@ func (s *AgentService) ensureContainerRunning(ctx context.Context, containerName
 		slog.Info("agent container restarted", "container", containerName)
 		return nil
 	}
-	if _, err := s.docker.CreateContainerOpts(ctx, containerName, image, env, network, mounts, resources, true); err != nil {
+	if _, err := s.docker.CreateContainerOpts(ctx, containerName, image, env, network, mounts, resources, true, nil); err != nil {
 		return fmt.Errorf("create agent container: %w", err)
 	}
 	if err := s.docker.StartContainer(ctx, containerName); err != nil {

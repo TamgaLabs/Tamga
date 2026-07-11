@@ -13,6 +13,7 @@ import (
 	"github.com/docker/docker/api/types/build"
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/filters"
+	"github.com/docker/docker/api/types/image"
 	"github.com/docker/docker/api/types/network"
 	"github.com/docker/docker/api/types/system"
 	"github.com/docker/docker/client"
@@ -46,8 +47,27 @@ func (c *Client) BuildImage(ctx context.Context, tag, dockerfile string, buildCt
 	return err
 }
 
+// PullImage pulls ref (e.g. "redis:7-alpine") from its registry, blocking
+// until the pull completes. Public images only - no registry auth is
+// wired up (FEAT-026: private registries are out of scope for the compose
+// deploy engine). ImagePull returns a streaming progress reader as soon as
+// the pull starts, not when it finishes, so the reader must be read to EOF
+// (discarding the JSON progress lines - callers don't need them) before the
+// image is actually usable by a subsequent ContainerCreate.
+func (c *Client) PullImage(ctx context.Context, ref string) error {
+	reader, err := c.cli.ImagePull(ctx, ref, image.PullOptions{})
+	if err != nil {
+		return fmt.Errorf("pull image %s: %w", ref, err)
+	}
+	defer reader.Close()
+	if _, err := io.Copy(io.Discard, reader); err != nil {
+		return fmt.Errorf("pull image %s: %w", ref, err)
+	}
+	return nil
+}
+
 func (c *Client) CreateContainer(ctx context.Context, name, imageName string, env []string, network string) (string, error) {
-	return c.CreateContainerOpts(ctx, name, imageName, env, network, nil, container.Resources{}, false)
+	return c.CreateContainerOpts(ctx, name, imageName, env, network, nil, container.Resources{}, false, nil)
 }
 
 // CreateContainerOpts creates a container with the given mounts and
@@ -55,9 +75,25 @@ func (c *Client) CreateContainer(ctx context.Context, name, imageName string, en
 // limit - i.e. Docker's own default). See FEAT-007: agent sandbox creation
 // always passes a non-zero Resources so no sandbox is ever created
 // unlimited.
-func (c *Client) CreateContainerOpts(ctx context.Context, name, imageName string, env []string, network string, mounts []string, resources container.Resources, initProcess bool) (string, error) {
+//
+// aliases sets the container's network aliases on the network it's created
+// on (network's DNS name(s) beyond its own container name/ID, which Docker
+// always resolves automatically). This is what makes a compose service
+// reachable by its bare service name (e.g. "redis") rather than only by
+// its full container name ("project-<id>-redis") - real docker compose
+// does the same by aliasing every service container with its service name
+// on the compose network. A nil/empty aliases leaves behavior exactly as
+// before (no extra alias, matching every pre-FEAT-028 caller). Aliases
+// only take effect on user-defined networks (Docker ignores them on the
+// default "bridge"/"host"/"none" network modes), which is fine since
+// callers that pass aliases always create on a project's own bridge
+// network. NetworkMode is set to the same network name as the
+// EndpointsConfig entry - the Docker API merges the two for a
+// user-defined network at create time (this is exactly how the `docker
+// compose` CLI itself wires up service aliases).
+func (c *Client) CreateContainerOpts(ctx context.Context, name, imageName string, env []string, netName string, mounts []string, resources container.Resources, initProcess bool, aliases []string) (string, error) {
 	hostCfg := &container.HostConfig{
-		NetworkMode:   container.NetworkMode(network),
+		NetworkMode:   container.NetworkMode(netName),
 		RestartPolicy: container.RestartPolicy{Name: container.RestartPolicyUnlessStopped},
 		Resources:     resources,
 	}
@@ -71,10 +107,18 @@ func (c *Client) CreateContainerOpts(ctx context.Context, name, imageName string
 			hostCfg.Binds = append(hostCfg.Binds, m)
 		}
 	}
+	var netCfg *network.NetworkingConfig
+	if len(aliases) > 0 {
+		netCfg = &network.NetworkingConfig{
+			EndpointsConfig: map[string]*network.EndpointSettings{
+				netName: {Aliases: aliases},
+			},
+		}
+	}
 	resp, err := c.cli.ContainerCreate(ctx, &container.Config{
 		Image: imageName,
 		Env:   env,
-	}, hostCfg, nil, nil, name)
+	}, hostCfg, netCfg, nil, name)
 	if err != nil {
 		return "", fmt.Errorf("create container: %w", err)
 	}
@@ -173,6 +217,32 @@ type ContainerInfo struct {
 	SystemType string            `json:"system_type,omitempty"`
 }
 
+// containerProjectInfo derives ListContainers' project_id/system_type
+// attribution from a container's name, matching Tamga's naming
+// conventions: a project's service containers are named
+// "project-<id>-<service>" (FEAT-028's deploy_engine.go
+// serviceContainerName) - fmt.Sscanf's "%d" verb stops at the first
+// non-digit it hits, so it parses the leading "<id>" correctly whether or
+// not a "-<service>" suffix follows, which also keeps this working
+// unchanged for a pre-FEAT-028 project's legacy single "project-<id>"
+// container name. Agent sandboxes ("agent-<id>", or the singleton
+// "agent-system") and Tamga's own system containers ("caddy", "tamga-*")
+// are the other two naming families ListContainers has always
+// recognized.
+func containerProjectInfo(name string) (projectID int64, systemType string) {
+	switch {
+	case strings.HasPrefix(name, "project-"):
+		fmt.Sscanf(name, "project-%d", &projectID)
+	case name == "agent-system":
+		systemType = "agent-system"
+	case strings.HasPrefix(name, "agent-"):
+		fmt.Sscanf(name, "agent-%d", &projectID)
+	case name == "caddy" || strings.HasPrefix(name, "tamga-"):
+		systemType = name
+	}
+	return projectID, systemType
+}
+
 func (c *Client) ListContainers(ctx context.Context) ([]ContainerInfo, error) {
 	containers, err := c.cli.ContainerList(ctx, container.ListOptions{All: true})
 	if err != nil {
@@ -193,20 +263,7 @@ func (c *Client) ListContainers(ctx context.Context) ([]ContainerInfo, error) {
 			}
 		}
 
-		var projectID int64
-		systemType := ""
-		if strings.HasPrefix(name, "project-") {
-			fmt.Sscanf(name, "project-%d", &projectID)
-		} else if strings.HasPrefix(name, "agent-") {
-			// agent containers: check if it's system or project
-			if name == "agent-system" {
-				systemType = "agent-system"
-			} else {
-				fmt.Sscanf(name, "agent-%d", &projectID)
-			}
-		} else if name == "caddy" || strings.HasPrefix(name, "tamga-") {
-			systemType = name
-		}
+		projectID, systemType := containerProjectInfo(name)
 
 		result = append(result, ContainerInfo{
 			ID:         ct.ID,
@@ -312,12 +369,39 @@ func (c *Client) EnsureNetwork(ctx context.Context, name string, internal bool) 
 
 // NetworkConnect attaches a running container to a network. It is
 // idempotent: connecting an already-attached container is not an error.
-func (c *Client) NetworkConnect(ctx context.Context, networkName, containerName string) error {
-	err := c.cli.NetworkConnect(ctx, networkName, containerName, nil)
+// aliases sets the container's network aliases on that network (see
+// CreateContainerOpts's doc comment) - nil/empty leaves it alias-less,
+// matching every pre-FEAT-028 caller (Traefik, the egress proxy).
+func (c *Client) NetworkConnect(ctx context.Context, networkName, containerName string, aliases []string) error {
+	var epSettings *network.EndpointSettings
+	if len(aliases) > 0 {
+		epSettings = &network.EndpointSettings{Aliases: aliases}
+	}
+	err := c.cli.NetworkConnect(ctx, networkName, containerName, epSettings)
 	if err != nil && strings.Contains(err.Error(), "already exists") {
 		return nil
 	}
 	return err
+}
+
+// ConnectNetworks attaches an already-created container to each of the
+// given networks, on top of whatever network it was created on.
+// CreateContainerOpts only joins one network at create time; a compose
+// service can declare several (FEAT-026), so the rest are connected
+// afterward here - same create-on-one, connect-the-rest shape as
+// ensureEgressProxy's multi-network attach in agent_service.go.
+// NetworkConnect is already idempotent, so re-connecting an already-joined
+// network is not an error. aliases (same meaning as CreateContainerOpts's)
+// is applied to every network in the list, so a service with more than one
+// declared compose network still resolves by its bare service name on all
+// of them, not just the one it was created on.
+func (c *Client) ConnectNetworks(ctx context.Context, containerName string, networks []string, aliases []string) error {
+	for _, n := range networks {
+		if err := c.NetworkConnect(ctx, n, containerName, aliases); err != nil {
+			return fmt.Errorf("connect network %s: %w", n, err)
+		}
+	}
+	return nil
 }
 
 // NetworkDisconnect detaches a container from a network. Missing
@@ -337,6 +421,28 @@ func (c *Client) NetworkRemove(ctx context.Context, name string) error {
 		return nil
 	}
 	return err
+}
+
+// FindContainerByComposeService returns the container name Docker Compose
+// gave the container it created for a given compose service name (matched
+// via the standard "com.docker.compose.service" label Compose sets on
+// every container it creates), regardless of the compose project name
+// Compose derived (which depends on the checkout directory name /
+// COMPOSE_PROJECT_NAME and isn't otherwise known to this code - a
+// hardcoded container name like "tamga-traefik-1" would be fragile).
+// FEAT-028's deploy engine uses this to locate the running `traefik`
+// container so it can be attached to a project's network - see
+// project_service.go's deployStack.
+func (c *Client) FindContainerByComposeService(ctx context.Context, serviceName string) (string, error) {
+	args := filters.NewArgs(filters.Arg("label", "com.docker.compose.service="+serviceName))
+	containers, err := c.cli.ContainerList(ctx, container.ListOptions{All: true, Filters: args})
+	if err != nil {
+		return "", fmt.Errorf("list containers by compose service %q: %w", serviceName, err)
+	}
+	if len(containers) == 0 || len(containers[0].Names) == 0 {
+		return "", fmt.Errorf("no container found for compose service %q", serviceName)
+	}
+	return strings.TrimPrefix(containers[0].Names[0], "/"), nil
 }
 
 // ContainerEnv returns the environment variables a running/existing

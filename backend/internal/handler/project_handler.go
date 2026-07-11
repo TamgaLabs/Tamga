@@ -2,6 +2,7 @@ package handler
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"strconv"
 
@@ -47,11 +48,13 @@ func (h *ProjectHandler) Get(w http.ResponseWriter, r *http.Request) {
 
 func (h *ProjectHandler) Create(w http.ResponseWriter, r *http.Request) {
 	var req struct {
-		Name       string            `json:"name"`
-		SourceType domain.SourceType `json:"source_type"`
-		RepoURL    string            `json:"repo_url"`
-		Branch     string            `json:"branch,omitempty"`
-		Domain     string            `json:"domain"`
+		Name           string            `json:"name"`
+		SourceType     domain.SourceType `json:"source_type"`
+		RepoURL        string            `json:"repo_url"`
+		Branch         string            `json:"branch,omitempty"`
+		Domain         string            `json:"domain"`
+		ComposeYAML    string            `json:"compose_yaml,omitempty"`
+		ExposedService string            `json:"exposed_service,omitempty"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "invalid request body", http.StatusBadRequest)
@@ -61,20 +64,57 @@ func (h *ProjectHandler) Create(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "name and domain are required", http.StatusBadRequest)
 		return
 	}
-	if req.SourceType == "" {
-		req.SourceType = domain.SourceTypeRemote
-	}
-	if req.SourceType == domain.SourceTypeRemote && req.RepoURL == "" {
-		http.Error(w, "repo_url is required for remote source", http.StatusBadRequest)
-		return
+
+	// Compose-project create (FEAT-029): parse compose_yaml up front and
+	// reject it here, synchronously, rather than letting the async
+	// deploy() goroutine (project_service.go) discover a parse error
+	// later - the whole point of validating at create time (carried from
+	// FEAT-028's review) is that "build: not supported" etc. surfaces
+	// immediately in the response, not silently after the project is
+	// already sitting in ProjectStatusError. If exposed_service is also
+	// set, it must name one of the parsed services - otherwise
+	// detectExposedService's override branch (deploy_engine.go) would
+	// trust a name that resolves to no container and build a dead route.
+	if req.ComposeYAML != "" {
+		services, err := service.ParseComposeYAML(req.ComposeYAML)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		if req.ExposedService != "" {
+			found := false
+			for _, svc := range services {
+				if svc.Name == req.ExposedService {
+					found = true
+					break
+				}
+			}
+			if !found {
+				http.Error(w, fmt.Sprintf("exposed_service %q is not a service defined in compose_yaml", req.ExposedService), http.StatusBadRequest)
+				return
+			}
+		}
+		if req.SourceType == "" {
+			req.SourceType = domain.SourceTypeCompose
+		}
+	} else {
+		if req.SourceType == "" {
+			req.SourceType = domain.SourceTypeRemote
+		}
+		if req.SourceType == domain.SourceTypeRemote && req.RepoURL == "" {
+			http.Error(w, "repo_url is required for remote source", http.StatusBadRequest)
+			return
+		}
 	}
 
 	project, err := h.svc.Create(r.Context(), service.CreateProjectRequest{
-		Name:       req.Name,
-		SourceType: req.SourceType,
-		RepoURL:    req.RepoURL,
-		Branch:     req.Branch,
-		Domain:     req.Domain,
+		Name:           req.Name,
+		SourceType:     req.SourceType,
+		RepoURL:        req.RepoURL,
+		Branch:         req.Branch,
+		Domain:         req.Domain,
+		ComposeYAML:    req.ComposeYAML,
+		ExposedService: req.ExposedService,
 	})
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)

@@ -53,12 +53,18 @@ export type User = {
 export type Project = {
   id: number;
   name: string;
-  source_type: "local" | "remote";
+  source_type: "local" | "remote" | "compose";
   repo_url: string;
   branch: string;
   domain: string;
   status: string;
   container_id?: string;
+  // compose_yaml/exposed_service (FEAT-025/029): the unified compose
+  // model - a project is a compose stack, and exposed_service names
+  // which of its services (if any) the domain routes to. Both empty for
+  // a project that hasn't been (re)deployed under the compose model.
+  compose_yaml?: string;
+  exposed_service?: string;
   created_at: string;
   updated_at: string;
 };
@@ -99,7 +105,14 @@ export const me = () => api<{ user_id: number }>("/auth/me");
 // Projects
 export const listProjects = () => api<Project[]>("/projects");
 export const getProject = (id: number) => api<Project>(`/projects/${id}`);
-export const createProject = (data: { name: string; source_type: string; repo_url: string; domain: string }) =>
+export const createProject = (data: {
+  name: string;
+  source_type: string;
+  repo_url: string;
+  domain: string;
+  compose_yaml?: string;
+  exposed_service?: string;
+}) =>
   api<Project>("/projects", {
     method: "POST",
     body: JSON.stringify(data),
