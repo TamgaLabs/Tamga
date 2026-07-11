@@ -166,6 +166,10 @@ project secondary sidebar (a user's own architecture/traffic).
 - FEAT-031 — [C3] Traefik metrics scraper (Prometheus → samples) — done✓
 - FEAT-032 — [C3] Metrics rollup/retention + query API (panels) — done✓
 - TEST-015 — [C3] Integration: scrape→store→rollup→query end to end — done✓ (PASS post-fix; caught overwrite-upsert data-loss bug)
+- FEAT-033 — [C4] Analytics data layer + reusable metric panel components — done✓
+- FEAT-034 — [C4] Global Analytics page (system-wide panels + range/resolution controls) — done✓
+- FEAT-035 — [C4] Per-project Analytics tab (project-scoped panels) — done✓
+- TEST-016 — [C4] Integration: Analytics UI renders real metric data (global + per-project) — done✓ (PASS; headless render noted for human flow)
 - FEAT-023 — [C1] Traefik service in docker-compose + static config — done
 - FEAT-024 — [C1] Backend Traefik file-provider routing (replaces caddy) — done
 - TEST-013 — [C1] Integration: Traefik migration end-to-end (closes BUG-028) — done

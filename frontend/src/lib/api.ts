@@ -365,3 +365,32 @@ export const setIdleTimeout = (timeoutSeconds: number) =>
     method: "PUT",
     body: JSON.stringify({ timeout_seconds: timeoutSeconds }),
   });
+
+// Metrics (see FEAT-032/033): analytics panels for system and per-project scopes
+import type { MetricsPanels, MetricsQueryParams } from "./metrics-types";
+
+export type {
+  MetricResolution,
+  RequestRatePoint,
+  StatusClassPoint,
+  LatencyPoint,
+  BandwidthPoint,
+  MetricsPanels,
+  MetricsQueryParams,
+} from "./metrics-types";
+
+const buildMetricsQuery = (params?: MetricsQueryParams): string => {
+  if (!params) return "";
+  const query = new URLSearchParams();
+  if (params.from !== undefined) query.set("from", params.from.toString());
+  if (params.to !== undefined) query.set("to", params.to.toString());
+  if (params.resolution) query.set("resolution", params.resolution);
+  const str = query.toString();
+  return str ? `?${str}` : "";
+};
+
+export const getSystemMetrics = (params?: MetricsQueryParams) =>
+  api<MetricsPanels>(`/system/metrics${buildMetricsQuery(params)}`);
+
+export const getProjectMetrics = (projectId: number, params?: MetricsQueryParams) =>
+  api<MetricsPanels>(`/projects/${projectId}/metrics${buildMetricsQuery(params)}`);
