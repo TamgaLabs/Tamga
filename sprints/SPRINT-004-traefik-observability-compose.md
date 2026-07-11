@@ -162,6 +162,8 @@ project secondary sidebar (a user's own architecture/traffic).
 - FEAT-029 — [C2] Compose-project create/deploy UI — done
 - TEST-014 — [C2] Integration: multi-service deploy, isolation (closes BUG-029) — done
 - BUG-030 — Compose project DELETE response not delivered to client (server-side succeeds) — pending (follow-up)
+- BUG-031 — Project delete orphans its metric_samples/latency rows (phantom data, day-rows leak) — pending (follow-up)
+- BUG-032 — Compose-declared networks create a redundant 2nd project network (surfaced by C5 map) — pending (follow-up)
 - FEAT-030 — [C3] Metrics time-series schema + storage repo — done✓ (additive-upsert rework)
 - FEAT-031 — [C3] Traefik metrics scraper (Prometheus → samples) — done✓
 - FEAT-032 — [C3] Metrics rollup/retention + query API (panels) — done✓
@@ -170,6 +172,11 @@ project secondary sidebar (a user's own architecture/traffic).
 - FEAT-034 — [C4] Global Analytics page (system-wide panels + range/resolution controls) — done✓
 - FEAT-035 — [C4] Per-project Analytics tab (project-scoped panels) — done✓
 - TEST-016 — [C4] Integration: Analytics UI renders real metric data (global + per-project) — done✓ (PASS; headless render noted for human flow)
+- FEAT-036 — [C5] Infra topology API (docker enumeration → nodes+edges+classification, system + per-project) — done✓
+- FEAT-037 — [C5] Infra map UI: topology client + reusable SVG graph component (classified nodes, status, click-through) — done✓
+- FEAT-038 — [C5] Global Infrastructure page + per-project Map tab (wire graph to topology, auto-refresh) — done✓
+- FEAT-039 — [C5] Live traffic overlay (topology ↔ C3 metrics: edge volume, node error-rate, hover mini-stats) — done✓
+- TEST-017 — [C5] Integration: map shows real containers/edges, overlay reflects traffic — done✓ (PASS; surfaced BUG-032 redundant-network C2 defect; map correct)
 - FEAT-023 — [C1] Traefik service in docker-compose + static config — done
 - FEAT-024 — [C1] Backend Traefik file-provider routing (replaces caddy) — done
 - TEST-013 — [C1] Integration: Traefik migration end-to-end (closes BUG-028) — done

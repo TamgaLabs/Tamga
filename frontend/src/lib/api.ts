@@ -394,3 +394,13 @@ export const getSystemMetrics = (params?: MetricsQueryParams) =>
 
 export const getProjectMetrics = (projectId: number, params?: MetricsQueryParams) =>
   api<MetricsPanels>(`/projects/${projectId}/metrics${buildMetricsQuery(params)}`);
+
+// Topology (see FEAT-036/037): infrastructure graph of containers and connections
+import type { Topology } from "./topology-types";
+
+export type { Topology, TopologyNode, TopologyEdge } from "./topology-types";
+
+export const getSystemTopology = () => api<Topology>("/system/topology");
+
+export const getProjectTopology = (projectId: number) =>
+  api<Topology>(`/projects/${projectId}/topology`);

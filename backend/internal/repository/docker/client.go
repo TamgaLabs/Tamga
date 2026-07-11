@@ -566,6 +566,39 @@ func (c *Client) ExecRun(ctx context.Context, containerID string, cmd []string) 
 	return nil
 }
 
+// ListNetworks returns all docker networks (user-defined + default).
+// Each network's Containers map is populated with attached containers
+// (keyed by container ID, values include Name, EndpointID, IPv4Address, etc).
+// This is used by the topology builder to derive edges (shared networks).
+func (c *Client) ListNetworks(ctx context.Context) ([]network.Inspect, error) {
+	networks, err := c.cli.NetworkList(ctx, network.ListOptions{})
+	if err != nil {
+		return nil, fmt.Errorf("list networks: %w", err)
+	}
+	var result []network.Inspect
+	for _, n := range networks {
+		// Inspect each network with Verbose=true to get the full .Containers map
+		inspected, err := c.cli.NetworkInspect(ctx, n.ID, network.InspectOptions{Verbose: true})
+		if err != nil {
+			// Skip networks that fail inspection (shouldn't happen, but be defensive)
+			continue
+		}
+		result = append(result, inspected)
+	}
+	return result, nil
+}
+
+// NetworkContainers returns the containers attached to a specific network.
+// Returns a map keyed by container ID, values are EndpointResource structs
+// with Name, EndpointID, IPv4Address, etc.
+func (c *Client) NetworkContainers(ctx context.Context, networkName string) (map[string]network.EndpointResource, error) {
+	inspected, err := c.cli.NetworkInspect(ctx, networkName, network.InspectOptions{Verbose: true})
+	if err != nil {
+		return nil, fmt.Errorf("inspect network %s: %w", networkName, err)
+	}
+	return inspected.Containers, nil
+}
+
 func (c *Client) DockerInfo(ctx context.Context) (system.Info, error) {
 	info, err := c.cli.Info(ctx)
 	if err != nil {

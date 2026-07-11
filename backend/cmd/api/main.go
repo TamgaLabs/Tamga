@@ -69,6 +69,7 @@ func main() {
 	// query side (metricsQueryService below) is a handler dependency.
 	service.NewMetricsRollupService(db, service.DefaultMetricsRollupInterval)
 	metricsQueryService := service.NewMetricsQueryService(db)
+	topologyService := service.NewTopologyService(dockerClient)
 
 	// Re-write every running project's route file on boot. Unlike Caddy's
 	// admin API (whose config lived entirely in the Caddy process's
@@ -94,6 +95,7 @@ func main() {
 	idleTimeoutHandler := handler.NewIdleTimeoutHandler(idleTimeoutService)
 	gitCredentialHandler := handler.NewGitCredentialHandler(gitCredentialService)
 	metricsHandler := handler.NewMetricsHandler(metricsQueryService)
+	topologyHandler := handler.NewTopologyHandler(topologyService)
 	authMiddleware := handler.AuthMiddleware(authService)
 
 	var containerHandler *handler.ContainerHandler
@@ -103,7 +105,7 @@ func main() {
 		containerHandler = handler.NewContainerHandler(nil)
 	}
 
-	r := router.New(authHandler, systemHandler, projectHandler, terminalHandler, containerHandler, codeHandler, whitelistHandler, egressHandler, resourceLimitHandler, idleTimeoutHandler, gitCredentialHandler, metricsHandler, authMiddleware)
+	r := router.New(authHandler, systemHandler, projectHandler, terminalHandler, containerHandler, codeHandler, whitelistHandler, egressHandler, resourceLimitHandler, idleTimeoutHandler, gitCredentialHandler, metricsHandler, topologyHandler, authMiddleware)
 
 	srv := &http.Server{
 		Addr:         fmt.Sprintf(":%d", cfg.Port),

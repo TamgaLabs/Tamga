@@ -9,6 +9,7 @@ import {
   Container,
   Code2,
   BarChart3,
+  Network,
   Settings,
   LogOut,
 } from "lucide-react";
@@ -22,6 +23,7 @@ export function Sidebar() {
     { href: "/containers", label: "Containers", icon: Container },
     { href: "/code", label: "Code", icon: Code2 },
     { href: "/analytics", label: "Analytics", icon: BarChart3 },
+    { href: "/infrastructure", label: "Infrastructure", icon: Network },
     { href: "/settings", label: "Settings", icon: Settings },
   ];
 

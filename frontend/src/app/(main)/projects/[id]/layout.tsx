@@ -55,6 +55,7 @@ export default function ProjectDetailLayout({ children }: { children: React.Reac
     { href: `/projects/${project.id}/environment`, label: "Environment" },
     { href: `/projects/${project.id}/actions`, label: "Actions" },
     { href: `/projects/${project.id}/analytics`, label: "Analytics" },
+    { href: `/projects/${project.id}/map`, label: "Map" },
   ];
 
   return (
