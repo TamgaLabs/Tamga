@@ -162,6 +162,10 @@ project secondary sidebar (a user's own architecture/traffic).
 - FEAT-029 — [C2] Compose-project create/deploy UI — done
 - TEST-014 — [C2] Integration: multi-service deploy, isolation (closes BUG-029) — done
 - BUG-030 — Compose project DELETE response not delivered to client (server-side succeeds) — pending (follow-up)
+- FEAT-030 — [C3] Metrics time-series schema + storage repo — pending
+- FEAT-031 — [C3] Traefik metrics scraper (Prometheus → samples) — pending
+- FEAT-032 — [C3] Metrics rollup/retention + query API (panels) — pending
+- TEST-015 — [C3] Integration: scrape→store→rollup→query end to end — pending
 - FEAT-023 — [C1] Traefik service in docker-compose + static config — done
 - FEAT-024 — [C1] Backend Traefik file-provider routing (replaces caddy) — done
 - TEST-013 — [C1] Integration: Traefik migration end-to-end (closes BUG-028) — done
