@@ -61,6 +61,14 @@ func main() {
 	gitCredentialService := service.NewGitCredentialService(db, cfg.JWTSecret)
 	projectService := service.NewProjectService(db, dockerClient, traefikClient, cfg, gitCredentialService)
 	agentService := service.NewAgentService(db, dockerClient, cfg, whitelistService, egressService, resourceLimitService, gitCredentialService, idleTimeoutService)
+	// Starts its own background scrape loop (FEAT-031).
+	service.NewMetricsScraperService(db, cfg.TraefikMetricsURL, cfg.TraefikMetricsPeriod)
+	// Starts its own background rollup+retention sweep (FEAT-032) - see
+	// service.MetricsRollupService's doc for the minute->hour->day policy.
+	// Its return value isn't captured beyond construction either; only the
+	// query side (metricsQueryService below) is a handler dependency.
+	service.NewMetricsRollupService(db, service.DefaultMetricsRollupInterval)
+	metricsQueryService := service.NewMetricsQueryService(db)
 
 	// Re-write every running project's route file on boot. Unlike Caddy's
 	// admin API (whose config lived entirely in the Caddy process's
@@ -85,6 +93,7 @@ func main() {
 	resourceLimitHandler := handler.NewResourceLimitHandler(resourceLimitService)
 	idleTimeoutHandler := handler.NewIdleTimeoutHandler(idleTimeoutService)
 	gitCredentialHandler := handler.NewGitCredentialHandler(gitCredentialService)
+	metricsHandler := handler.NewMetricsHandler(metricsQueryService)
 	authMiddleware := handler.AuthMiddleware(authService)
 
 	var containerHandler *handler.ContainerHandler
@@ -94,7 +103,7 @@ func main() {
 		containerHandler = handler.NewContainerHandler(nil)
 	}
 
-	r := router.New(authHandler, systemHandler, projectHandler, terminalHandler, containerHandler, codeHandler, whitelistHandler, egressHandler, resourceLimitHandler, idleTimeoutHandler, gitCredentialHandler, authMiddleware)
+	r := router.New(authHandler, systemHandler, projectHandler, terminalHandler, containerHandler, codeHandler, whitelistHandler, egressHandler, resourceLimitHandler, idleTimeoutHandler, gitCredentialHandler, metricsHandler, authMiddleware)
 
 	srv := &http.Server{
 		Addr:         fmt.Sprintf(":%d", cfg.Port),

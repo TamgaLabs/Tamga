@@ -22,6 +22,7 @@ func New(
 	resourceLimitHandler *handler.ResourceLimitHandler,
 	idleTimeoutHandler *handler.IdleTimeoutHandler,
 	gitCredentialHandler *handler.GitCredentialHandler,
+	metricsHandler *handler.MetricsHandler,
 	authMiddleware func(http.Handler) http.Handler,
 ) *chi.Mux {
 	r := chi.NewRouter()
@@ -61,6 +62,7 @@ func New(
 			r.Get("/projects/{id}/agent/terminal", terminalHandler.Serve)
 			r.Get("/projects/{id}/agent/sessions", terminalHandler.ListSessions)
 			r.Delete("/projects/{id}/agent/sessions/{sessionId}", terminalHandler.TerminateSession)
+			r.Get("/projects/{id}/metrics", metricsHandler.Project)
 
 			// System / Docker containers
 			r.Get("/system/containers", containerHandler.List)
@@ -74,6 +76,9 @@ func New(
 			r.Put("/system/containers/{id}/resources", containerHandler.UpdateResources)
 			r.Post("/system/prune", containerHandler.Prune)
 			r.Get("/system/info", containerHandler.Info)
+
+			// Metrics query API (FEAT-032) - project + global panels.
+			r.Get("/system/metrics", metricsHandler.System)
 
 			// Agent egress whitelist
 			r.Get("/system/egress-whitelist", whitelistHandler.List)

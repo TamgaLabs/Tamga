@@ -1,0 +1,114 @@
+# Captured from a live Traefik 3.4.5 instance (tamga-traefik-1) via
+# `docker exec tamga-backend-1 wget -qO- http://traefik:8080/metrics`
+# during FEAT-031's development (2026-07-11) - this grounds the parser in
+# the real exposition format/labels TEST-010 §4 documented.
+#
+# The `tamga-*` core-router lines below (requests_total,
+# request_duration_seconds_bucket, requests_bytes_total,
+# responses_bytes_total, HELP/TYPE headers) are copied verbatim from that
+# real capture. No project was deployed live at capture time, so the
+# `project-42@file` router block below is hand-authored in the identical
+# real format (same metric names/label set/`@file` suffix convention) to
+# cover per-project attribution - see metrics_scraper_test.go's comments
+# for how this fixture's numbers were derived and cross-checked.
+#
+# This is scrape 1 - the scraper's first tick (baseline only, nothing
+# stored). traefik_scrape_2.txt is a second tick with higher counters
+# (asserts increments). traefik_scrape_3.txt simulates a Traefik restart
+# (counters drop - asserts reset handling).
+# HELP traefik_router_request_duration_seconds How long it took to process the request on a router, partitioned by service, status code, protocol, and method.
+# TYPE traefik_router_request_duration_seconds histogram
+traefik_router_request_duration_seconds_bucket{code="200",method="GET",protocol="http",router="tamga-api-secure@file",service="tamga-backend@file",le="0.1"} 21
+traefik_router_request_duration_seconds_bucket{code="200",method="GET",protocol="http",router="tamga-api-secure@file",service="tamga-backend@file",le="0.3"} 21
+traefik_router_request_duration_seconds_bucket{code="200",method="GET",protocol="http",router="tamga-api-secure@file",service="tamga-backend@file",le="1.2"} 21
+traefik_router_request_duration_seconds_bucket{code="200",method="GET",protocol="http",router="tamga-api-secure@file",service="tamga-backend@file",le="5"} 21
+traefik_router_request_duration_seconds_bucket{code="200",method="GET",protocol="http",router="tamga-api-secure@file",service="tamga-backend@file",le="+Inf"} 21
+traefik_router_request_duration_seconds_bucket{code="200",method="GET",protocol="http",router="tamga-ui-secure@file",service="tamga-frontend@file",le="0.1"} 4
+traefik_router_request_duration_seconds_bucket{code="200",method="GET",protocol="http",router="tamga-ui-secure@file",service="tamga-frontend@file",le="0.3"} 4
+traefik_router_request_duration_seconds_bucket{code="200",method="GET",protocol="http",router="tamga-ui-secure@file",service="tamga-frontend@file",le="1.2"} 4
+traefik_router_request_duration_seconds_bucket{code="200",method="GET",protocol="http",router="tamga-ui-secure@file",service="tamga-frontend@file",le="5"} 4
+traefik_router_request_duration_seconds_bucket{code="200",method="GET",protocol="http",router="tamga-ui-secure@file",service="tamga-frontend@file",le="+Inf"} 4
+traefik_router_request_duration_seconds_bucket{code="200",method="GET",protocol="http",router="tamga-ui@file",service="tamga-frontend@file",le="0.1"} 4
+traefik_router_request_duration_seconds_bucket{code="200",method="GET",protocol="http",router="tamga-ui@file",service="tamga-frontend@file",le="0.3"} 4
+traefik_router_request_duration_seconds_bucket{code="200",method="GET",protocol="http",router="tamga-ui@file",service="tamga-frontend@file",le="1.2"} 4
+traefik_router_request_duration_seconds_bucket{code="200",method="GET",protocol="http",router="tamga-ui@file",service="tamga-frontend@file",le="5"} 4
+traefik_router_request_duration_seconds_bucket{code="200",method="GET",protocol="http",router="tamga-ui@file",service="tamga-frontend@file",le="+Inf"} 4
+traefik_router_request_duration_seconds_bucket{code="200",method="POST",protocol="http",router="tamga-api-secure@file",service="tamga-backend@file",le="0.1"} 20
+traefik_router_request_duration_seconds_bucket{code="200",method="POST",protocol="http",router="tamga-api-secure@file",service="tamga-backend@file",le="0.3"} 20
+traefik_router_request_duration_seconds_bucket{code="200",method="POST",protocol="http",router="tamga-api-secure@file",service="tamga-backend@file",le="1.2"} 20
+traefik_router_request_duration_seconds_bucket{code="200",method="POST",protocol="http",router="tamga-api-secure@file",service="tamga-backend@file",le="5"} 20
+traefik_router_request_duration_seconds_bucket{code="200",method="POST",protocol="http",router="tamga-api-secure@file",service="tamga-backend@file",le="+Inf"} 20
+traefik_router_request_duration_seconds_bucket{code="201",method="POST",protocol="http",router="tamga-api-secure@file",service="tamga-backend@file",le="0.1"} 7
+traefik_router_request_duration_seconds_bucket{code="201",method="POST",protocol="http",router="tamga-api-secure@file",service="tamga-backend@file",le="0.3"} 7
+traefik_router_request_duration_seconds_bucket{code="201",method="POST",protocol="http",router="tamga-api-secure@file",service="tamga-backend@file",le="1.2"} 7
+traefik_router_request_duration_seconds_bucket{code="201",method="POST",protocol="http",router="tamga-api-secure@file",service="tamga-backend@file",le="5"} 7
+traefik_router_request_duration_seconds_bucket{code="201",method="POST",protocol="http",router="tamga-api-secure@file",service="tamga-backend@file",le="+Inf"} 7
+traefik_router_request_duration_seconds_bucket{code="404",method="DELETE",protocol="http",router="tamga-api-secure@file",service="tamga-backend@file",le="0.1"} 1
+traefik_router_request_duration_seconds_bucket{code="404",method="DELETE",protocol="http",router="tamga-api-secure@file",service="tamga-backend@file",le="0.3"} 1
+traefik_router_request_duration_seconds_bucket{code="404",method="DELETE",protocol="http",router="tamga-api-secure@file",service="tamga-backend@file",le="1.2"} 1
+traefik_router_request_duration_seconds_bucket{code="404",method="DELETE",protocol="http",router="tamga-api-secure@file",service="tamga-backend@file",le="5"} 1
+traefik_router_request_duration_seconds_bucket{code="404",method="DELETE",protocol="http",router="tamga-api-secure@file",service="tamga-backend@file",le="+Inf"} 1
+traefik_router_request_duration_seconds_bucket{code="404",method="GET",protocol="http",router="tamga-api-secure@file",service="tamga-backend@file",le="0.1"} 44
+traefik_router_request_duration_seconds_bucket{code="404",method="GET",protocol="http",router="tamga-api-secure@file",service="tamga-backend@file",le="0.3"} 44
+traefik_router_request_duration_seconds_bucket{code="404",method="GET",protocol="http",router="tamga-api-secure@file",service="tamga-backend@file",le="1.2"} 44
+traefik_router_request_duration_seconds_bucket{code="404",method="GET",protocol="http",router="tamga-api-secure@file",service="tamga-backend@file",le="5"} 44
+traefik_router_request_duration_seconds_bucket{code="404",method="GET",protocol="http",router="tamga-api-secure@file",service="tamga-backend@file",le="+Inf"} 44
+traefik_router_request_duration_seconds_bucket{code="499",method="DELETE",protocol="http",router="tamga-api-secure@file",service="tamga-backend@file",le="0.1"} 0
+traefik_router_request_duration_seconds_bucket{code="499",method="DELETE",protocol="http",router="tamga-api-secure@file",service="tamga-backend@file",le="0.3"} 2
+traefik_router_request_duration_seconds_bucket{code="499",method="DELETE",protocol="http",router="tamga-api-secure@file",service="tamga-backend@file",le="1.2"} 5
+traefik_router_request_duration_seconds_bucket{code="499",method="DELETE",protocol="http",router="tamga-api-secure@file",service="tamga-backend@file",le="5"} 5
+traefik_router_request_duration_seconds_bucket{code="499",method="DELETE",protocol="http",router="tamga-api-secure@file",service="tamga-backend@file",le="+Inf"} 5
+traefik_router_request_duration_seconds_bucket{code="200",method="GET",protocol="http",router="project-42@file",service="project-42@file",le="0.1"} 130
+traefik_router_request_duration_seconds_bucket{code="200",method="GET",protocol="http",router="project-42@file",service="project-42@file",le="0.3"} 145
+traefik_router_request_duration_seconds_bucket{code="200",method="GET",protocol="http",router="project-42@file",service="project-42@file",le="1.2"} 150
+traefik_router_request_duration_seconds_bucket{code="200",method="GET",protocol="http",router="project-42@file",service="project-42@file",le="5"} 155
+traefik_router_request_duration_seconds_bucket{code="200",method="GET",protocol="http",router="project-42@file",service="project-42@file",le="+Inf"} 157
+traefik_router_request_duration_seconds_bucket{code="404",method="GET",protocol="http",router="project-42@file",service="project-42@file",le="0.1"} 8
+traefik_router_request_duration_seconds_bucket{code="404",method="GET",protocol="http",router="project-42@file",service="project-42@file",le="0.3"} 8
+traefik_router_request_duration_seconds_bucket{code="404",method="GET",protocol="http",router="project-42@file",service="project-42@file",le="1.2"} 8
+traefik_router_request_duration_seconds_bucket{code="404",method="GET",protocol="http",router="project-42@file",service="project-42@file",le="5"} 8
+traefik_router_request_duration_seconds_bucket{code="404",method="GET",protocol="http",router="project-42@file",service="project-42@file",le="+Inf"} 8
+traefik_router_request_duration_seconds_bucket{code="500",method="GET",protocol="http",router="project-42@file",service="project-42@file",le="0.1"} 2
+traefik_router_request_duration_seconds_bucket{code="500",method="GET",protocol="http",router="project-42@file",service="project-42@file",le="0.3"} 2
+traefik_router_request_duration_seconds_bucket{code="500",method="GET",protocol="http",router="project-42@file",service="project-42@file",le="1.2"} 2
+traefik_router_request_duration_seconds_bucket{code="500",method="GET",protocol="http",router="project-42@file",service="project-42@file",le="5"} 2
+traefik_router_request_duration_seconds_bucket{code="500",method="GET",protocol="http",router="project-42@file",service="project-42@file",le="+Inf"} 2
+# HELP traefik_router_requests_bytes_total The total size of requests in bytes handled by a router, partitioned by service, status code, protocol, and method.
+# TYPE traefik_router_requests_bytes_total counter
+traefik_router_requests_bytes_total{code="200",method="GET",protocol="http",router="tamga-api-secure@file",service="tamga-backend@file"} 0
+traefik_router_requests_bytes_total{code="200",method="GET",protocol="http",router="tamga-ui-secure@file",service="tamga-frontend@file"} 0
+traefik_router_requests_bytes_total{code="200",method="GET",protocol="http",router="tamga-ui@file",service="tamga-frontend@file"} 0
+traefik_router_requests_bytes_total{code="200",method="POST",protocol="http",router="tamga-api-secure@file",service="tamga-backend@file"} 900
+traefik_router_requests_bytes_total{code="201",method="POST",protocol="http",router="tamga-api-secure@file",service="tamga-backend@file"} 1607
+traefik_router_requests_bytes_total{code="404",method="DELETE",protocol="http",router="tamga-api-secure@file",service="tamga-backend@file"} 0
+traefik_router_requests_bytes_total{code="404",method="GET",protocol="http",router="tamga-api-secure@file",service="tamga-backend@file"} 0
+traefik_router_requests_bytes_total{code="499",method="DELETE",protocol="http",router="tamga-api-secure@file",service="tamga-backend@file"} 0
+traefik_router_requests_bytes_total{code="200",method="GET",protocol="http",router="project-42@file",service="project-42@file"} 1500
+traefik_router_requests_bytes_total{code="404",method="GET",protocol="http",router="project-42@file",service="project-42@file"} 50
+traefik_router_requests_bytes_total{code="500",method="GET",protocol="http",router="project-42@file",service="project-42@file"} 20
+# HELP traefik_router_requests_total How many HTTP requests are processed on a router, partitioned by service, status code, protocol, and method.
+# TYPE traefik_router_requests_total counter
+traefik_router_requests_total{code="200",method="GET",protocol="http",router="tamga-api-secure@file",service="tamga-backend@file"} 21
+traefik_router_requests_total{code="200",method="GET",protocol="http",router="tamga-ui-secure@file",service="tamga-frontend@file"} 4
+traefik_router_requests_total{code="200",method="GET",protocol="http",router="tamga-ui@file",service="tamga-frontend@file"} 4
+traefik_router_requests_total{code="200",method="POST",protocol="http",router="tamga-api-secure@file",service="tamga-backend@file"} 20
+traefik_router_requests_total{code="201",method="POST",protocol="http",router="tamga-api-secure@file",service="tamga-backend@file"} 7
+traefik_router_requests_total{code="404",method="DELETE",protocol="http",router="tamga-api-secure@file",service="tamga-backend@file"} 1
+traefik_router_requests_total{code="404",method="GET",protocol="http",router="tamga-api-secure@file",service="tamga-backend@file"} 44
+traefik_router_requests_total{code="499",method="DELETE",protocol="http",router="tamga-api-secure@file",service="tamga-backend@file"} 5
+traefik_router_requests_total{code="200",method="GET",protocol="http",router="project-42@file",service="project-42@file"} 150
+traefik_router_requests_total{code="404",method="GET",protocol="http",router="project-42@file",service="project-42@file"} 8
+traefik_router_requests_total{code="500",method="GET",protocol="http",router="project-42@file",service="project-42@file"} 2
+# HELP traefik_router_responses_bytes_total The total size of responses in bytes handled by a router, partitioned by service, status code, protocol, and method.
+# TYPE traefik_router_responses_bytes_total counter
+traefik_router_responses_bytes_total{code="200",method="GET",protocol="http",router="tamga-api-secure@file",service="tamga-backend@file"} 7890
+traefik_router_responses_bytes_total{code="200",method="GET",protocol="http",router="tamga-ui-secure@file",service="tamga-frontend@file"} 25704
+traefik_router_responses_bytes_total{code="200",method="GET",protocol="http",router="tamga-ui@file",service="tamga-frontend@file"} 25704
+traefik_router_responses_bytes_total{code="200",method="POST",protocol="http",router="tamga-api-secure@file",service="tamga-backend@file"} 3140
+traefik_router_responses_bytes_total{code="201",method="POST",protocol="http",router="tamga-api-secure@file",service="tamga-backend@file"} 2298
+traefik_router_responses_bytes_total{code="404",method="DELETE",protocol="http",router="tamga-api-secure@file",service="tamga-backend@file"} 10
+traefik_router_responses_bytes_total{code="404",method="GET",protocol="http",router="tamga-api-secure@file",service="tamga-backend@file"} 619
+traefik_router_responses_bytes_total{code="499",method="DELETE",protocol="http",router="tamga-api-secure@file",service="tamga-backend@file"} 105
+traefik_router_responses_bytes_total{code="200",method="GET",protocol="http",router="project-42@file",service="project-42@file"} 75000
+traefik_router_responses_bytes_total{code="404",method="GET",protocol="http",router="project-42@file",service="project-42@file"} 300
+traefik_router_responses_bytes_total{code="500",method="GET",protocol="http",router="project-42@file",service="project-42@file"} 150

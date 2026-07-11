@@ -7,17 +7,19 @@ import (
 )
 
 type Config struct {
-	Domain            string
-	AdminPassword     string
-	JWTSecret         string
-	DBPath            string
-	TraefikDynamicDir string
-	DataDir           string
-	HostDataDir       string
-	SystemCodeDir     string
-	Port              int
-	ReadTimeout       time.Duration
-	WriteTimeout      time.Duration
+	Domain               string
+	AdminPassword        string
+	JWTSecret            string
+	DBPath               string
+	TraefikDynamicDir    string
+	DataDir              string
+	HostDataDir          string
+	SystemCodeDir        string
+	Port                 int
+	ReadTimeout          time.Duration
+	WriteTimeout         time.Duration
+	TraefikMetricsURL    string
+	TraefikMetricsPeriod time.Duration
 }
 
 func Load() Config {
@@ -33,6 +35,12 @@ func Load() Config {
 		Port:              getEnvInt("PORT", 8080),
 		ReadTimeout:       time.Second * 10,
 		WriteTimeout:      time.Second * 30,
+		// TraefikMetricsURL/Period (FEAT-031): the scraper's Prometheus
+		// endpoint and poll interval. Defaults match TEST-010 §4's
+		// confirmed in-network metrics entrypoint and the minute
+		// resolution FEAT-030's schema stores samples at.
+		TraefikMetricsURL:    getEnv("TRAEFIK_METRICS_URL", "http://traefik:8080/metrics"),
+		TraefikMetricsPeriod: time.Duration(getEnvInt("TRAEFIK_METRICS_INTERVAL_SECONDS", 60)) * time.Second,
 	}
 }
 
