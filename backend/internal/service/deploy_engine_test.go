@@ -145,19 +145,6 @@ func TestComposeVolumesToMounts(t *testing.T) {
 	}
 }
 
-func TestExtraNetworksFiltersImplicitDefault(t *testing.T) {
-	got := extraNetworks("project-net-5", []string{"default"})
-	if len(got) != 0 {
-		t.Fatalf("expected the implicit 'default' network to be filtered out, got %v", got)
-	}
-
-	got = extraNetworks("project-net-5", []string{"default", "backend"})
-	want := []string{"project-net-5-backend"}
-	if !reflect.DeepEqual(got, want) {
-		t.Fatalf("expected namespaced extra network %v, got %v", want, got)
-	}
-}
-
 func TestServiceContainerNameAndProjectNetworkName(t *testing.T) {
 	if got := serviceContainerName(5, "web"); got != "project-5-web" {
 		t.Fatalf("expected 'project-5-web', got %q", got)

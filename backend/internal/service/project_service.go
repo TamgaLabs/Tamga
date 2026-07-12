@@ -275,16 +275,15 @@ func (s *ProjectService) deployStack(ctx context.Context, project *domain.Projec
 			return fmt.Errorf("start service %q: %w", svc.Name, err)
 		}
 
-		if extra := extraNetworks(netName, svc.Networks); len(extra) > 0 {
-			for _, n := range extra {
-				if err := s.docker.EnsureNetwork(ctx, n, false); err != nil {
-					slog.Warn("ensure extra service network", "project_id", project.ID, "service", svc.Name, "network", n, "error", err)
-				}
-			}
-			if err := s.docker.ConnectNetworks(ctx, containerName, extra, alias); err != nil {
-				slog.Warn("connect service to extra networks", "project_id", project.ID, "service", svc.Name, "error", err)
-			}
-		}
+		// A service's own compose-declared `networks:` (svc.Networks) are
+		// deliberately NOT created as separate Docker networks here: every
+		// service already joined the single project network (netName)
+		// above, with its service-name alias, which already gives it full
+		// intra-project reachability. A declared network on top of that is
+		// redundant with the primary, not real segmentation - creating and
+		// joining it too just produced a second, superfluous network with
+		// every service on both (BUG-032, following BUG-029's
+		// one-network-per-project design above).
 
 		containers = append(containers, &domain.ServiceContainer{
 			ProjectID:     project.ID,

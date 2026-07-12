@@ -127,28 +127,6 @@ func composeVolumesToMounts(volumes []domain.ComposeVolume) []string {
 	return out
 }
 
-// extraNetworks returns the additional, project-namespaced Docker network
-// names a service should be connected to beyond its primary project
-// network, derived from its declared compose `networks:`. compose-go's
-// loader always includes an implicit "default" entry for a service that
-// declares no explicit `networks:` at all (ParseComposeYAML's
-// normalizeNetworks doc comment) - "default" maps onto the project's own
-// primary network (already joined at container-create time), not a
-// separate network object, so it's filtered out here. Every other
-// declared name is namespaced "<project-net>-<name>" so two different
-// projects declaring the same extra network name (e.g. both "backend")
-// never collide with each other.
-func extraNetworks(primaryNet string, declared []string) []string {
-	var extra []string
-	for _, n := range declared {
-		if n == "default" {
-			continue
-		}
-		extra = append(extra, primaryNet+"-"+n)
-	}
-	return extra
-}
-
 // exposedTargetPort returns the container-side port a service explicitly
 // declares (its first Ports entry's Target), formatted for use as
 // Traefik's upstream port. "" means the service declared no port at all -
