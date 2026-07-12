@@ -1,9 +1,9 @@
 ---
 id: SPRINT-004
 name: Traefik Migration, Compose Deploy, Observability & Infra Map
-status: active
+status: complete
 created: 2026-07-10
-completed:
+completed: 2026-07-12
 ---
 
 ## Goal
@@ -161,10 +161,10 @@ project secondary sidebar (a user's own architecture/traffic).
 - FEAT-028 — [C2] Unified compose deploy engine (per-project net, exposed-service routing) — done
 - FEAT-029 — [C2] Compose-project create/deploy UI — done
 - TEST-014 — [C2] Integration: multi-service deploy, isolation (closes BUG-029) — done
-- BUG-030 — Compose project DELETE response not delivered to client (server-side succeeds) — pending (follow-up)
-- BUG-031 — Project delete orphans its metric_samples/latency rows (phantom data, day-rows leak) — pending (follow-up)
-- BUG-032 — Compose-declared networks create a redundant 2nd project network (surfaced by C5 map) — pending (follow-up)
-- BUG-033 — Rebind 409 check validates row-existence not running-state (stopped-container rebind accepted) — pending (follow-up)
+- BUG-030 — Compose project DELETE response not delivered to client (server-side succeeds) — done✓
+- BUG-031 — Project delete orphans its metric_samples/latency rows (phantom data, day-rows leak) — done✓
+- BUG-032 — Compose-declared networks create a redundant 2nd project network (surfaced by C5 map) — done✓
+- BUG-033 — Rebind 409 check validates row-existence not running-state (stopped-container rebind accepted) — done✓
 - FEAT-030 — [C3] Metrics time-series schema + storage repo — done✓ (additive-upsert rework)
 - FEAT-031 — [C3] Traefik metrics scraper (Prometheus → samples) — done✓
 - FEAT-032 — [C3] Metrics rollup/retention + query API (panels) — done✓
@@ -186,4 +186,51 @@ project secondary sidebar (a user's own architecture/traffic).
 - TEST-013 — [C1] Integration: Traefik migration end-to-end (closes BUG-028) — done
 
 ## Release Notes
-<filled in at sprint completion>
+
+Tamga becomes a proper PaaS control plane: deploy multi-service stacks, watch
+their traffic, and see them as a live infrastructure map — all on a
+Traefik-based, docker-native routing/metrics model.
+
+### Added
+- **Traffic analytics.** A global Analytics page and a per-project Analytics
+  tab with request-rate, status-class/error-rate, latency (p50/p95/p99), and
+  bandwidth panels, plus time-range and resolution controls with live refresh.
+  Backed by a Traefik metrics scraper → SQLite time-series (minute→hour→day
+  rollup + retention) → query API, per project and as a global aggregate.
+- **Infrastructure map.** A global Infrastructure page and a per-project Map
+  tab rendering live containers as nodes and shared docker networks as edges,
+  classified by image (redis/postgres/proxy/web/…), with status, auto-refresh,
+  and click-through to a container's detail. A live traffic overlay ties the
+  map to the analytics: node color reflects error rate, the ingress edge
+  thickens with request volume, and hovering a node shows its mini-stats.
+- **Multi-service deploys.** A project is now a docker-compose stack (common
+  subset: image, ports, environment, volumes, networks, depends_on). Each
+  project runs on its own isolated network with services resolving each other
+  by name. New compose-project create UI.
+- **Domain binding.** Bind or unbind the project's domain to any of its
+  compose services from the project settings — the Traefik route moves live.
+
+### Changed
+- **Reverse proxy migrated from Caddy to Traefik** — per-project file-provider
+  routing, Prometheus metrics as the analytics data source, self-signed (dev) /
+  ACME (prod) TLS, and an admin dashboard. The legacy git-build single-container
+  flow now deploys through the same unified compose path (one deploy path, not
+  two).
+
+### Fixed
+- Cross-project network isolation — routes could previously reach the wrong
+  project, and all projects shared one flat network; each project now runs on
+  its own network (BUG-028, BUG-029).
+- Logging in with the correct password now lands on the dashboard instead of
+  bouncing back to the login page (BUG-034).
+- Deleting a compose project now returns its HTTP response to the client
+  instead of a dropped connection, and no longer leaves the project's metrics
+  behind as orphaned rows (BUG-030, BUG-031).
+- A compose project that declares its own `networks:` no longer gets a
+  redundant second docker network (BUG-032).
+- Rebinding the domain to a stopped service is now rejected with a clear error
+  instead of silently routing to a down container that 502s (BUG-033).
+
+Scope note: single-admin, dev-focused deployment — no per-tenant auth,
+per-path analytics, or a full visual architecture editor (routing edits are
+limited to domain binding).
