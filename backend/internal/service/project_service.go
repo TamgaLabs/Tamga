@@ -608,63 +608,44 @@ func (s *ProjectService) Get(ctx context.Context, id int64) (*domain.Project, er
 // enable PRAGMA foreign_keys (FEAT-025's finding), so cascade deletes
 // never actually fire; DeleteEnvVarsByProject below is the existing
 // precedent for the same reason.
+//
+// # Response-before-teardown ordering (BUG-030)
+//
+// The route removal and DB row deletes run synchronously here, and Delete
+// returns as soon as they're done - BEFORE any docker teardown happens.
+// The docker sweep (stop/remove every service container, disconnect
+// Traefik from the project network, remove the network) is handed off to
+// teardownDockerResources on a detached goroutine instead. This ordering
+// is not arbitrary: TEST-014 item 5 traced the client's DELETE getting a
+// dropped connection (HTTP 000) to disconnectTraefikFromNetwork - briefly
+// reconfiguring the very Traefik instance proxying the in-flight DELETE
+// request drops that request's connection mid-flight, regardless of which
+// context the reconfigure runs on. FEAT-028 rework 2 already moved the
+// docker sweep onto a detached context so it can't be *aborted* by that
+// drop (BUG-027 class - closes project-net-<id> orphaning), but the
+// client-visible response was still being written only after the
+// disruptive part had already run. Doing the fast, non-disruptive part
+// (route removal + DB deletes) first and returning immediately means the
+// handler's 204 is written, and only then does the network-disrupting
+// docker work happen - by which point the response is already flushed to
+// the client, so the same Traefik reconfigure blip can no longer take the
+// response down with it.
 func (s *ProjectService) Delete(ctx context.Context, id int64) error {
 	project, err := s.db.FindProject(id)
 	if err != nil {
 		return fmt.Errorf("find project: %w", err)
 	}
 
+	// Capture the service-container list BEFORE the DB rows are deleted
+	// below - teardownDockerResources runs after they're gone (both
+	// because it's handed off async and because the deletes below happen
+	// first regardless), so it needs its own snapshot rather than
+	// re-querying a table that will already be empty.
+	var containers []*domain.ServiceContainer
 	if s.docker != nil {
-		// The whole container-stop/remove + Traefik-disconnect +
-		// NetworkRemove sweep MUST run to completion even if the caller's
-		// HTTP request context is canceled mid-teardown - which happens in
-		// practice here, since disconnecting Traefik from the project
-		// network briefly reconfigures Traefik and can drop the in-flight
-		// DELETE request it's proxying, canceling ctx right as
-		// NetworkRemove is about to run. That left project-net-<id>
-		// orphaned (TEST-014 item 5): NetworkRemove aborted with "context
-		// canceled" after the disconnect had already partially applied.
-		// Same class as BUG-027 (must-complete cleanup can't ride a
-		// cancelable request context) - detach onto a bounded background
-		// context instead, so a client disconnect (or the Traefik-reconfig
-		// blip) can never abort teardown partway through.
-		cleanupCtx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
-		defer cancel()
-
-		containers, lerr := s.db.ListServiceContainers(id)
-		if lerr != nil {
-			slog.Warn("list service containers for delete", "project_id", id, "error", lerr)
-		}
-		for _, c := range containers {
-			if err := s.docker.StopContainer(cleanupCtx, c.ContainerID); err != nil {
-				slog.Warn("stop service container error", "project_id", id, "service", c.ServiceName, "container_id", c.ContainerID, "error", err)
-			}
-			if err := s.docker.RemoveContainer(cleanupCtx, c.ContainerID); err != nil {
-				slog.Warn("remove service container error", "project_id", id, "service", c.ServiceName, "container_id", c.ContainerID, "error", err)
-			}
-		}
-
-		// Backward compat: a project deployed before FEAT-028 has no
-		// project_service_containers rows at all, only the legacy single
-		// project.ContainerID - still needs its one container cleaned up.
-		if len(containers) == 0 && project.ContainerID != "" {
-			if err := s.docker.StopContainer(cleanupCtx, project.ContainerID); err != nil {
-				slog.Warn("stop container error", "container_id", project.ContainerID, "error", err)
-			}
-			if err := s.docker.RemoveContainer(cleanupCtx, project.ContainerID); err != nil {
-				slog.Warn("remove container error", "container_id", project.ContainerID, "error", err)
-			}
-		}
-
-		// Containers must be fully removed (not merely stopped) before
-		// NetworkRemove is attempted below - Docker refuses to remove a
-		// network with any endpoint (running OR stopping/mid-teardown)
-		// still attached, so the stop+remove sweep above has to settle
-		// first, all on the same detached cleanupCtx.
-		netName := projectNetworkName(id)
-		s.disconnectTraefikFromNetwork(cleanupCtx, netName)
-		if err := s.docker.NetworkRemove(cleanupCtx, netName); err != nil {
-			slog.Warn("remove project network error", "project_id", id, "network", netName, "error", err)
+		containers, err = s.db.ListServiceContainers(id)
+		if err != nil {
+			slog.Warn("list service containers for delete", "project_id", id, "error", err)
 		}
 	}
 
@@ -689,7 +670,57 @@ func (s *ProjectService) Delete(ctx context.Context, id int64) error {
 	workDir := filepath.Join(s.cfg.DataDir, "projects", fmt.Sprintf("%d", id))
 	os.RemoveAll(workDir)
 
+	if s.docker != nil {
+		go s.teardownDockerResources(id, project.ContainerID, containers)
+	}
+
 	return nil
+}
+
+// teardownDockerResources runs the disruptive half of Delete (stop/remove
+// every service container, disconnect Traefik from the project's network,
+// remove that network) after Delete has already returned the client's
+// response - see Delete's doc comment for why the ordering matters
+// (BUG-030). Always runs on a detached, bounded background context, never
+// the request context: this is must-complete cleanup exactly like
+// FEAT-028 rework 2's fix for BUG-027, and by the time this goroutine
+// starts the request that spawned it has already been served, so there is
+// no request context left to reasonably use anyway.
+func (s *ProjectService) teardownDockerResources(id int64, legacyContainerID string, containers []*domain.ServiceContainer) {
+	cleanupCtx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+
+	for _, c := range containers {
+		if err := s.docker.StopContainer(cleanupCtx, c.ContainerID); err != nil {
+			slog.Warn("stop service container error", "project_id", id, "service", c.ServiceName, "container_id", c.ContainerID, "error", err)
+		}
+		if err := s.docker.RemoveContainer(cleanupCtx, c.ContainerID); err != nil {
+			slog.Warn("remove service container error", "project_id", id, "service", c.ServiceName, "container_id", c.ContainerID, "error", err)
+		}
+	}
+
+	// Backward compat: a project deployed before FEAT-028 has no
+	// project_service_containers rows at all, only the legacy single
+	// project.ContainerID - still needs its one container cleaned up.
+	if len(containers) == 0 && legacyContainerID != "" {
+		if err := s.docker.StopContainer(cleanupCtx, legacyContainerID); err != nil {
+			slog.Warn("stop container error", "container_id", legacyContainerID, "error", err)
+		}
+		if err := s.docker.RemoveContainer(cleanupCtx, legacyContainerID); err != nil {
+			slog.Warn("remove container error", "container_id", legacyContainerID, "error", err)
+		}
+	}
+
+	// Containers must be fully removed (not merely stopped) before
+	// NetworkRemove is attempted below - Docker refuses to remove a
+	// network with any endpoint (running OR stopping/mid-teardown) still
+	// attached, so the stop+remove sweep above has to settle first, all on
+	// the same detached cleanupCtx.
+	netName := projectNetworkName(id)
+	s.disconnectTraefikFromNetwork(cleanupCtx, netName)
+	if err := s.docker.NetworkRemove(cleanupCtx, netName); err != nil {
+		slog.Warn("remove project network error", "project_id", id, "network", netName, "error", err)
+	}
 }
 
 // Restart recreates the project's WHOLE stack (stop, remove, re-create,
