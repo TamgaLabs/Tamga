@@ -337,6 +337,91 @@ func TestPruneMetrics(t *testing.T) {
 	}
 }
 
+// TestDeleteMetricsByProject is the BUG-031 regression: deleting a
+// project's metrics rows must remove every resolution of both
+// metric_samples and metric_latency_buckets for that project_id, leave
+// other projects' rows untouched, and never touch the global scope
+// (domain.GlobalProjectID / project_id 0).
+func TestDeleteMetricsByProject(t *testing.T) {
+	db := openTestDB(t)
+
+	base := time.Date(2026, 7, 11, 10, 0, 0, 0, time.UTC)
+
+	if err := db.InsertMetricSamples([]*domain.MetricSample{
+		{ProjectID: 42, Resolution: domain.MetricResolutionMinute, BucketStart: base, Count2xx: 1},
+		{ProjectID: 42, Resolution: domain.MetricResolutionHour, BucketStart: base, Count2xx: 2},
+		{ProjectID: 42, Resolution: domain.MetricResolutionDay, BucketStart: base, Count2xx: 3},
+		{ProjectID: 7, Resolution: domain.MetricResolutionMinute, BucketStart: base, Count2xx: 4},
+		{ProjectID: domain.GlobalProjectID, Resolution: domain.MetricResolutionMinute, BucketStart: base, Count2xx: 5},
+	}); err != nil {
+		t.Fatalf("insert metric samples: %v", err)
+	}
+	if err := db.InsertMetricLatencyBuckets([]*domain.MetricLatencyBucket{
+		{ProjectID: 42, Resolution: domain.MetricResolutionMinute, BucketStart: base, Le: "0.1", Count: 1},
+		{ProjectID: 42, Resolution: domain.MetricResolutionHour, BucketStart: base, Le: "0.1", Count: 2},
+		{ProjectID: 42, Resolution: domain.MetricResolutionDay, BucketStart: base, Le: "0.1", Count: 3},
+		{ProjectID: 7, Resolution: domain.MetricResolutionMinute, BucketStart: base, Le: "0.1", Count: 4},
+		{ProjectID: domain.GlobalProjectID, Resolution: domain.MetricResolutionMinute, BucketStart: base, Le: "0.1", Count: 5},
+	}); err != nil {
+		t.Fatalf("insert latency buckets: %v", err)
+	}
+
+	if err := db.DeleteMetricsByProject(42); err != nil {
+		t.Fatalf("delete metrics by project: %v", err)
+	}
+
+	// Every resolution of project 42's samples and latency buckets is gone.
+	for _, res := range []domain.MetricResolution{domain.MetricResolutionMinute, domain.MetricResolutionHour, domain.MetricResolutionDay} {
+		samples, err := db.ListMetricSamples(42, res, time.Unix(0, 0), time.Now().Add(24*time.Hour))
+		if err != nil {
+			t.Fatalf("list samples (%s) after delete: %v", res, err)
+		}
+		if len(samples) != 0 {
+			t.Errorf("expected 0 samples for deleted project at resolution %s, got %d", res, len(samples))
+		}
+
+		buckets, err := db.ListMetricLatencyBuckets(42, res, time.Unix(0, 0), time.Now().Add(24*time.Hour))
+		if err != nil {
+			t.Fatalf("list latency buckets (%s) after delete: %v", res, err)
+		}
+		if len(buckets) != 0 {
+			t.Errorf("expected 0 latency buckets for deleted project at resolution %s, got %d", res, len(buckets))
+		}
+	}
+
+	// Another project's rows survive untouched.
+	otherSamples, err := db.ListMetricSamples(7, domain.MetricResolutionMinute, time.Unix(0, 0), time.Now().Add(24*time.Hour))
+	if err != nil {
+		t.Fatalf("list other project samples: %v", err)
+	}
+	if len(otherSamples) != 1 || otherSamples[0].Count2xx != 4 {
+		t.Fatalf("expected other project's sample to survive, got %+v", otherSamples)
+	}
+	otherBuckets, err := db.ListMetricLatencyBuckets(7, domain.MetricResolutionMinute, time.Unix(0, 0), time.Now().Add(24*time.Hour))
+	if err != nil {
+		t.Fatalf("list other project latency buckets: %v", err)
+	}
+	if len(otherBuckets) != 1 || otherBuckets[0].Count != 4 {
+		t.Fatalf("expected other project's latency bucket to survive, got %+v", otherBuckets)
+	}
+
+	// The global scope (project_id 0) is never touched.
+	globalSamples, err := db.ListMetricSamples(domain.GlobalProjectID, domain.MetricResolutionMinute, time.Unix(0, 0), time.Now().Add(24*time.Hour))
+	if err != nil {
+		t.Fatalf("list global samples: %v", err)
+	}
+	if len(globalSamples) != 1 || globalSamples[0].Count2xx != 5 {
+		t.Fatalf("expected global scope sample to survive, got %+v", globalSamples)
+	}
+	globalBuckets, err := db.ListMetricLatencyBuckets(domain.GlobalProjectID, domain.MetricResolutionMinute, time.Unix(0, 0), time.Now().Add(24*time.Hour))
+	if err != nil {
+		t.Fatalf("list global latency buckets: %v", err)
+	}
+	if len(globalBuckets) != 1 || globalBuckets[0].Count != 5 {
+		t.Fatalf("expected global scope latency bucket to survive, got %+v", globalBuckets)
+	}
+}
+
 // TestAggregateMetricsMinuteToHour covers the minute->hour rollup
 // primitive: minute rows within an hour window sum into one hour row per
 // project, and re-running the aggregation (idempotency) produces the same

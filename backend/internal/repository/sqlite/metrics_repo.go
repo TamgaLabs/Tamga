@@ -184,6 +184,26 @@ func (db *DB) PruneMetrics(resolution domain.MetricResolution, cutoff time.Time)
 	return nil
 }
 
+// DeleteMetricsByProject deletes every metric_samples/metric_latency_buckets
+// row (every resolution) for a single concrete project_id. BUG-031: unlike
+// PruneMetrics (cutoff-based, across every project), this is
+// project-scoped, called from ProjectService.Delete's synchronous DB
+// cleanup so a deleted project's metric rows don't outlive it - day
+// resolution rows in particular have no other retention path and would
+// otherwise leak forever (day rows are exempt from PruneMetrics' rolling
+// cutoff sweep). Deliberately takes a concrete projectID rather than
+// accepting domain.GlobalProjectID's scope: callers must never be able to
+// wipe the global (project_id 0) metrics by passing 0 here.
+func (db *DB) DeleteMetricsByProject(projectID int64) error {
+	if _, err := db.Exec("DELETE FROM metric_samples WHERE project_id = ?", projectID); err != nil {
+		return fmt.Errorf("delete metric samples by project: %w", err)
+	}
+	if _, err := db.Exec("DELETE FROM metric_latency_buckets WHERE project_id = ?", projectID); err != nil {
+		return fmt.Errorf("delete metric latency buckets by project: %w", err)
+	}
+	return nil
+}
+
 // OldestBucketStart returns the earliest bucket_start still present at the
 // given resolution, across both metric_samples and metric_latency_buckets
 // (whichever table has the older row), or ok=false if there are no rows at

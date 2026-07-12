@@ -607,7 +607,12 @@ func (s *ProjectService) Get(ctx context.Context, id int64) (*domain.Project, er
 // relying on the schema's ON DELETE CASCADE - this codebase does not
 // enable PRAGMA foreign_keys (FEAT-025's finding), so cascade deletes
 // never actually fire; DeleteEnvVarsByProject below is the existing
-// precedent for the same reason.
+// precedent for the same reason. DeleteMetricsByProject (BUG-031) is the
+// same story again: metric_samples/metric_latency_buckets are written by
+// the C3 scraper keyed on project_id with no FK relationship to projects
+// at all, so without this explicit prune a deleted project's metric rows
+// become permanently orphaned (day-resolution rows in particular have no
+// other retention path that would ever clean them up).
 //
 // # Response-before-teardown ordering (BUG-030)
 //
@@ -661,6 +666,9 @@ func (s *ProjectService) Delete(ctx context.Context, id int64) error {
 	}
 	if err := s.db.DeleteEnvVarsByProject(id); err != nil {
 		slog.Warn("delete env vars error", "project_id", id, "error", err)
+	}
+	if err := s.db.DeleteMetricsByProject(id); err != nil {
+		slog.Warn("delete metrics error", "project_id", id, "error", err)
 	}
 
 	if err := s.db.DeleteProject(id); err != nil {
