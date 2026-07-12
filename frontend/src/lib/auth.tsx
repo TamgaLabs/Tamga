@@ -6,14 +6,14 @@ import { me } from "./api";
 type AuthState = {
   user: { user_id: number } | null;
   loading: boolean;
-  login: (token: string) => void;
+  login: (token: string) => Promise<void>;
   logout: () => void;
 };
 
 const AuthContext = createContext<AuthState>({
   user: null,
   loading: true,
-  login: () => {},
+  login: async () => {},
   logout: () => {},
 });
 
@@ -33,9 +33,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
-  const login = (token: string) => {
+  const login = async (token: string) => {
     localStorage.setItem("token", token);
-    me().then((u) => setUser(u));
+    try {
+      const u = await me();
+      setUser(u);
+    } catch (e) {
+      // A token that can't be validated is worse than none - clear it and
+      // let the caller surface the failure rather than leaving a
+      // half-authenticated state (token present, user null).
+      localStorage.removeItem("token");
+      throw e;
+    }
   };
 
   const logout = () => {

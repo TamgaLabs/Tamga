@@ -19,7 +19,11 @@ export default function LoginPage() {
     setError("");
     try {
       const res = await login(password);
-      setAuth(res.token);
+      // Await the auth context establishing the user (me()) BEFORE navigating,
+      // so the dashboard's `!authLoading && !user` guard doesn't bounce us
+      // back to /login during the window where the token is set but the user
+      // hasn't loaded yet.
+      await setAuth(res.token);
       router.replace("/dashboard");
     } catch {
       setError("Invalid password");
