@@ -43,3 +43,9 @@ data/
 
 # Next.js cache
 .next_old/
+
+# Claude Code local/personal settings (not shared)
+.claude/settings.local.json
+.claude/*.tmp.*
+.opencode/
+tasks/.obsidian/
