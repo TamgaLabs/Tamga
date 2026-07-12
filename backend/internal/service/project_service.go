@@ -456,6 +456,46 @@ func (s *ProjectService) resolveExposedUpstream(ctx context.Context, project *do
 	return "", false
 }
 
+// exposedServiceRunning is the rebind-only running-state check that
+// resolveExposedUpstream deliberately does NOT provide (BUG-033).
+// resolveExposedUpstream is shared with the boot-time ReconcileRoutes and
+// must keep returning ok=true for a briefly-stopped container's row so a
+// boot-time reconcile doesn't drop its route - making it running-aware
+// there would incorrectly skip re-adding the route for a container that
+// comes back up moments later. Update's rebind validation needs a
+// stricter answer than "does a row exist" though: find the target
+// service's persisted project_service_containers row, then inspect
+// Docker to confirm the container is actually RUNNING right now, not
+// merely present from some past deploy. When Docker is unavailable (nil
+// client - matches the unit tests, which never wire one up) this can't
+// inspect anything, so it falls back to "does a row exist", same as
+// resolveExposedUpstream, rather than failing every rebind that has no
+// way to be checked.
+func (s *ProjectService) exposedServiceRunning(ctx context.Context, project *domain.Project) bool {
+	if project.ExposedService == "" {
+		return false
+	}
+	containers, err := s.db.ListServiceContainers(project.ID)
+	if err != nil {
+		slog.Warn("list service containers for running-state check", "project_id", project.ID, "error", err)
+		return false
+	}
+	for _, c := range containers {
+		if c.ServiceName != project.ExposedService {
+			continue
+		}
+		if s.docker == nil {
+			return true
+		}
+		info, err := s.docker.InspectContainer(ctx, c.ContainerID)
+		if err != nil {
+			return false
+		}
+		return info.State != nil && info.State.Running
+	}
+	return false
+}
+
 // ReconcileRoutes re-writes every currently-running project's Traefik
 // route (and re-attaches Traefik to that project's network) on backend
 // startup - a defensive re-write against drift, not a Caddy-style
@@ -829,8 +869,12 @@ func (s *ProjectService) Update(ctx context.Context, id int64, req UpdateProject
 	if req.ExposedService != nil && *req.ExposedService != oldExposedService {
 		// Only validate if the project has a domain (routing needs a target)
 		if project.Domain != "" && project.ContainerID != "" {
-			// Project is running - check if the new service can be routed
-			if _, ok := s.resolveExposedUpstream(ctx, project); !ok {
+			// Project is running - check the new service has an actually
+			// RUNNING container to route to, not just a persisted row
+			// (BUG-033: resolveExposedUpstream alone can't tell "running"
+			// from "stopped but deployed" - see exposedServiceRunning's
+			// doc comment for why this is a separate check).
+			if !s.exposedServiceRunning(ctx, project) {
 				return nil, fmt.Errorf("exposed service %q has no running container to route to", *req.ExposedService)
 			}
 		}

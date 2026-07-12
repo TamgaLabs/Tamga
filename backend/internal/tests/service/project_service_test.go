@@ -8,8 +8,11 @@ import (
 	"testing"
 	"time"
 
+	"github.com/docker/docker/api/types/container"
+
 	"github.com/TamgaLabs/Tamga/backend/internal/config"
 	"github.com/TamgaLabs/Tamga/backend/internal/domain"
+	dockerclient "github.com/TamgaLabs/Tamga/backend/internal/repository/docker"
 	"github.com/TamgaLabs/Tamga/backend/internal/repository/sqlite"
 	"github.com/TamgaLabs/Tamga/backend/internal/repository/traefik"
 	"github.com/TamgaLabs/Tamga/backend/internal/service"
@@ -405,6 +408,163 @@ services:
 	}
 	if retrieved.ExposedService != "web" {
 		t.Errorf("expected exposed_service to remain 'web' after failed update, got %q", retrieved.ExposedService)
+	}
+}
+
+// newTestProjectServiceWithRealDocker builds a ProjectService wired to a
+// real Docker daemon (skipping the test if none is reachable - same
+// gating pattern as docker_client_test.go's newTestDockerClient) instead
+// of the nil docker client every other test in this file uses. BUG-033's
+// running-state check (exposedServiceRunning) only has anything to
+// inspect when a real docker client is present - with a nil client it
+// falls back to "does a row exist", which the nil-docker tests above
+// already cover.
+func newTestProjectServiceWithRealDocker(t *testing.T) (*service.ProjectService, *sqlite.DB, *dockerclient.Client) {
+	t.Helper()
+	docker, err := dockerclient.New()
+	if err != nil {
+		t.Skipf("docker client not available: %v", err)
+	}
+	if _, err := docker.DockerInfo(context.Background()); err != nil {
+		t.Skipf("docker daemon not reachable: %v", err)
+	}
+
+	dbPath := "/tmp/test_project_service_" + t.Name() + ".db"
+	os.Remove(dbPath)
+	t.Cleanup(func() {
+		os.Remove(dbPath)
+		os.Remove(dbPath + "-wal")
+		os.Remove(dbPath + "-shm")
+	})
+
+	db, err := sqlite.Open(dbPath)
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	t.Cleanup(func() { db.Close() })
+	if err := db.Migrate(); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+
+	cfg := config.Config{DataDir: t.TempDir()}
+	traefikClient := traefik.New(t.TempDir())
+	gitCred := service.NewGitCredentialService(db, "test-jwt-secret")
+
+	return service.NewProjectService(db, docker, traefikClient, cfg, gitCred), db, docker
+}
+
+// TestProjectServiceUpdateExposedServiceStoppedContainer is BUG-033: a
+// project_service_containers ROW existing for a service is not the same
+// as that service's container actually being RUNNING (resolveExposedUpstream
+// alone can't tell the two apart, by design - see exposedServiceRunning's
+// doc comment). Rebinding to a service whose container exists but is not
+// running must be rejected (the "no running container" error the handler
+// maps to 409) rather than silently moving the route to a container that
+// will 502 - and rebinding to an actually running service must still
+// work. Uses a real Docker daemon (skips if unavailable) since this is
+// exactly the distinction that requires an actual container inspection.
+func TestProjectServiceUpdateExposedServiceStoppedContainer(t *testing.T) {
+	svc, db, docker := newTestProjectServiceWithRealDocker(t)
+	ctx := context.Background()
+
+	const image = "redis:7-alpine"
+	if err := docker.PullImage(ctx, image); err != nil {
+		t.Fatalf("PullImage(%s): %v", image, err)
+	}
+
+	suffix := fmt.Sprintf("%d", time.Now().UnixNano())
+	netName := "tamga-test-rebind-net-" + suffix
+	if err := docker.EnsureNetwork(ctx, netName, true); err != nil {
+		t.Fatalf("EnsureNetwork: %v", err)
+	}
+	t.Cleanup(func() { docker.NetworkRemove(context.Background(), netName) })
+
+	// "web" - created AND started, stays running for the whole test.
+	webName := "tamga-test-rebind-web-" + suffix
+	webID, err := docker.CreateContainerOpts(ctx, webName, image, nil, netName, nil, container.Resources{}, false, nil)
+	if err != nil {
+		t.Fatalf("CreateContainerOpts(web): %v", err)
+	}
+	t.Cleanup(func() {
+		cleanupCtx := context.Background()
+		docker.StopContainer(cleanupCtx, webID)
+		docker.RemoveContainer(cleanupCtx, webID)
+	})
+	if err := docker.StartContainer(ctx, webID); err != nil {
+		t.Fatalf("StartContainer(web): %v", err)
+	}
+
+	// "web2" - created but never started, matching a `docker stop`ped (or
+	// never-started) service that still has its persisted
+	// project_service_containers row.
+	web2Name := "tamga-test-rebind-web2-" + suffix
+	web2ID, err := docker.CreateContainerOpts(ctx, web2Name, image, nil, netName, nil, container.Resources{}, false, nil)
+	if err != nil {
+		t.Fatalf("CreateContainerOpts(web2): %v", err)
+	}
+	t.Cleanup(func() {
+		cleanupCtx := context.Background()
+		docker.StopContainer(cleanupCtx, web2ID)
+		docker.RemoveContainer(cleanupCtx, web2ID)
+	})
+
+	project := &domain.Project{
+		Name:           "rebind-stopped-test",
+		SourceType:     domain.SourceTypeCompose,
+		Domain:         "rebind-stopped.example.com",
+		ExposedService: "web",
+		Status:         domain.ProjectStatusRunning,
+	}
+	if err := db.CreateProject(project); err != nil {
+		t.Fatalf("create project: %v", err)
+	}
+	// CreateProject always persists container_id='' regardless of the
+	// struct field (see its doc comment) - ContainerID has to be set via
+	// a follow-up UpdateProject, same as
+	// TestProjectServiceUpdateExposedServiceNoRunningContainer does.
+	project.ContainerID = webID
+	if err := db.UpdateProject(project); err != nil {
+		t.Fatalf("update project to set container ID: %v", err)
+	}
+
+	containers := []*domain.ServiceContainer{
+		{ProjectID: project.ID, ServiceName: "web", ContainerID: webID, ContainerName: webName, Status: "running"},
+		{ProjectID: project.ID, ServiceName: "web2", ContainerID: web2ID, ContainerName: web2Name, Status: "created"},
+	}
+	if err := db.ReplaceServiceContainers(project.ID, containers); err != nil {
+		t.Fatalf("replace service containers: %v", err)
+	}
+
+	// Rebinding to "web2" (not running) must be rejected, not accepted
+	// with the route silently moved to a down container.
+	target := "web2"
+	_, err = svc.Update(ctx, project.ID, service.UpdateProjectRequest{ExposedService: &target})
+	if err == nil {
+		t.Fatal("expected error rebinding to a service whose container is not running")
+	}
+	if !strings.Contains(err.Error(), "no running container") {
+		t.Errorf("expected error to mention 'no running container', got: %v", err)
+	}
+	retrieved, err := svc.Get(ctx, project.ID)
+	if err != nil {
+		t.Fatalf("get after rejected rebind: %v", err)
+	}
+	if retrieved.ExposedService != "web" {
+		t.Errorf("expected exposed_service to remain 'web' after rejected rebind, got %q", retrieved.ExposedService)
+	}
+
+	// Now start web2 and rebind again - the common case (rebind to an
+	// actually running service) must still succeed (no TEST-018
+	// regression).
+	if err := docker.StartContainer(ctx, web2ID); err != nil {
+		t.Fatalf("StartContainer(web2): %v", err)
+	}
+	updated, err := svc.Update(ctx, project.ID, service.UpdateProjectRequest{ExposedService: &target})
+	if err != nil {
+		t.Fatalf("expected rebind to a running service to succeed, got: %v", err)
+	}
+	if updated.ExposedService != "web2" {
+		t.Errorf("expected exposed_service 'web2' after successful rebind, got %q", updated.ExposedService)
 	}
 }
 
