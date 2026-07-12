@@ -3,6 +3,7 @@ import { Inter } from "next/font/google";
 import "./globals.css";
 import { AuthProvider } from "@/lib/auth";
 import { ThemeProvider } from "@/lib/theme";
+import { OfflinePreviewBanner } from "@/components/offline-preview-banner";
 
 const inter = Inter({ subsets: ["latin"] });
 
@@ -25,6 +26,7 @@ export default function RootLayout({
       <body className={`${inter.className} antialiased min-h-screen`}>
         <ThemeProvider>
           <AuthProvider>{children}</AuthProvider>
+          <OfflinePreviewBanner />
         </ThemeProvider>
       </body>
     </html>

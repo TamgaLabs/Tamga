@@ -5,6 +5,7 @@ import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import "@xterm/xterm/css/xterm.css";
 import { agentTerminalUrl, listAgentSessions } from "@/lib/api";
+import { isOfflineMode } from "@/lib/offline-api";
 
 // Wire protocol: the server streams raw shell output as WebSocket binary
 // frames. The browser sends JSON text frames for keystrokes and resize
@@ -52,6 +53,11 @@ export function AgentTerminal({
     term.loadAddon(fitAddon);
     term.open(el);
     fitAddon.fit();
+
+    if (isOfflineMode()) {
+      term.writeln("\x1b[90m[Offline preview: terminal connections are disabled]\x1b[0m");
+      return () => term.dispose();
+    }
 
     const ws = new WebSocket(agentTerminalUrl(projectId, sessionId));
     ws.binaryType = "arraybuffer";

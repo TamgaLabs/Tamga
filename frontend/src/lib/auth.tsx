@@ -2,6 +2,7 @@
 
 import { createContext, useContext, useState, useEffect, ReactNode } from "react";
 import { me } from "./api";
+import { isOfflineMode } from "./offline-api";
 
 type AuthState = {
   user: { user_id: number } | null;
@@ -22,6 +23,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    if (isOfflineMode()) {
+      setUser({ user_id: 1 });
+      setLoading(false);
+      return;
+    }
+
     const token = localStorage.getItem("token");
     if (token) {
       me()
@@ -34,6 +41,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const login = async (token: string) => {
+    if (isOfflineMode()) {
+      localStorage.setItem("token", token || "offline-preview-token");
+      setUser({ user_id: 1 });
+      return;
+    }
+
     localStorage.setItem("token", token);
     try {
       const u = await me();

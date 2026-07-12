@@ -4,7 +4,9 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
+    "dev:offline": "NEXT_PUBLIC_OFFLINE_MODE=true next dev",
     "build": "next build",
+    "build:offline": "NEXT_PUBLIC_OFFLINE_MODE=true next build",
     "start": "next start",
     "lint": "next lint"
   },

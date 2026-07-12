@@ -1,3 +1,5 @@
+import { isOfflineMode, offlineApi } from "./offline-api";
+
 const API_BASE = (() => {
   if (typeof window !== "undefined") {
     return "/api";
@@ -14,6 +16,10 @@ export async function api<T>(
   path: string,
   options: RequestInit = {}
 ): Promise<T> {
+  if (isOfflineMode()) {
+    return offlineApi(path, options) as T;
+  }
+
   const token = getToken();
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
@@ -239,6 +245,7 @@ export const writeFile = (projectId: number, path: string, content: string) =>
 // `sessionId` reattaches to an existing, still-live session instead (the
 // backend replays its scrollback before streaming live) - see FEAT-015.
 export function agentTerminalUrl(projectId: number, sessionId?: string): string {
+  if (isOfflineMode()) return "";
   const token = getToken() || "";
   const proto = typeof window !== "undefined" && window.location.protocol === "https:" ? "wss:" : "ws:";
   const host = typeof window !== "undefined" ? window.location.host : "";
