@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/go-chi/chi/v5"
 
@@ -130,14 +131,74 @@ func (h *ProjectHandler) Update(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "invalid id", http.StatusBadRequest)
 		return
 	}
-	var req service.UpdateProjectRequest
+
+	// Parse the request with exposed_service field
+	var req struct {
+		Name           *string            `json:"name,omitempty"`
+		SourceType     *domain.SourceType `json:"source_type,omitempty"`
+		RepoURL        *string            `json:"repo_url,omitempty"`
+		Domain         *string            `json:"domain,omitempty"`
+		Branch         *string            `json:"branch,omitempty"`
+		ExposedService *string            `json:"exposed_service,omitempty"`
+	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "invalid request body", http.StatusBadRequest)
 		return
 	}
-	project, err := h.svc.Update(r.Context(), id, req)
+
+	// If exposed_service is being changed, validate it against the project's
+	// compose_yaml services. This mirrors the validation in Create (FEAT-029).
+	if req.ExposedService != nil {
+		project, err := h.svc.Get(r.Context(), id)
+		if err != nil {
+			http.Error(w, "not found", http.StatusNotFound)
+			return
+		}
+		// Only validate for compose projects
+		if project.ComposeYAML != "" {
+			services, err := service.ParseComposeYAML(project.ComposeYAML)
+			if err != nil {
+				// ComposeYAML was already validated at create time, so this
+				// should not happen - but treat it as a server error if it does
+				http.Error(w, fmt.Sprintf("internal error parsing compose: %s", err), http.StatusInternalServerError)
+				return
+			}
+			found := false
+			for _, svc := range services {
+				if svc.Name == *req.ExposedService {
+					found = true
+					break
+				}
+			}
+			if !found {
+				http.Error(w, fmt.Sprintf("exposed_service %q is not a service defined in compose_yaml", *req.ExposedService), http.StatusBadRequest)
+				return
+			}
+		}
+	}
+
+	updateReq := service.UpdateProjectRequest{
+		Name:           req.Name,
+		SourceType:     req.SourceType,
+		RepoURL:        req.RepoURL,
+		Domain:         req.Domain,
+		Branch:         req.Branch,
+		ExposedService: req.ExposedService,
+	}
+
+	project, err := h.svc.Update(r.Context(), id, updateReq)
 	if err != nil {
-		http.Error(w, "not found", http.StatusNotFound)
+		// Map service errors to appropriate HTTP status codes
+		if strings.Contains(err.Error(), "find project") {
+			http.Error(w, "not found", http.StatusNotFound)
+			return
+		}
+		if strings.Contains(err.Error(), "no running container") {
+			http.Error(w, err.Error(), http.StatusConflict)
+			return
+		}
+		// Other errors (DB, etc.)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 	json.NewEncoder(w).Encode(project)

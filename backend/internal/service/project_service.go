@@ -427,7 +427,8 @@ func (s *ProjectService) Stop(ctx context.Context, id int64) error {
 // deployed). This is the one place that turns "which service is exposed"
 // into "what does Traefik dial" - both ReconcileRoutes and Update's
 // domain-change handling share it, so neither one re-derives (or
-// silently assumes) a container name on its own.
+// silently assumes) a container name on its own. If Docker is unavailable,
+// uses port 80 as a default (used by validation before route rewrite).
 func (s *ProjectService) resolveExposedUpstream(ctx context.Context, project *domain.Project) (upstream string, ok bool) {
 	if project.ExposedService == "" {
 		return "", false
@@ -439,8 +440,15 @@ func (s *ProjectService) resolveExposedUpstream(ctx context.Context, project *do
 	}
 	for _, c := range containers {
 		if c.ServiceName == project.ExposedService {
-			port, perr := s.docker.GetContainerPort(ctx, c.ContainerID)
-			if perr != nil {
+			var port string
+			if s.docker != nil {
+				var perr error
+				port, perr = s.docker.GetContainerPort(ctx, c.ContainerID)
+				if perr != nil {
+					port = "80"
+				}
+			} else {
+				// Docker unavailable - use default port (validation case)
 				port = "80"
 			}
 			return fmt.Sprintf("%s:%s", c.ContainerName, port), true
@@ -739,11 +747,12 @@ func (s *ProjectService) Restart(ctx context.Context, id int64) error {
 }
 
 type UpdateProjectRequest struct {
-	Name       *string            `json:"name,omitempty"`
-	SourceType *domain.SourceType `json:"source_type,omitempty"`
-	RepoURL    *string            `json:"repo_url,omitempty"`
-	Domain     *string            `json:"domain,omitempty"`
-	Branch     *string            `json:"branch,omitempty"`
+	Name           *string            `json:"name,omitempty"`
+	SourceType     *domain.SourceType `json:"source_type,omitempty"`
+	RepoURL        *string            `json:"repo_url,omitempty"`
+	Domain         *string            `json:"domain,omitempty"`
+	Branch         *string            `json:"branch,omitempty"`
+	ExposedService *string            `json:"exposed_service,omitempty"`
 }
 
 func (s *ProjectService) Update(ctx context.Context, id int64, req UpdateProjectRequest) (*domain.Project, error) {
@@ -752,6 +761,7 @@ func (s *ProjectService) Update(ctx context.Context, id int64, req UpdateProject
 		return nil, fmt.Errorf("find project: %w", err)
 	}
 	oldDomain := project.Domain
+	oldExposedService := project.ExposedService
 
 	if req.Name != nil {
 		project.Name = *req.Name
@@ -768,35 +778,56 @@ func (s *ProjectService) Update(ctx context.Context, id int64, req UpdateProject
 	if req.Branch != nil {
 		project.Branch = *req.Branch
 	}
+	if req.ExposedService != nil {
+		project.ExposedService = *req.ExposedService
+	}
+
+	// If exposed_service is being explicitly changed to a service that has no
+	// running container (when a domain exists), return an error and do NOT
+	// persist the change - keeps state consistent (no half-applied rebind,
+	// no broken/dangling route). Validation only applies to explicit rebind
+	// requests; a Name change on a project whose exposed_service happens to
+	// be down shouldn't fail (scope the error to the rebind case).
+	if req.ExposedService != nil && *req.ExposedService != oldExposedService {
+		// Only validate if the project has a domain (routing needs a target)
+		if project.Domain != "" && project.ContainerID != "" {
+			// Project is running - check if the new service can be routed
+			if _, ok := s.resolveExposedUpstream(ctx, project); !ok {
+				return nil, fmt.Errorf("exposed service %q has no running container to route to", *req.ExposedService)
+			}
+		}
+	}
+
 	if err := s.db.UpdateProject(project); err != nil {
 		return nil, fmt.Errorf("update project: %w", err)
 	}
 
-	// Move the Traefik route when a deployed project's domain actually
-	// changes - the gap TEST-010 found: the old Caddy-based code never
-	// touched routing here at all, leaving the old domain's route
-	// dangling and the new domain unrouted until a backend restart. Since
-	// each project's route file is keyed by project ID, not domain,
-	// "moving" the route is just overwriting project-<id>.yml with the
-	// new Host() rule - no separate remove-old step needed unless the
-	// domain was cleared entirely. The upstream is resolved via
-	// resolveExposedUpstream (project.ExposedService's persisted
-	// container row) rather than assuming a single "project-<id>"
-	// container - FEAT-028 gives a project N service containers named
-	// "project-<id>-<service>" instead.
-	if req.Domain != nil && project.Domain != oldDomain && project.ContainerID != "" && s.docker != nil {
+	// Move the Traefik route when a deployed project's domain or exposed
+	// service changes - extends the TEST-010 fix to also rewrite the route
+	// when rebinding to a different service (FEAT-040). Since each
+	// project's route file is keyed by project ID, not domain, "moving"
+	// the route is just overwriting project-<id>.yml with the new Host()
+	// rule and the new service's upstream - no separate remove-old step
+	// needed unless the domain was cleared entirely. The upstream is
+	// resolved via resolveExposedUpstream (project.ExposedService's
+	// persisted container row) rather than assuming a single
+	// "project-<id>" container - FEAT-028 gives a project N service
+	// containers named "project-<id>-<service>" instead.
+	domainChanged := project.Domain != oldDomain
+	exposedServiceChanged := project.ExposedService != oldExposedService
+	if (domainChanged || exposedServiceChanged) && project.ContainerID != "" && s.docker != nil {
 		if project.Domain == "" {
 			if err := s.traefik.RemoveRoute(project.ID); err != nil {
 				slog.Warn("traefik remove route on domain change", "project_id", project.ID, "error", err)
 			}
 		} else if upstream, ok := s.resolveExposedUpstream(ctx, project); ok {
 			if err := s.traefik.AddRoute(project.ID, project.Domain, upstream); err != nil {
-				slog.Warn("traefik update route on domain change", "project_id", project.ID, "domain", project.Domain, "error", err)
+				slog.Warn("traefik update route on domain or exposed service change", "project_id", project.ID, "domain", project.Domain, "exposed_service", project.ExposedService, "error", err)
 			} else {
 				s.connectTraefikToNetwork(ctx, projectNetworkName(project.ID))
 			}
 		} else {
-			slog.Warn("traefik update route on domain change: no resolvable exposed service", "project_id", project.ID, "domain", project.Domain)
+			slog.Warn("traefik update route on domain or exposed service change: no resolvable exposed service", "project_id", project.ID, "domain", project.Domain, "exposed_service", project.ExposedService)
 		}
 	}
 

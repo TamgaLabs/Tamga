@@ -304,3 +304,121 @@ func TestProjectHandler_Create_ComposeValidation(t *testing.T) {
 		}
 	})
 }
+
+// TestProjectHandler_Update_ExposedServiceValidation covers FEAT-040's
+// exposed_service validation on Update: rebinding to an invalid service
+// must be rejected inline with a 400, validating against the project's
+// compose_yaml services (if it's a compose project).
+func TestProjectHandler_Update_ExposedServiceValidation(t *testing.T) {
+	svc, db := newTestProjectService(t)
+	h := handler.NewProjectHandler(svc)
+	r := setupRouter(h)
+
+	// Create a compose project with multiple services
+	composeYAML := `services:
+  web:
+    image: nginx:latest
+    ports:
+      - "8080:80"
+  api:
+    image: python:3.9
+    ports:
+      - "8081:5000"
+`
+	proj := &domain.Project{
+		Name:           "multi-service-app",
+		SourceType:     domain.SourceTypeCompose,
+		Domain:         "app.example.com",
+		ComposeYAML:    composeYAML,
+		ExposedService: "web",
+		Status:         domain.ProjectStatusCreated,
+	}
+	if err := db.CreateProject(proj); err != nil {
+		t.Fatalf("failed to create project: %v", err)
+	}
+
+	idStr := strconv.FormatInt(proj.ID, 10)
+
+	t.Run("rebind to valid service in compose succeeds", func(t *testing.T) {
+		reqBody := `{"exposed_service":"api"}`
+		req := httptest.NewRequest("PUT", "/projects/"+idStr, bytes.NewBufferString(reqBody))
+		req.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+		r.ServeHTTP(w, req)
+
+		if w.Code != http.StatusOK {
+			t.Fatalf("expected status 200, got %d (body: %s)", w.Code, w.Body.String())
+		}
+
+		var p domain.Project
+		if err := json.NewDecoder(w.Body).Decode(&p); err != nil {
+			t.Fatalf("failed to decode response: %v", err)
+		}
+		if p.ExposedService != "api" {
+			t.Errorf("expected exposed_service to be updated to 'api', got %q", p.ExposedService)
+		}
+	})
+
+	t.Run("rebind to invalid service in compose rejected with 400", func(t *testing.T) {
+		reqBody := `{"exposed_service":"does-not-exist"}`
+		req := httptest.NewRequest("PUT", "/projects/"+idStr, bytes.NewBufferString(reqBody))
+		req.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+		r.ServeHTTP(w, req)
+
+		if w.Code != http.StatusBadRequest {
+			t.Fatalf("expected status 400, got %d (body: %s)", w.Code, w.Body.String())
+		}
+		if !strings.Contains(w.Body.String(), "does-not-exist") {
+			t.Errorf("expected error message to name the invalid exposed_service, got %q", w.Body.String())
+		}
+	})
+
+	t.Run("update other fields unaffected by exposed_service validation", func(t *testing.T) {
+		newName := "renamed-app"
+		reqBody := `{"name":"renamed-app"}`
+		req := httptest.NewRequest("PUT", "/projects/"+idStr, bytes.NewBufferString(reqBody))
+		req.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+		r.ServeHTTP(w, req)
+
+		if w.Code != http.StatusOK {
+			t.Fatalf("expected status 200, got %d (body: %s)", w.Code, w.Body.String())
+		}
+
+		var p domain.Project
+		if err := json.NewDecoder(w.Body).Decode(&p); err != nil {
+			t.Fatalf("failed to decode response: %v", err)
+		}
+		if p.Name != newName {
+			t.Errorf("expected name to be updated to %q, got %q", newName, p.Name)
+		}
+	})
+
+	t.Run("git-based project allows any exposed_service (no validation for non-compose)", func(t *testing.T) {
+		// Create a git-based project (no compose_yaml)
+		gitProj := &domain.Project{
+			Name:       "git-based-app",
+			SourceType: domain.SourceTypeRemote,
+			RepoURL:    "https://example.invalid/org/repo.git",
+			Domain:     "git.example.com",
+			Status:     domain.ProjectStatusCreated,
+		}
+		if err := db.CreateProject(gitProj); err != nil {
+			t.Fatalf("failed to create git project: %v", err)
+		}
+
+		gitIDStr := strconv.FormatInt(gitProj.ID, 10)
+
+		// Update with an arbitrary exposed_service should succeed (no compose to validate against)
+		reqBody := `{"exposed_service":"any-service"}`
+		req := httptest.NewRequest("PUT", "/projects/"+gitIDStr, bytes.NewBufferString(reqBody))
+		req.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+		r.ServeHTTP(w, req)
+
+		if w.Code != http.StatusOK {
+			t.Fatalf("expected status 200 for git-based project, got %d (body: %s)", w.Code, w.Body.String())
+		}
+	})
+}

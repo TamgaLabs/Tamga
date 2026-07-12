@@ -164,6 +164,7 @@ project secondary sidebar (a user's own architecture/traffic).
 - BUG-030 — Compose project DELETE response not delivered to client (server-side succeeds) — pending (follow-up)
 - BUG-031 — Project delete orphans its metric_samples/latency rows (phantom data, day-rows leak) — pending (follow-up)
 - BUG-032 — Compose-declared networks create a redundant 2nd project network (surfaced by C5 map) — pending (follow-up)
+- BUG-033 — Rebind 409 check validates row-existence not running-state (stopped-container rebind accepted) — pending (follow-up)
 - FEAT-030 — [C3] Metrics time-series schema + storage repo — done✓ (additive-upsert rework)
 - FEAT-031 — [C3] Traefik metrics scraper (Prometheus → samples) — done✓
 - FEAT-032 — [C3] Metrics rollup/retention + query API (panels) — done✓
@@ -177,6 +178,9 @@ project secondary sidebar (a user's own architecture/traffic).
 - FEAT-038 — [C5] Global Infrastructure page + per-project Map tab (wire graph to topology, auto-refresh) — done✓
 - FEAT-039 — [C5] Live traffic overlay (topology ↔ C3 metrics: edge volume, node error-rate, hover mini-stats) — done✓
 - TEST-017 — [C5] Integration: map shows real containers/edges, overlay reflects traffic — done✓ (PASS; surfaced BUG-032 redundant-network C2 defect; map correct)
+- FEAT-040 — [C6] Domain-binding backend (change exposed service + move Traefik route) — done✓
+- FEAT-041 — [C6] Domain-binding UI (pick exposed service + set/clear domain) — done✓
+- TEST-018 — [C6] Integration: rebind domain to a different service, route actually moves — done✓ (PASS; rebind proven live; 409-stopped-container gap → BUG-033)
 - FEAT-023 — [C1] Traefik service in docker-compose + static config — done
 - FEAT-024 — [C1] Backend Traefik file-provider routing (replaces caddy) — done
 - TEST-013 — [C1] Integration: Traefik migration end-to-end (closes BUG-028) — done
