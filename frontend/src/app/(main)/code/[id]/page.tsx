@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import {
   getFileTree,
@@ -12,6 +12,7 @@ import {
   type AgentSession,
 } from "@/lib/api";
 import { AgentTerminal } from "@/components/agent-terminal";
+import { mergeTerminalTabs, removeTerminalTab, type TerminalTab } from "@/lib/terminal-tabs";
 import { useAuth } from "@/lib/auth";
 import { useTheme } from "@/lib/theme";
 import { Button } from "@/components/ui/button";
@@ -40,12 +41,6 @@ import dynamic from "next/dynamic";
 
 const MAX_TERMINAL_SESSIONS = 10;
 
-// A tab either mirrors a real server-side session (id = the session's real
-// id) or is a "pending" tab for a session that's still being created (id =
-// a locally generated placeholder, swapped for the real id once
-// AgentTerminal resolves it - see agent-terminal.tsx).
-type TerminalTab = { id: string; pending: boolean };
-
 const MonacoEditor = dynamic(() => import("@monaco-editor/react"), { ssr: false });
 
 export default function CodeIDEPage() {
@@ -71,6 +66,9 @@ export default function CodeIDEPage() {
   // re-fetched on every mode/tab switch - see Proposed Solution.
   const [tabs, setTabs] = useState<TerminalTab[]>([]);
   const [activeTabId, setActiveTabId] = useState<string | null>(null);
+  // The entry-time session request can resolve after a successful DELETE.
+  // Keep those ids out of that stale snapshot so it cannot resurrect a tab.
+  const terminatedSessionIds = useRef(new Set<string>());
   const [terminalError, setTerminalError] = useState<string | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [tabPendingClose, setTabPendingClose] = useState<string | null>(null);
@@ -87,19 +85,12 @@ export default function CodeIDEPage() {
         // Merge server sessions with any existing tabs (e.g., pending tabs created
         // while this fetch was in flight). Preserve pending tabs, add server sessions
         // that aren't already tracked.
-        setTabs((prev) => {
-          const pendingTabs = prev.filter((t) => t.pending);
-          const existingRealIds = new Set(prev.filter((t) => !t.pending).map((t) => t.id));
-          const newRealTabs = sorted
-            .filter((s) => !existingRealIds.has(s.id))
-            .map((s) => ({ id: s.id, pending: false }));
-          return [...pendingTabs, ...newRealTabs];
-        });
+        setTabs((prev) => mergeTerminalTabs(prev, sorted, terminatedSessionIds.current));
         // Only set activeTabId if nothing is selected yet (user hasn't created or
         // switched to a tab).
         setActiveTabId((cur) => {
           if (cur !== null) return cur;
-          return sorted[0]?.id || null;
+          return sorted.find((session) => !terminatedSessionIds.current.has(session.id))?.id || null;
         });
       })
       .catch((e) => setTerminalError(e instanceof Error ? e.message : "Failed to load terminal sessions"));
@@ -156,10 +147,13 @@ export default function CodeIDEPage() {
       setTerminalError(e instanceof Error ? e.message : "Failed to terminate session");
       return;
     }
+    terminatedSessionIds.current.add(id);
     setTabs((prev) => {
-      const next = prev.filter((t) => t.id !== id);
-      setActiveTabId((cur) => (cur === id ? (next[0]?.id ?? null) : cur));
-      return next;
+      // Use the active state's functional updater: the user may have selected
+      // another tab while DELETE was in flight, and that newer selection must
+      // not be overwritten by the async handler's old closure.
+      setActiveTabId((current) => removeTerminalTab(prev, current, id).activeTabId);
+      return removeTerminalTab(prev, null, id).tabs;
     });
   };
 

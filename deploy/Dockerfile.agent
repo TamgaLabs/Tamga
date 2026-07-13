@@ -2,7 +2,13 @@ FROM node:22-alpine
 # bash (not just Alpine's default ash/sh) is what terminal sessions run -
 # see FEAT-015: sessions need `exec /bin/bash` and $$-based PID tracking for
 # per-session terminate to work.
-RUN apk add --no-cache git openssh-client curl bash
+# git-bash-completion is Alpine's separate package for git's own completion
+# script (bash-completion only provides the completion framework, not
+# per-command scripts); listed explicitly even though apk's install_if would
+# pull it in anyway once both git and bash-completion are present, so the
+# dependency is visible here rather than implicit.
+RUN apk add --no-cache git openssh-client curl bash bash-completion git-bash-completion
+COPY deploy/tamga-terminal.bashrc /root/.bashrc
 RUN npm i -g opencode-ai@latest @anthropic-ai/claude-code@latest @openai/codex@latest @google/gemini-cli@latest
 WORKDIR /workspace
 # No in-container server process anymore: the backend execs a shell directly
