@@ -7,6 +7,8 @@ import { getProject, type Project } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { ProjectContextProvider } from "./project-context";
 import { ProjectSwitcher } from "./project-switcher";
+import { Badge } from "@/components/ui/badge";
+import { Skeleton } from "@/components/ui/skeleton";
 
 export default function ProjectDetailLayout({ children }: { children: React.ReactNode }) {
   const params = useParams();
@@ -34,16 +36,20 @@ export default function ProjectDetailLayout({ children }: { children: React.Reac
 
   if (authLoading || !user || loading) {
     return (
-      <div className="min-h-screen p-6 max-w-5xl mx-auto">
-        <p className="text-muted-foreground">Loading...</p>
+      <div className="mx-auto w-full max-w-7xl space-y-6 p-4 sm:p-6">
+        <Skeleton className="h-10 w-56" />
+        <div className="grid gap-4 md:grid-cols-[14rem_1fr]">
+          <Skeleton className="h-72" />
+          <Skeleton className="h-72" />
+        </div>
       </div>
     );
   }
 
   if (!project) {
     return (
-      <div className="min-h-screen p-6 max-w-5xl mx-auto">
-        <p className="text-muted-foreground">Project not found.</p>
+      <div className="mx-auto flex min-h-72 max-w-5xl items-center justify-center p-6">
+        <p role="alert" className="text-sm text-muted-foreground">Project not found or no longer accessible.</p>
       </div>
     );
   }
@@ -59,17 +65,22 @@ export default function ProjectDetailLayout({ children }: { children: React.Reac
   ];
 
   return (
-    <div className="flex min-h-screen">
-      <aside className="w-56 shrink-0 border-r border-border p-4 space-y-4">
+    <div className="flex min-h-full flex-col bg-muted/20 md:min-h-[calc(100svh-3.5rem)] md:flex-row">
+      <aside className="w-full shrink-0 space-y-4 border-b border-border bg-background p-4 md:w-60 md:border-r md:border-b-0">
         <ProjectSwitcher current={project} />
-        <nav className="space-y-1">
+        <div className="flex items-center justify-between px-2">
+          <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">Workspace</p>
+          <Badge variant={project.status === "running" ? "success" : "secondary"}>{project.status}</Badge>
+        </div>
+        <nav aria-label="Project workspace" className="grid grid-cols-2 gap-1 md:grid-cols-1">
           {sections.map((s) => {
             const active = pathname === s.href;
             return (
               <Link
                 key={s.href}
                 href={s.href}
-                className={`block px-3 py-2 rounded-md text-sm transition-colors ${
+                aria-current={active ? "page" : undefined}
+                className={`rounded-md px-3 py-2 text-sm font-medium transition-colors ${
                   active
                     ? "bg-muted text-foreground"
                     : "text-muted-foreground hover:text-foreground hover:bg-muted"
@@ -81,13 +92,13 @@ export default function ProjectDetailLayout({ children }: { children: React.Reac
           })}
           <Link
             href={`/code/${project.id}`}
-            className="block px-3 py-2 rounded-md text-sm transition-colors text-muted-foreground hover:text-foreground hover:bg-muted"
+            className="rounded-md px-3 py-2 text-sm font-medium transition-colors text-muted-foreground hover:bg-muted hover:text-foreground"
           >
             Code
           </Link>
         </nav>
       </aside>
-      <div className="flex-1">
+      <div className="min-w-0 flex-1">
         <ProjectContextProvider value={{ project, refetch: fetchProject }}>
           {/* keyed on project.id so switching projects via the switcher
               resets sub-route local state (e.g. Settings form fields)

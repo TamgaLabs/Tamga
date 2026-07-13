@@ -2,6 +2,7 @@
 
 import React from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
 import { Network } from "lucide-react";
 import type { BandwidthPoint, MetricResolution } from "@/lib/metrics-types";
 import { formatAxisTime, getMaxValue, clamp, formatBytes, parseTimestamp } from "./utils";
@@ -72,15 +73,16 @@ export function BandwidthPanel({
 
   return (
     <Card className="w-full">
-      <CardHeader>
+      <CardHeader className="p-4 sm:p-6">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
             <Network className="h-4 w-4 text-green-500" />
             <CardTitle>Bandwidth</CardTitle>
           </div>
+          {isLoading && !isEmpty && <Badge variant="secondary">Refreshing</Badge>}
         </div>
       </CardHeader>
-      <CardContent className="space-y-4">
+      <CardContent className="space-y-4 p-4 pt-0 sm:p-6 sm:pt-0">
         {isEmpty ? (
           <div className="flex h-48 items-center justify-center text-sm text-muted-foreground">
             No data available
@@ -216,11 +218,6 @@ export function BandwidthPanel({
               </div>
             </div>
           </>
-        )}
-        {isLoading && (
-          <div className="flex h-48 items-center justify-center text-sm text-muted-foreground">
-            Loading...
-          </div>
         )}
       </CardContent>
     </Card>

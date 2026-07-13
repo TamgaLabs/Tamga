@@ -16,6 +16,19 @@ import { mergeTerminalTabs, removeTerminalTab, type TerminalTab } from "@/lib/te
 import { useAuth } from "@/lib/auth";
 import { useTheme } from "@/lib/theme";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
+import {
+  Tabs,
+  TabsList,
+  TabsTrigger,
+} from "@/components/ui/tabs";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -27,6 +40,14 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import {
+  Empty,
+  EmptyContent,
+  EmptyDescription,
+  EmptyHeader,
+  EmptyMedia,
+  EmptyTitle,
+} from "@/components/ui/empty";
+import {
   SquareTerminal,
   Code2,
   PanelLeftOpen,
@@ -36,7 +57,10 @@ import {
   FolderOpenIcon,
   Plus,
   X,
+  Save,
+  Lock,
 } from "lucide-react";
+import { toast } from "sonner";
 import dynamic from "next/dynamic";
 
 const MAX_TERMINAL_SESSIONS = 10;
@@ -61,17 +85,14 @@ export default function CodeIDEPage() {
   const [expandedDirs, setExpandedDirs] = useState<Set<string>>(new Set());
   const [showFileTree, setShowFileTree] = useState(true);
 
-  // Terminal tabs: fetched once on entry (mirrors the server's session
-  // list from then on via local updates on create/terminate), not
-  // re-fetched on every mode/tab switch - see Proposed Solution.
   const [tabs, setTabs] = useState<TerminalTab[]>([]);
   const [activeTabId, setActiveTabId] = useState<string | null>(null);
-  // The entry-time session request can resolve after a successful DELETE.
-  // Keep those ids out of that stale snapshot so it cannot resurrect a tab.
   const terminatedSessionIds = useRef(new Set<string>());
   const [terminalError, setTerminalError] = useState<string | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [tabPendingClose, setTabPendingClose] = useState<string | null>(null);
+
+  const isReadOnly = !isProject;
 
   useEffect(() => {
     if (!authLoading && !user) router.replace("/login");
@@ -82,19 +103,13 @@ export default function CodeIDEPage() {
     listAgentSessions(projectId)
       .then((sessions: AgentSession[]) => {
         const sorted = [...sessions].sort((a, b) => a.created_at.localeCompare(b.created_at));
-        // Merge server sessions with any existing tabs (e.g., pending tabs created
-        // while this fetch was in flight). Preserve pending tabs, add server sessions
-        // that aren't already tracked.
         setTabs((prev) => mergeTerminalTabs(prev, sorted, terminatedSessionIds.current));
-        // Only set activeTabId if nothing is selected yet (user hasn't created or
-        // switched to a tab).
         setActiveTabId((cur) => {
           if (cur !== null) return cur;
           return sorted.find((session) => !terminatedSessionIds.current.has(session.id))?.id || null;
         });
       })
       .catch((e) => setTerminalError(e instanceof Error ? e.message : "Failed to load terminal sessions"));
-    // Fetch once on entry only - tabs are then kept in sync locally.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [projectId, user, isProject]);
 
@@ -116,17 +131,12 @@ export default function CodeIDEPage() {
 
   const handleSessionResolved = (pendingId: string, realId: string) => {
     setTabs((prev) => {
-      // Dedup: if realId already exists as a real tab (e.g., from the seed
-      // merge during concurrent WS creation), drop the pending tab instead of
-      // renaming it into a duplicate.
       const realIdAlreadyExists = prev.some((t) => !t.pending && t.id === realId);
       if (realIdAlreadyExists) {
         return prev.filter((t) => t.id !== pendingId);
       }
-      // Normal case: rename pending tab to real id
       return prev.map((t) => (t.id === pendingId ? { id: realId, pending: false } : t));
     });
-    // Switch activeTabId if the pending tab was active (points to realId either way)
     setActiveTabId((prev) => (prev === pendingId ? realId : prev));
   };
 
@@ -149,9 +159,6 @@ export default function CodeIDEPage() {
     }
     terminatedSessionIds.current.add(id);
     setTabs((prev) => {
-      // Use the active state's functional updater: the user may have selected
-      // another tab while DELETE was in flight, and that newer selection must
-      // not be overwritten by the async handler's old closure.
       setActiveTabId((current) => removeTerminalTab(prev, current, id).activeTabId);
       return removeTerminalTab(prev, null, id).tabs;
     });
@@ -160,6 +167,7 @@ export default function CodeIDEPage() {
   const activeTab = tabs.find((t) => t.id === activeTabId) || null;
 
   const openFile = async (path: string) => {
+    if (isReadOnly) return;
     if (dirty && !confirm("Discard unsaved changes?")) return;
     try {
       const res = await readFile(projectId, path);
@@ -173,13 +181,17 @@ export default function CodeIDEPage() {
   };
 
   const handleSave = async () => {
-    if (!currentPath) return;
+    if (!currentPath || isReadOnly) return;
+    const toastId = toast.loading("Saving…");
     try {
       await writeFile(projectId, currentPath, content);
       setOriginalContent(content);
       setDirty(false);
+      toast.success("File saved.", { id: toastId });
     } catch (e) {
-      setSaveError(e instanceof Error ? e.message : "Failed to save file");
+      const message = e instanceof Error ? e.message : "Failed to save file";
+      setSaveError(message);
+      toast.error(message, { id: toastId });
     }
   };
 
@@ -218,18 +230,22 @@ export default function CodeIDEPage() {
         const entry = obj[key]._entry;
         const hasChildren = entry?.type === "dir";
         const isExpanded = expandedDirs.has(entry?.path);
+        const isActive = currentPath === entry?.path;
 
         return (
           <div key={entry?.path || key}>
-            <div
-              className={`flex items-center gap-1 px-2 py-0.5 text-xs cursor-pointer rounded hover:bg-muted ${
-                currentPath === entry?.path ? "bg-muted text-accent" : "text-muted-foreground"
-              }`}
-              style={{ paddingLeft: `${12 + depth * 12}px` }}
+            <button
+              type="button"
+              className={`flex w-full items-center gap-1.5 px-2 py-0.5 text-xs text-left transition-colors rounded hover:bg-muted ${
+                isActive ? "bg-muted text-accent" : "text-muted-foreground"
+              } ${isReadOnly && !hasChildren ? "opacity-60" : ""}`}
+              style={{ paddingLeft: `${12 + depth * 14}px` }}
               onClick={() => {
                 if (hasChildren) toggleDir(entry.path);
                 else if (entry) openFile(entry.path);
               }}
+              tabIndex={0}
+              aria-label={hasChildren ? (isExpanded ? `Collapse ${key}` : `Expand ${key}`) : `Open ${key}`}
             >
               <span className="w-4 flex items-center justify-center shrink-0">
                 {hasChildren ? (
@@ -243,7 +259,7 @@ export default function CodeIDEPage() {
                 )}
               </span>
               <span className="truncate">{key}</span>
-            </div>
+            </button>
             {hasChildren && isExpanded && render(obj[key], depth + 1)}
           </div>
         );
@@ -271,215 +287,271 @@ export default function CodeIDEPage() {
   if (authLoading || !user) return null;
 
   return (
-    <div className="h-full flex flex-col">
-      <div className="flex items-center justify-between px-4 py-2 bg-card border-b border-border">
-        <div className="flex items-center gap-2">
-          {isProject && (
-            <Button
-              variant={mode === "terminal" ? "default" : "ghost"}
-              size="sm"
-              onClick={() => setMode("terminal")}
-            >
-              <SquareTerminal className="h-4 w-4 mr-1" />
-              Terminal
-            </Button>
-          )}
-          <Button
-            variant={mode === "code" ? "default" : "ghost"}
-            size="sm"
-            onClick={() => { setMode("code"); getFileTree(projectId).then(setFiles).catch(console.error); }}
-          >
-            <Code2 className="h-4 w-4 mr-1" />
-            Code
-          </Button>
-        </div>
-      </div>
+    <TooltipProvider delayDuration={300}>
+      <div className="h-full flex flex-col">
+        {/* Top bar: mode switcher + project context */}
+        <div className="flex items-center justify-between px-4 py-2 bg-card border-b border-border">
+          <Tabs value={mode} onValueChange={(v) => {
+            const next = v as "terminal" | "code";
+            setMode(next);
+            if (next === "code") {
+              getFileTree(projectId).then(setFiles).catch(console.error);
+            }
+          }}>
+            <TabsList className="h-8">
+              {isProject && (
+                <TabsTrigger value="terminal" className="gap-1.5 text-xs h-6 px-3">
+                  <SquareTerminal className="h-3.5 w-3.5" aria-hidden="true" />
+                  Terminal
+                </TabsTrigger>
+              )}
+              <TabsTrigger value="code" className="gap-1.5 text-xs h-6 px-3">
+                <Code2 className="h-3.5 w-3.5" aria-hidden="true" />
+                Code
+              </TabsTrigger>
+            </TabsList>
+          </Tabs>
 
-      {mode === "terminal" ? (
-        <div className="flex-1 min-h-0 flex flex-col">
-          <div className="flex items-center gap-1 px-2 py-1 bg-card border-b border-border overflow-x-auto">
-            {tabs.map((tab, i) => (
-              <div
-                key={tab.id}
-                className={`group flex items-center gap-1 pl-3 pr-1 py-1 rounded text-xs cursor-pointer shrink-0 ${
-                  activeTabId === tab.id
-                    ? "bg-muted text-foreground"
-                    : "text-muted-foreground hover:bg-muted/50"
-                }`}
-                onClick={() => setActiveTabId(tab.id)}
-              >
-                <SquareTerminal className="h-3 w-3" />
-                <span>{tab.pending ? "connecting…" : `Session ${i + 1}`}</span>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="h-4 w-4 opacity-60 hover:opacity-100"
-                  disabled={tab.pending}
-                  title="Terminate session"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setTabPendingClose(tab.id);
+          {isReadOnly && (
+            <Badge variant="warning" className="gap-1 text-xs">
+              <Lock className="h-3 w-3" aria-hidden="true" />
+              Read-only
+            </Badge>
+          )}
+        </div>
+
+        {mode === "terminal" ? (
+          <div className="flex-1 min-h-0 flex flex-col">
+            {/* Terminal tab strip */}
+            <div className="flex items-center gap-1 px-2 py-1 bg-card border-b border-border overflow-x-auto">
+              {tabs.map((tab, i) => (
+                <div
+                  key={tab.id}
+                  className={`group flex items-center gap-1.5 pl-3 pr-1 py-1 rounded text-xs cursor-pointer shrink-0 transition-colors ${
+                    activeTabId === tab.id
+                      ? "bg-muted text-foreground"
+                      : "text-muted-foreground hover:bg-muted/50"
+                  }`}
+                  onClick={() => setActiveTabId(tab.id)}
+                  role="tab"
+                  aria-selected={activeTabId === tab.id}
+                  tabIndex={0}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" || e.key === " ") {
+                      e.preventDefault();
+                      setActiveTabId(tab.id);
+                    }
                   }}
                 >
+                  <SquareTerminal className="h-3 w-3" aria-hidden="true" />
+                  <span>{tab.pending ? "Connecting…" : `Session ${i + 1}`}</span>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-4 w-4 opacity-0 group-hover:opacity-60 hover:!opacity-100"
+                        disabled={tab.pending}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setTabPendingClose(tab.id);
+                        }}
+                      >
+                        <X className="h-3 w-3" />
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent side="bottom">Terminate session</TooltipContent>
+                  </Tooltip>
+                </div>
+              ))}
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-6 w-6 shrink-0"
+                    onClick={handleNewTab}
+                  >
+                    <Plus className="h-4 w-4" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent side="bottom">New terminal session</TooltipContent>
+              </Tooltip>
+            </div>
+
+            {terminalError && (
+              <div role="alert" className="px-3 py-1.5 text-xs text-destructive bg-destructive/10 border-b border-border flex items-center justify-between">
+                <span>{terminalError}</span>
+                <Button variant="ghost" size="icon" className="h-4 w-4" onClick={() => setTerminalError(null)}>
                   <X className="h-3 w-3" />
                 </Button>
               </div>
-            ))}
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-6 w-6 shrink-0"
-              title="New terminal session"
-              onClick={handleNewTab}
-            >
-              <Plus className="h-4 w-4" />
-            </Button>
-          </div>
+            )}
 
-          {terminalError && (
-            <div className="px-3 py-1.5 text-xs text-destructive bg-destructive/10 border-b border-border flex items-center justify-between">
-              <span>{terminalError}</span>
-              <Button variant="ghost" size="icon" className="h-4 w-4" onClick={() => setTerminalError(null)}>
-                <X className="h-3 w-3" />
-              </Button>
+            <div className="flex-1 min-h-0">
+              {activeTab ? (
+                <AgentTerminal
+                  key={activeTab.id}
+                  projectId={projectId}
+                  sessionId={activeTab.pending ? undefined : activeTab.id}
+                  knownSessionIds={tabs.filter((t) => !t.pending).map((t) => t.id)}
+                  onSessionResolved={(realId) => handleSessionResolved(activeTab.id, realId)}
+                  onConnectFailed={() => handleConnectFailed(activeTab.id)}
+                />
+              ) : (
+                <Empty className="min-h-0 flex-1 border-dashed rounded-none">
+                  <EmptyHeader>
+                    <EmptyMedia><SquareTerminal className="size-5" aria-hidden="true" /></EmptyMedia>
+                    <EmptyTitle>No terminal sessions</EmptyTitle>
+                    <EmptyDescription>Create a session to open a shell in this project&apos;s sandbox.</EmptyDescription>
+                  </EmptyHeader>
+                  <EmptyContent>
+                    <Button size="sm" onClick={handleNewTab}>
+                      <Plus className="h-4 w-4 mr-1" aria-hidden="true" />
+                      New session
+                    </Button>
+                  </EmptyContent>
+                </Empty>
+              )}
             </div>
-          )}
 
-          <div className="flex-1 min-h-0">
-            {activeTab ? (
-              <AgentTerminal
-                key={activeTab.id}
-                projectId={projectId}
-                sessionId={activeTab.pending ? undefined : activeTab.id}
-                knownSessionIds={tabs.filter((t) => !t.pending).map((t) => t.id)}
-                onSessionResolved={(realId) => handleSessionResolved(activeTab.id, realId)}
-                onConnectFailed={() => handleConnectFailed(activeTab.id)}
-              />
-            ) : (
-              <div className="h-full w-full flex items-center justify-center text-muted-foreground text-sm">
-                <Button variant="outline" size="sm" onClick={handleNewTab}>
-                  <Plus className="h-4 w-4 mr-1" />
-                  New terminal session
-                </Button>
+            <AlertDialog open={tabPendingClose !== null} onOpenChange={(open) => !open && setTabPendingClose(null)}>
+              <AlertDialogContent>
+                <AlertDialogHeader>
+                  <AlertDialogTitle>Terminate this session?</AlertDialogTitle>
+                  <AlertDialogDescription>
+                    This ends the shell process for real &mdash; it isn&apos;t just closing the tab. If it&apos;s the
+                    project&apos;s last session, the sandbox container is stopped too.
+                  </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                  <AlertDialogCancel>Cancel</AlertDialogCancel>
+                  <AlertDialogAction onClick={() => tabPendingClose && handleTerminateTab(tabPendingClose)}>
+                    Terminate
+                  </AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
+          </div>
+        ) : (
+          <div className="flex flex-1 min-h-0">
+            {/* File tree panel */}
+            {!showFileTree && (
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={() => setShowFileTree(true)}
+                    className="w-8 h-full rounded-none border-r border-border flex-shrink-0"
+                  >
+                    <PanelLeftOpen className="h-4 w-4" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent side="right">Show file tree</TooltipContent>
+              </Tooltip>
+            )}
+
+            {showFileTree && (
+              <div className="w-64 bg-card border-r border-border flex flex-col flex-shrink-0">
+                <div className="flex items-center justify-between px-3 py-2 border-b border-border">
+                  <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Files</span>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-5 w-5"
+                    onClick={() => setShowFileTree(false)}
+                    title="Hide file tree"
+                  >
+                    <PanelLeftClose className="h-3 w-3" />
+                  </Button>
+                </div>
+                <ScrollArea className="flex-1">
+                  <div className="py-1">{buildTree(files)}</div>
+                </ScrollArea>
               </div>
             )}
-          </div>
 
-          <AlertDialog open={tabPendingClose !== null} onOpenChange={(open) => !open && setTabPendingClose(null)}>
-            <AlertDialogContent>
-              <AlertDialogHeader>
-                <AlertDialogTitle>Terminate this session?</AlertDialogTitle>
-                <AlertDialogDescription>
-                  This ends the shell process for real - it isn&apos;t just closing the tab. If it&apos;s the
-                  project&apos;s last session, the sandbox container is stopped too.
-                </AlertDialogDescription>
-              </AlertDialogHeader>
-              <AlertDialogFooter>
-                <AlertDialogCancel>Cancel</AlertDialogCancel>
-                <AlertDialogAction onClick={() => tabPendingClose && handleTerminateTab(tabPendingClose)}>
-                  Terminate
-                </AlertDialogAction>
-              </AlertDialogFooter>
-            </AlertDialogContent>
-          </AlertDialog>
-        </div>
-      ) : (
-        <div className="flex flex-1 min-h-0">
-          {!showFileTree && (
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={() => setShowFileTree(true)}
-              className="w-6 h-full rounded-none border-r border-border flex-shrink-0"
-              title="Show file tree"
-            >
-              <PanelLeftOpen className="h-4 w-4" />
-            </Button>
-          )}
+            {/* Editor area */}
+            <div className="flex-1 flex flex-col min-w-0">
+              {currentPath ? (
+                <>
+                  <div className="flex items-center justify-between px-4 py-2 border-b border-border bg-card gap-2">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <span className="text-sm text-card-foreground font-mono truncate">{currentPath}</span>
+                      {dirty && <Badge variant="warning" className="shrink-0 text-[10px] px-1.5 py-0">Unsaved</Badge>}
+                    </div>
+                    <div className="flex items-center gap-1.5 shrink-0">
+                      {!isReadOnly && dirty && (
+                        <Button size="sm" variant="default" onClick={handleSave} className="gap-1.5">
+                          <Save className="h-3.5 w-3.5" aria-hidden="true" />
+                          Save
+                        </Button>
+                      )}
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        onClick={() => { setCurrentPath(""); setContent(""); setOriginalContent(""); setDirty(false); }}
+                      >
+                        Close
+                      </Button>
+                    </div>
+                  </div>
 
-          {showFileTree && (
-            <div className="w-64 bg-card border-r border-border overflow-auto flex-shrink-0">
-              <div className="p-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider border-b border-border flex items-center justify-between">
-                <span>Files</span>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="h-5 w-5"
-                  onClick={() => setShowFileTree(false)}
-                >
-                  <PanelLeftClose className="h-3 w-3" />
-                </Button>
-              </div>
-              <div className="h-[calc(100%-36px)] overflow-auto">
-                <div className="py-1">{buildTree(files)}</div>
-              </div>
-            </div>
-          )}
+                  {saveError && (
+                    <div role="alert" className="px-3 py-1.5 text-xs text-destructive bg-destructive/10 border-b border-border flex items-center justify-between">
+                      <span>{saveError}</span>
+                      <Button variant="ghost" size="icon" className="h-4 w-4" onClick={() => setSaveError(null)}>
+                        <X className="h-3 w-3" />
+                      </Button>
+                    </div>
+                  )}
 
-          <div className="flex-1 flex flex-col min-w-0">
-            {currentPath ? (
-              <>
-                <div className="flex items-center justify-between px-4 py-2 border-b border-border bg-card">
-                  <span className="text-sm text-card-foreground font-mono">{currentPath}</span>
-                  <div className="flex gap-2">
-                    {dirty && (
-                      <Button size="sm" variant="outline" onClick={handleSave}>
-                        Save
+                  <div className="flex-1">
+                    <MonacoEditor
+                      language={detectLanguage(currentPath)}
+                      theme={resolvedTheme === "dark" ? "vs-dark" : "vs"}
+                      value={content}
+                      onChange={(v) => {
+                        setContent(v || "");
+                        setDirty(v !== originalContent);
+                      }}
+                      options={{
+                        minimap: { enabled: false },
+                        fontSize: 13,
+                        lineNumbers: "on",
+                        scrollBeyondLastLine: false,
+                        automaticLayout: true,
+                        readOnly: isReadOnly,
+                      }}
+                    />
+                  </div>
+                </>
+              ) : (
+                <Empty className="min-h-0 flex-1 border-dashed rounded-none">
+                  <EmptyHeader>
+                    <EmptyMedia><Code2 className="size-5" aria-hidden="true" /></EmptyMedia>
+                    <EmptyTitle>Select a file to edit</EmptyTitle>
+                    <EmptyDescription>
+                      {files.length === 0
+                        ? "No files found in this codebase."
+                        : "Choose a file from the tree to open it in the editor."}
+                    </EmptyDescription>
+                  </EmptyHeader>
+                  <EmptyContent>
+                    {files.length > 0 && !showFileTree && (
+                      <Button size="sm" variant="outline" onClick={() => setShowFileTree(true)}>
+                        <PanelLeftOpen className="h-4 w-4 mr-1" aria-hidden="true" />
+                        Show file tree
                       </Button>
                     )}
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      onClick={() => { setCurrentPath(""); setContent(""); setOriginalContent(""); }}
-                    >
-                      Close
-                    </Button>
-                  </div>
-                </div>
-
-                {saveError && (
-                  <div className="px-3 py-1.5 text-xs text-destructive bg-destructive/10 border-b border-border flex items-center justify-between">
-                    <span>{saveError}</span>
-                    <Button variant="ghost" size="icon" className="h-4 w-4" onClick={() => setSaveError(null)}>
-                      <X className="h-3 w-3" />
-                    </Button>
-                  </div>
-                )}
-
-                <div className="flex-1">
-                  <MonacoEditor
-                    language={detectLanguage(currentPath)}
-                    theme={resolvedTheme === "dark" ? "vs-dark" : "vs"}
-                    value={content}
-                    onChange={(v) => {
-                      setContent(v || "");
-                      setDirty(v !== originalContent);
-                    }}
-                    options={{
-                      minimap: { enabled: false },
-                      fontSize: 13,
-                      lineNumbers: "on",
-                      scrollBeyondLastLine: false,
-                      automaticLayout: true,
-                    }}
-                  />
-                </div>
-              </>
-            ) : (
-              <div className="flex-1 flex items-center justify-center text-muted-foreground">
-                <div className="text-center">
-                  <p className="mb-2">Select a file from the tree to edit</p>
-                  {!showFileTree && (
-                    <Button size="sm" variant="outline" onClick={() => setShowFileTree(true)}>
-                      Show file tree
-                    </Button>
-                  )}
-                </div>
-              </div>
-            )}
+                  </EmptyContent>
+                </Empty>
+              )}
+            </div>
           </div>
-        </div>
-      )}
-    </div>
+        )}
+      </div>
+    </TooltipProvider>
   );
 }

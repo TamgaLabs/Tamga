@@ -16,6 +16,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { useProjectContext } from "../project-context";
+import { PageHeader, PageHeaderDescription, PageHeaderTitle } from "@/components/page-header";
 
 export default function ProjectActionsPage() {
   const { project, refetch } = useProjectContext();
@@ -23,6 +24,7 @@ export default function ProjectActionsPage() {
   const [restarting, setRestarting] = useState(false);
   const [restartError, setRestartError] = useState("");
   const [logs, setLogs] = useState("");
+  const [logsError, setLogsError] = useState("");
   const [showLogs, setShowLogs] = useState(false);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
@@ -43,12 +45,14 @@ export default function ProjectActionsPage() {
   };
 
   const loadLogs = async () => {
+    setLogsError("");
     try {
       const result = await getProjectLogs(project.id);
       setLogs(result.logs);
       setShowLogs(true);
-    } catch (e) {
-      console.error(e);
+    } catch (err: unknown) {
+      console.error(err);
+      setLogsError(err instanceof Error ? err.message : "Failed to load project logs");
     }
   };
 
@@ -66,22 +70,22 @@ export default function ProjectActionsPage() {
   };
 
   return (
-    <div className="p-6 max-w-3xl mx-auto">
-      <h1 className="text-2xl font-bold mb-6">Actions</h1>
+    <div className="mx-auto max-w-4xl space-y-6 p-4 sm:p-6">
+      <PageHeader><div><PageHeaderTitle>Actions</PageHeaderTitle><PageHeaderDescription>Operational controls and logs for {project.name}.</PageHeaderDescription></div></PageHeader>
 
       {deleteSuccess && (
-        <div className="mb-4 p-3 bg-success/10 border border-success/20 rounded text-sm text-success">
+        <div role="status" className="rounded-md border border-success/20 bg-success/10 p-3 text-sm text-success">
           Project deleted successfully. Redirecting...
         </div>
       )}
       {deleteError && (
-        <div className="mb-4 p-3 bg-destructive/10 border border-destructive/20 rounded text-sm text-destructive flex items-center justify-between">
+        <div role="alert" className="flex items-center justify-between rounded-md border border-destructive/20 bg-destructive/10 p-3 text-sm text-destructive">
           <span>{deleteError}</span>
           <button onClick={() => setDeleteError("")} className="text-destructive hover:text-destructive/80 ml-2">&times;</button>
         </div>
       )}
       {restartError && (
-        <div className="mb-4 p-3 bg-destructive/10 border border-destructive/20 rounded text-sm text-destructive flex items-center justify-between">
+        <div role="alert" className="flex items-center justify-between rounded-md border border-destructive/20 bg-destructive/10 p-3 text-sm text-destructive">
           <span>{restartError}</span>
           <button onClick={() => setRestartError("")} className="text-destructive hover:text-destructive/80 ml-2">&times;</button>
         </div>
@@ -89,13 +93,13 @@ export default function ProjectActionsPage() {
 
       <Card>
         <CardHeader>
-          <CardTitle className="text-sm">Project Actions</CardTitle>
+          <CardTitle className="text-sm">Project operations</CardTitle>
         </CardHeader>
         <CardContent className="flex flex-wrap gap-2">
           <Button variant="outline" size="sm" onClick={handleRestart} disabled={restarting}>
             {restarting ? "Restarting..." : "Restart"}
           </Button>
-          <Button variant="outline" size="sm" onClick={loadLogs}>
+          <Button variant="outline" size="sm" onClick={() => void loadLogs()}>
             View Logs
           </Button>
           <Button variant="destructive" size="sm" onClick={() => setDeleteDialogOpen(true)}>
@@ -104,6 +108,8 @@ export default function ProjectActionsPage() {
         </CardContent>
       </Card>
 
+      {logsError && <div role="alert" className="rounded-md border border-destructive/20 bg-destructive/10 p-3 text-sm text-destructive">{logsError}</div>}
+
       {showLogs && (
         <Card className="mt-4">
           <CardHeader className="flex flex-row items-center justify-between">
@@ -111,7 +117,7 @@ export default function ProjectActionsPage() {
             <Button variant="ghost" size="sm" onClick={() => setShowLogs(false)}>Close</Button>
           </CardHeader>
           <CardContent>
-            <pre className="bg-code-block rounded p-4 text-xs text-success overflow-auto max-h-80 font-mono whitespace-pre-wrap">
+            <pre className="max-h-80 overflow-auto rounded-md bg-code-block p-4 font-mono text-xs text-success whitespace-pre-wrap">
               {logs || "(no output)"}
             </pre>
           </CardContent>

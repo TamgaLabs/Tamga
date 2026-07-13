@@ -95,14 +95,15 @@ export function TopologyGraph({
 
   return (
     <Card>
-      <CardHeader>
-        <CardTitle>Infrastructure Topology</CardTitle>
+      <CardHeader className="gap-1 p-4 sm:p-6">
+        <CardTitle>Infrastructure topology</CardTitle>
+        <p className="text-sm text-muted-foreground">Select a container to inspect it.</p>
       </CardHeader>
-      <CardContent className="p-6">
-        <div className="w-full overflow-auto border border-border rounded-lg">
+      <CardContent className="p-4 pt-0 sm:p-6 sm:pt-0">
+        <div className="w-full overflow-x-auto rounded-lg border border-border bg-muted/20" aria-label="Infrastructure topology graph">
           <svg
             viewBox={`0 0 ${width} ${height}`}
-            className="w-full min-w-full h-auto"
+            className="h-auto min-w-[42rem] w-full"
             style={{ minHeight: "400px" }}
           >
             {/* Grid background (optional, subtle) */}

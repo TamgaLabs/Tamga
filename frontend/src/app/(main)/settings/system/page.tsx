@@ -2,128 +2,80 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import { HardDrive, Trash2 } from "lucide-react";
 import { systemInfo, systemPrune, type DockerInfo } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
+import { PageHeader, PageHeaderDescription, PageHeaderTitle } from "@/components/page-header";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Separator } from "@/components/ui/separator";
+import { FieldError } from "@/components/ui/field";
+import { Skeleton } from "@/components/ui/skeleton";
 import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
+  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import { toast } from "sonner";
 
 export default function SystemSettingsPage() {
   const [info, setInfo] = useState<DockerInfo | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
   const [pruneDialogOpen, setPruneDialogOpen] = useState(false);
+  const [pruning, setPruning] = useState(false);
   const { user, loading: authLoading } = useAuth();
   const router = useRouter();
 
-  useEffect(() => {
-    if (!authLoading && !user) router.replace("/login");
-  }, [user, authLoading, router]);
-
+  useEffect(() => { if (!authLoading && !user) router.replace("/login"); }, [user, authLoading, router]);
   useEffect(() => {
     if (!user) return;
-    systemInfo().then(setInfo).catch(console.error);
+    setLoadError(null);
+    systemInfo().then(setInfo).catch((error) => {
+      console.error(error);
+      setLoadError(error instanceof Error ? error.message : "Could not load Docker system information.");
+    });
   }, [user]);
 
   const handlePrune = async () => {
+    setPruning(true); setActionError(null);
     try {
       await systemPrune();
-    } catch (e) {
-      console.error(e);
-    } finally {
       setPruneDialogOpen(false);
-    }
+      toast.success("Unused Docker resources pruned");
+    } catch (error) {
+      console.error(error);
+      setActionError(error instanceof Error ? error.message : "Could not prune Docker resources.");
+      toast.error("Could not prune Docker resources");
+    } finally { setPruning(false); }
   };
 
   if (authLoading || !user) return null;
+  const rows = info && [
+    ["Version", info.version], ["Operating system", info.os], ["Architecture", info.architecture], ["Kernel", info.kernel], ["Storage driver", info.driver], ["Docker host", info.name],
+    ["CPU", `${info.cpus} cores`], ["Memory", `${(info.memory / 1024 / 1024 / 1024).toFixed(1)} GB`], ["Containers", `${info.containers} (${info.running} running, ${info.paused} paused, ${info.stopped} stopped)`], ["Images", String(info.images)],
+  ];
 
   return (
-    <div className="p-6 max-w-3xl mx-auto">
-      <h1 className="text-2xl font-bold mb-6">System</h1>
-
-      <div className="grid gap-4">
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-sm">Docker</CardTitle>
-          </CardHeader>
-          <CardContent>
-            {info ? (
-              <div className="text-sm space-y-2 text-muted-foreground">
-                <div className="flex justify-between">
-                  <span>Version</span>
-                  <span className="text-foreground">{info.version}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span>OS</span>
-                  <span className="text-foreground">{info.os}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span>Architecture</span>
-                  <span className="text-foreground">{info.architecture}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span>Kernel</span>
-                  <span className="text-foreground">{info.kernel}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span>Storage Driver</span>
-                  <span className="text-foreground">{info.driver}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span>Name</span>
-                  <span className="text-foreground">{info.name}</span>
-                </div>
-                <Separator />
-                <div className="flex justify-between">
-                  <span>CPU</span>
-                  <span className="text-foreground">{info.cpus} cores</span>
-                </div>
-                <div className="flex justify-between">
-                  <span>Memory</span>
-                  <span className="text-foreground">{(info.memory / 1024 / 1024 / 1024).toFixed(1)} GB</span>
-                </div>
-                <div className="flex justify-between">
-                  <span>Containers</span>
-                  <span className="text-foreground">{info.containers} ({info.running} running, {info.paused} paused, {info.stopped} stopped)</span>
-                </div>
-                <div className="flex justify-between">
-                  <span>Images</span>
-                  <span className="text-foreground">{info.images}</span>
-                </div>
-              </div>
-            ) : (
-              <p className="text-sm text-muted-foreground">Loading...</p>
-            )}
-            <div className="mt-4 pt-4">
-              <Button variant="destructive" size="sm" onClick={() => setPruneDialogOpen(true)}>
-                Prune All
-              </Button>
-            </div>
-          </CardContent>
-        </Card>
-      </div>
-
-      <AlertDialog open={pruneDialogOpen} onOpenChange={setPruneDialogOpen}>
+    <div className="mx-auto max-w-3xl space-y-6 p-4 sm:p-6">
+      <PageHeader><div className="space-y-1"><PageHeaderTitle>System</PageHeaderTitle><PageHeaderDescription>Review Docker host capacity and safely reclaim unused local resources.</PageHeaderDescription></div></PageHeader>
+      <Card>
+        <CardHeader className="space-y-1"><CardTitle className="flex items-center gap-2"><HardDrive className="size-4" aria-hidden="true" />Docker host</CardTitle><p className="text-sm text-muted-foreground">Live information from the Docker daemon running Tamga Console.</p></CardHeader>
+        <CardContent className="space-y-5">
+          {loadError ? <FieldError>{loadError}</FieldError> : rows ? (
+            <dl className="divide-y rounded-lg border">
+              {rows.map(([label, value]) => <div key={label} className="grid gap-1 px-4 py-3 text-sm sm:grid-cols-[10rem_1fr] sm:gap-4"><dt className="text-muted-foreground">{label}</dt><dd className="break-words font-medium text-foreground">{value}</dd></div>)}
+            </dl>
+          ) : <div className="space-y-3"><Skeleton className="h-10 w-full" /><Skeleton className="h-10 w-full" /><Skeleton className="h-10 w-4/5" /></div>}
+          <div className="flex flex-col items-start justify-between gap-4 rounded-lg border border-destructive/30 bg-destructive/5 p-4 sm:flex-row sm:items-center">
+            <div className="space-y-1"><p className="font-medium">Prune unused Docker resources</p><p className="text-sm text-muted-foreground">Removes unused containers, images, volumes, and networks. Running resources are not removed.</p></div>
+            <Button variant="destructive" className="shrink-0" onClick={() => { setActionError(null); setPruneDialogOpen(true); }}><Trash2 className="size-4" aria-hidden="true" />Prune resources</Button>
+          </div>
+        </CardContent>
+      </Card>
+      <AlertDialog open={pruneDialogOpen} onOpenChange={(open) => !pruning && setPruneDialogOpen(open)}>
         <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Prune Docker resources?</AlertDialogTitle>
-            <AlertDialogDescription>
-              This will remove all unused containers, images, volumes, and
-              networks. This action cannot be undone.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction onClick={handlePrune}>Prune</AlertDialogAction>
-          </AlertDialogFooter>
+          <AlertDialogHeader><AlertDialogTitle>Prune Docker resources?</AlertDialogTitle><AlertDialogDescription>This removes all unused containers, images, volumes, and networks. This action cannot be undone.</AlertDialogDescription></AlertDialogHeader>
+          {actionError && <FieldError>{actionError}</FieldError>}
+          <AlertDialogFooter><AlertDialogCancel disabled={pruning}>Cancel</AlertDialogCancel><AlertDialogAction disabled={pruning} onClick={(event) => { event.preventDefault(); void handlePrune(); }}>{pruning ? "Pruning..." : "Prune resources"}</AlertDialogAction></AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
     </div>

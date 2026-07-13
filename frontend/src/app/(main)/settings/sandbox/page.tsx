@@ -14,6 +14,7 @@ import { useAuth } from "@/lib/auth";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Field, FieldDescription, FieldError, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   Select,
@@ -22,6 +23,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { PageHeader, PageHeaderDescription, PageHeaderTitle } from "@/components/page-header";
+import { toast } from "sonner";
 
 export default function SandboxSettingsPage() {
   const [resourceLimit, setResourceLimit] = useState<ResourceLimit | null>(null);
@@ -50,8 +53,13 @@ export default function SandboxSettingsPage() {
   if (authLoading || !user) return null;
 
   return (
-    <div className="p-6 max-w-3xl mx-auto">
-      <h1 className="text-2xl font-bold mb-6">Sandbox</h1>
+    <div className="mx-auto max-w-3xl space-y-6 p-4 sm:p-6">
+      <PageHeader>
+        <div className="space-y-1">
+          <PageHeaderTitle>Sandbox</PageHeaderTitle>
+          <PageHeaderDescription>Set default resource budgets and detached terminal lifetime for new agent sandboxes.</PageHeaderDescription>
+        </div>
+      </PageHeader>
 
       <div className="grid gap-4">
         <ResourceLimitCard limit={resourceLimit} onUpdate={loadResourceLimit} />
@@ -77,14 +85,20 @@ const IDLE_TIMEOUT_PRESETS: { value: string; label: string }[] = [
 // Never: sessions persist until explicitly terminated.
 function IdleTimeoutCard({ settings, onUpdate }: { settings: IdleTimeoutSettings | null; onUpdate: () => void }) {
   const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const handleChange = async (value: string) => {
     setSaving(true);
+    setError(null);
     try {
       await setIdleTimeout(parseInt(value, 10));
       onUpdate();
+      toast.success("Session idle timeout saved");
     } catch (e) {
       console.error(e);
+      const message = e instanceof Error ? e.message : "Could not save the session idle timeout.";
+      setError(message);
+      toast.error("Could not save the session idle timeout");
     } finally {
       setSaving(false);
     }
@@ -101,8 +115,9 @@ function IdleTimeoutCard({ settings, onUpdate }: { settings: IdleTimeoutSettings
 
   return (
     <Card>
-      <CardHeader>
-        <CardTitle className="text-sm">Session Idle Timeout</CardTitle>
+      <CardHeader className="space-y-1">
+        <CardTitle>Session Idle Timeout</CardTitle>
+        <p className="text-sm text-muted-foreground">Choose when detached terminal sessions end automatically.</p>
       </CardHeader>
       <CardContent className="space-y-3">
         <p className="text-xs text-muted-foreground">
@@ -110,9 +125,10 @@ function IdleTimeoutCard({ settings, onUpdate }: { settings: IdleTimeoutSettings
           sit before it&apos;s automatically terminated. Never (default)
           means sessions persist until you close them.
         </p>
-        <div className="max-w-xs">
+        <Field className="max-w-sm">
+          <FieldLabel htmlFor="idle-timeout">Timeout</FieldLabel>
           <Select value={value} onValueChange={handleChange} disabled={saving}>
-            <SelectTrigger>
+            <SelectTrigger id="idle-timeout" aria-describedby="idle-timeout-description">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -123,7 +139,9 @@ function IdleTimeoutCard({ settings, onUpdate }: { settings: IdleTimeoutSettings
               ))}
             </SelectContent>
           </Select>
-        </div>
+          <FieldDescription id="idle-timeout-description">Changes apply during the next background sweep; no restart is needed.</FieldDescription>
+          {error && <FieldError>{error}</FieldError>}
+        </Field>
       </CardContent>
     </Card>
   );
@@ -136,6 +154,7 @@ function ResourceLimitCard({ limit, onUpdate }: { limit: ResourceLimit | null; o
   const [memoryGiB, setMemoryGiB] = useState("");
   const [cpus, setCpus] = useState("");
   const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!limit) return;
@@ -146,16 +165,24 @@ function ResourceLimitCard({ limit, onUpdate }: { limit: ResourceLimit | null; o
   const handleSave = async () => {
     const memGiB = parseFloat(memoryGiB);
     const cpuCores = parseFloat(cpus);
-    if (!(memGiB > 0) || !(cpuCores > 0)) return;
+    if (!(memGiB > 0) || !(cpuCores > 0)) {
+      setError("Memory and CPU values must both be greater than zero.");
+      return;
+    }
     setSaving(true);
+    setError(null);
     try {
       await updateResourceLimit({
         memory_bytes: Math.round(memGiB * 1024 ** 3),
         nano_cpus: Math.round(cpuCores * 1_000_000_000),
       });
       onUpdate();
+      toast.success("Sandbox resource limits saved");
     } catch (e) {
       console.error(e);
+      const message = e instanceof Error ? e.message : "Could not save sandbox resource limits.";
+      setError(message);
+      toast.error("Could not save sandbox resource limits");
     } finally {
       setSaving(false);
     }
@@ -163,37 +190,38 @@ function ResourceLimitCard({ limit, onUpdate }: { limit: ResourceLimit | null; o
 
   return (
     <Card>
-      <CardHeader>
-        <CardTitle className="text-sm">Sandbox Resource Limits</CardTitle>
+      <CardHeader className="space-y-1">
+        <CardTitle>Sandbox Resource Limits</CardTitle>
+        <p className="text-sm text-muted-foreground">Defaults are applied when new agent sandbox containers are created.</p>
       </CardHeader>
       <CardContent className="space-y-3">
-        <p className="text-xs text-muted-foreground">
-          Default CPU/memory limit applied to every new agent sandbox
-          container. Existing sandboxes aren&apos;t affected until recreated.
-        </p>
-        <div className="flex gap-3">
-          <div className="space-y-1 flex-1">
-            <Label className="text-xs">Memory (GiB)</Label>
+        <FieldGroup className="sm:grid-cols-2">
+          <Field>
+            <FieldLabel htmlFor="sandbox-memory">Memory (GiB)</FieldLabel>
             <Input
+              id="sandbox-memory"
               type="number"
               min="0"
               step="0.5"
               value={memoryGiB}
               onChange={(e) => setMemoryGiB(e.target.value)}
             />
-          </div>
-          <div className="space-y-1 flex-1">
-            <Label className="text-xs">CPUs (cores)</Label>
+          </Field>
+          <Field>
+            <FieldLabel htmlFor="sandbox-cpus">CPUs (cores)</FieldLabel>
             <Input
+              id="sandbox-cpus"
               type="number"
               min="0"
               step="0.5"
               value={cpus}
               onChange={(e) => setCpus(e.target.value)}
             />
-          </div>
-        </div>
-        <Button size="sm" onClick={handleSave} disabled={saving}>
+          </Field>
+        </FieldGroup>
+        <p className="text-sm text-muted-foreground">Existing sandboxes keep their current limits until they are recreated.</p>
+        {error && <FieldError>{error}</FieldError>}
+        <Button onClick={handleSave} disabled={saving}>
           {saving ? "Saving..." : "Save"}
         </Button>
       </CardContent>

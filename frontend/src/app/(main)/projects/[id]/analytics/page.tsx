@@ -4,6 +4,8 @@ import React, { useEffect, useState } from "react";
 import { useProjectContext } from "../project-context";
 import { useProjectMetrics } from "@/hooks/useMetrics";
 import type { MetricsQueryParams, MetricResolution } from "@/lib/api";
+import { PageHeader, PageHeaderDescription, PageHeaderTitle } from "@/components/page-header";
+import { Badge } from "@/components/ui/badge";
 import {
   RequestRatePanel,
   StatusErrorPanel,
@@ -14,6 +16,10 @@ import {
   type TimeRange,
   type ResolutionOption,
 } from "@/components/analytics";
+import { Card, CardContent } from "@/components/ui/card";
+import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@/components/ui/empty";
+import { Skeleton } from "@/components/ui/skeleton";
+import { AlertCircle, BarChart3, Clock3 } from "lucide-react";
 
 export default function ProjectAnalyticsPage() {
   const { project } = useProjectContext();
@@ -64,49 +70,45 @@ export default function ProjectAnalyticsPage() {
   };
 
   return (
-    <div className="p-6 max-w-7xl mx-auto">
-      {/* Header */}
-      <div className="mb-8">
-        <h1 className="text-2xl font-bold mb-4">Analytics</h1>
+    <div className="mx-auto max-w-7xl p-4 sm:p-6">
+      <PageHeader className="mb-6">
+        <div><PageHeaderTitle>Analytics</PageHeaderTitle><PageHeaderDescription>Traffic and service performance for this project.</PageHeaderDescription></div>
+        <Badge variant="secondary" className="gap-1.5"><Clock3 className="size-3" />Refreshes every minute</Badge>
+      </PageHeader>
+      <Card className="mb-6">
 
-        {/* Controls */}
-        <div className="flex flex-col gap-4">
-          <div>
-            <p className="text-sm text-muted-foreground mb-2">Time Range</p>
+        <CardContent className="grid gap-5 p-4 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)] sm:p-5">
+          <div className="space-y-2">
+            <p className="text-sm font-medium">Time range</p>
             <TimeRangeSelector value={timeRange} onChange={handleTimeRangeChange} />
           </div>
-          <div>
-            <p className="text-sm text-muted-foreground mb-2">Resolution</p>
+          <div className="space-y-2">
+            <p className="text-sm font-medium">Resolution</p>
             <ResolutionSelector value={resolution} onChange={handleResolutionChange} />
           </div>
-        </div>
-      </div>
+        </CardContent>
+      </Card>
 
       {/* Error state */}
       {error && (
-        <div className="mb-6 p-4 bg-destructive/10 border border-destructive/30 rounded-lg text-sm text-destructive">
-          Failed to load metrics: {error.message}
+        <div role="alert" className="mb-6 flex gap-3 rounded-xl border border-destructive/30 bg-destructive/10 p-4 text-sm text-destructive">
+          <AlertCircle className="mt-0.5 size-4 shrink-0" /><div><p className="font-medium">Metrics are unavailable</p><p className="mt-1 text-destructive/80">{error.message}</p></div>
         </div>
       )}
 
       {/* Loading state */}
       {loading && !metrics && (
-        <div className="text-center py-20 text-muted-foreground">
-          <p className="text-lg">Loading analytics...</p>
-        </div>
+        <div className="grid gap-6 lg:grid-cols-2" aria-label="Loading analytics">{[0, 1, 2, 3].map((item) => <Skeleton key={item} className="h-[25rem] w-full" />)}</div>
       )}
 
       {/* Empty state */}
       {!loading && metrics && metrics.request_rate.length === 0 && (
-        <div className="text-center py-20 text-muted-foreground">
-          <p className="text-lg mb-2">No metrics available</p>
-          <p className="text-sm">Check back once this project has processed some traffic</p>
-        </div>
+        <Empty className="min-h-72"><EmptyHeader><EmptyMedia><BarChart3 className="size-5" /></EmptyMedia><EmptyTitle>No metrics available yet</EmptyTitle><EmptyDescription>Check back once this project has processed some traffic.</EmptyDescription></EmptyHeader></Empty>
       )}
 
       {/* Panels grid */}
       {metrics && (
-        <div className="grid gap-6 grid-cols-1 lg:grid-cols-2">
+        <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
           <RequestRatePanel
             data={metrics.request_rate}
             resolution={metrics.resolution}

@@ -6,6 +6,8 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { PageHeader, PageHeaderDescription, PageHeaderTitle } from "@/components/page-header";
+import { toast } from "sonner";
 import { useContainerContext } from "../container-context";
 
 export default function ContainerResourcesPage() {
@@ -30,34 +32,36 @@ export default function ContainerResourcesPage() {
     }
     setError("");
     setSaving(true);
+    const toastId = toast.loading("Updating resource limits...");
     try {
       await updateContainerResources(id, {
         ...(memMiB > 0 ? { memory: Math.round(memMiB * 1024 ** 2) } : {}),
         ...(cpuCores > 0 ? { nano_cpus: Math.round(cpuCores * 1_000_000_000) } : {}),
       });
       refetch();
+      toast.success("Resource limits updated.", { id: toastId });
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to update resources.");
+      const message = e instanceof Error ? e.message : "Failed to update resources.";
+      setError(message);
+      toast.error(message, { id: toastId });
     } finally {
       setSaving(false);
     }
   };
 
   return (
-    <div className="p-6 max-w-6xl mx-auto">
+    <div className="space-y-6">
+      <PageHeader><div><PageHeaderTitle className="text-lg">Resource limits</PageHeaderTitle><PageHeaderDescription>Update live Docker CPU and memory limits without restarting this container.</PageHeaderDescription></div></PageHeader>
       <Card className="max-w-xl">
         <CardHeader>
           <CardTitle className="text-sm">Resource Limits</CardTitle>
         </CardHeader>
         <CardContent className="space-y-3">
-          <p className="text-xs text-muted-foreground">
-            Update this container&apos;s live memory and CPU limits. Applied
-            immediately via Docker, no restart required.
-          </p>
-          <div className="flex gap-3">
+          <div className="grid gap-3 sm:grid-cols-2">
             <div className="space-y-1 flex-1">
-              <Label className="text-xs">Memory (MiB)</Label>
+              <Label htmlFor="container-memory-mib" className="text-xs">Memory (MiB)</Label>
               <Input
+                id="container-memory-mib"
                 type="number"
                 min="0"
                 step="128"
@@ -66,8 +70,9 @@ export default function ContainerResourcesPage() {
               />
             </div>
             <div className="space-y-1 flex-1">
-              <Label className="text-xs">CPUs (cores)</Label>
+              <Label htmlFor="container-cpu-cores" className="text-xs">CPUs (cores)</Label>
               <Input
+                id="container-cpu-cores"
                 type="number"
                 min="0"
                 step="0.25"
@@ -76,7 +81,7 @@ export default function ContainerResourcesPage() {
               />
             </div>
           </div>
-          {error && <p className="text-xs text-destructive">{error}</p>}
+          {error && <p role="alert" className="rounded-md border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive">{error}</p>}
           <Button size="sm" onClick={handleSave} disabled={saving}>
             {saving ? "Saving..." : "Save"}
           </Button>

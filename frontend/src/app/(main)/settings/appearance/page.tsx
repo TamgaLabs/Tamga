@@ -6,9 +6,10 @@ import { useAuth } from "@/lib/auth";
 import { useTheme, type Theme } from "@/lib/theme";
 import { getShowSystem, setShowSystem } from "@/lib/settings";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Checkbox } from "@/components/ui/checkbox";
+import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
+import { PageHeader, PageHeaderDescription, PageHeaderTitle } from "@/components/page-header";
 
 export default function AppearanceSettingsPage() {
   const [showSystemState, setShowSystemState] = useState(true);
@@ -34,13 +35,19 @@ export default function AppearanceSettingsPage() {
   if (authLoading || !user) return null;
 
   return (
-    <div className="p-6 max-w-3xl mx-auto">
-      <h1 className="text-2xl font-bold mb-6">Appearance</h1>
+    <div className="mx-auto max-w-3xl space-y-6 p-4 sm:p-6">
+      <PageHeader>
+        <div className="space-y-1">
+          <PageHeaderTitle>Appearance</PageHeaderTitle>
+          <PageHeaderDescription>Set the console theme and choose which system resources stay visible.</PageHeaderDescription>
+        </div>
+      </PageHeader>
 
       <div className="grid gap-4">
         <Card>
-          <CardHeader>
-            <CardTitle className="text-sm">Theme</CardTitle>
+          <CardHeader className="space-y-1">
+            <CardTitle>Theme</CardTitle>
+            <p className="text-sm text-muted-foreground">Choose how Tamga Console appears on this device.</p>
           </CardHeader>
           <CardContent>
             <RadioGroup
@@ -48,15 +55,15 @@ export default function AppearanceSettingsPage() {
               onValueChange={(v) => setTheme(v as Theme)}
               className="space-y-2"
             >
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-3 rounded-lg border p-3 has-[[data-state=checked]]:border-primary has-[[data-state=checked]]:bg-primary/5">
                 <RadioGroupItem value="light" id="theme-light" />
                 <Label htmlFor="theme-light">Light</Label>
               </div>
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-3 rounded-lg border p-3 has-[[data-state=checked]]:border-primary has-[[data-state=checked]]:bg-primary/5">
                 <RadioGroupItem value="dark" id="theme-dark" />
                 <Label htmlFor="theme-dark">Dark</Label>
               </div>
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-3 rounded-lg border p-3 has-[[data-state=checked]]:border-primary has-[[data-state=checked]]:bg-primary/5">
                 <RadioGroupItem value="system" id="theme-system" />
                 <Label htmlFor="theme-system">System</Label>
               </div>
@@ -68,21 +75,22 @@ export default function AppearanceSettingsPage() {
         </Card>
 
         <Card>
-          <CardHeader>
-            <CardTitle className="text-sm">Display</CardTitle>
+          <CardHeader className="space-y-1">
+            <CardTitle>Display</CardTitle>
+            <p className="text-sm text-muted-foreground">Control whether internal Tamga resources appear throughout the console.</p>
           </CardHeader>
           <CardContent>
-            <div className="flex items-center gap-2">
-              <Checkbox
+            <div className="flex items-center justify-between gap-4 rounded-lg border p-4">
+              <div className="space-y-1">
+                <Label htmlFor="show-system">Show Tamga System</Label>
+                <p className="text-sm text-muted-foreground">Tamga system containers and codebases appear across the console.</p>
+              </div>
+              <Switch
                 id="show-system"
                 checked={showSystemState}
                 onCheckedChange={handleToggleSystem}
               />
-              <Label htmlFor="show-system">Show Tamga System</Label>
             </div>
-            <p className="text-xs text-muted-foreground mt-2">
-              When disabled, Tamga system containers and codebases are hidden from all pages.
-            </p>
           </CardContent>
         </Card>
       </div>

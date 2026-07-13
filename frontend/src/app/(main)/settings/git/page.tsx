@@ -1,65 +1,44 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import {
-  getGitCredential,
-  setGitCredential,
-  deleteGitCredential,
-  type GitCredential,
-} from "@/lib/api";
+import { deleteGitCredential, getGitCredential, setGitCredential, type GitCredential } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
+import { PageHeader, PageHeaderDescription, PageHeaderTitle } from "@/components/page-header";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Field, FieldError, FieldGroup, FieldLabel } from "@/components/ui/field";
 import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
+  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import { toast } from "sonner";
 
 export default function GitSettingsPage() {
   const [gitCredential, setGitCredentialState] = useState<GitCredential | null>(null);
   const { user, loading: authLoading } = useAuth();
   const router = useRouter();
 
-  useEffect(() => {
-    if (!authLoading && !user) router.replace("/login");
-  }, [user, authLoading, router]);
-
-  const loadGitCredential = useCallback(() => {
-    getGitCredential().then(setGitCredentialState).catch(console.error);
-  }, []);
-
-  useEffect(() => {
-    if (!user) return;
-    loadGitCredential();
-  }, [user, loadGitCredential]);
-
+  useEffect(() => { if (!authLoading && !user) router.replace("/login"); }, [user, authLoading, router]);
+  const loadGitCredential = useCallback(() => { getGitCredential().then(setGitCredentialState).catch(console.error); }, []);
+  useEffect(() => { if (user) loadGitCredential(); }, [user, loadGitCredential]);
   if (authLoading || !user) return null;
 
   return (
-    <div className="p-6 max-w-3xl mx-auto">
-      <h1 className="text-2xl font-bold mb-6">Git</h1>
-
-      <div className="grid gap-4">
-        <GitCredentialCard credential={gitCredential} onUpdate={loadGitCredential} />
-      </div>
+    <div className="mx-auto max-w-3xl space-y-6 p-4 sm:p-6">
+      <PageHeader>
+        <div className="space-y-1">
+          <PageHeaderTitle>Git</PageHeaderTitle>
+          <PageHeaderDescription>Manage the credential used for private repository access and sandbox Git operations.</PageHeaderDescription>
+        </div>
+      </PageHeader>
+      <GitCredentialCard credential={gitCredential} onUpdate={loadGitCredential} />
     </div>
   );
 }
 
-// The single global git credential (see FEAT-008), used both by the
-// backend to `git clone`/`pull` private repos and injected into every
-// agent sandbox so `git commit`/`push` works from the terminal. Single
-// value, not a list - shown/edited like ResourceLimitCard.
 function GitCredentialCard({ credential, onUpdate }: { credential: GitCredential | null; onUpdate: () => void }) {
   const [showForm, setShowForm] = useState(false);
   const [provider, setProvider] = useState("");
@@ -67,130 +46,79 @@ function GitCredentialCard({ credential, onUpdate }: { credential: GitCredential
   const [token, setToken] = useState("");
   const [saving, setSaving] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const resetForm = () => {
     setProvider(credential?.provider || "");
     setUsername(credential?.username || "");
     setToken("");
+    setError(null);
     setShowForm(false);
   };
 
   const handleSave = async () => {
-    if (!token) return;
-    setSaving(true);
+    if (!token) { setError("A personal access token is required."); return; }
+    setSaving(true); setError(null);
     try {
       await setGitCredential({ provider, username: username || undefined, token });
-      resetForm();
-      onUpdate();
+      resetForm(); onUpdate(); toast.success("Git credential saved");
     } catch (e) {
       console.error(e);
-    } finally {
-      setSaving(false);
-    }
+      setError(e instanceof Error ? e.message : "Could not save the Git credential.");
+      toast.error("Could not save the Git credential");
+    } finally { setSaving(false); }
   };
 
   const handleDelete = async () => {
+    setSaving(true); setError(null);
     try {
-      await deleteGitCredential();
-      onUpdate();
+      await deleteGitCredential(); onUpdate(); setDeleteOpen(false); toast.success("Git credential deleted");
     } catch (e) {
       console.error(e);
-    } finally {
-      setDeleteOpen(false);
-    }
+      setError(e instanceof Error ? e.message : "Could not delete the Git credential.");
+      toast.error("Could not delete the Git credential");
+    } finally { setSaving(false); }
   };
 
   return (
     <Card>
-      <CardHeader className="flex flex-row items-center justify-between">
-        <CardTitle className="text-sm">Git Credential</CardTitle>
-        <Button
-          size="sm"
-          variant="outline"
-          onClick={() => {
-            if (showForm) {
-              resetForm();
-            } else {
-              setProvider(credential?.provider || "");
-              setUsername(credential?.username || "");
-              setToken("");
-              setShowForm(true);
-            }
-          }}
-        >
-          {showForm ? "Cancel" : credential?.has_token ? "Update" : "Add Credential"}
+      <CardHeader className="flex flex-row items-start justify-between gap-4">
+        <div className="space-y-1">
+          <CardTitle>Git Credential</CardTitle>
+          <p className="text-sm text-muted-foreground">One credential is available to private clones and sandbox Git.</p>
+        </div>
+        <Button size="sm" variant="outline" onClick={() => {
+          if (showForm) resetForm(); else { setProvider(credential?.provider || ""); setUsername(credential?.username || ""); setToken(""); setError(null); setShowForm(true); }
+        }}>
+          {showForm ? "Cancel" : credential?.has_token ? "Update" : "Add credential"}
         </Button>
       </CardHeader>
-      <CardContent className="space-y-3">
-        <p className="text-xs text-muted-foreground">
-          Used to clone/pull private repositories and to authenticate
-          `git commit`/`push` from an agent sandbox terminal. Only one
-          credential is stored globally.
-        </p>
+      <CardContent className="space-y-4">
         {showForm && (
-          <div className="space-y-2 p-3 border border-border rounded bg-card">
-            <div className="space-y-1">
-              <Label className="text-xs">Provider</Label>
-              <Input
-                value={provider}
-                onChange={(e) => setProvider(e.target.value)}
-                placeholder="github"
-              />
-            </div>
-            <div className="space-y-1">
-              <Label className="text-xs">Username (optional)</Label>
-              <Input
-                value={username}
-                onChange={(e) => setUsername(e.target.value)}
-                placeholder="octocat"
-              />
-            </div>
-            <div className="space-y-1">
-              <Label className="text-xs">Token</Label>
-              <Input
-                value={token}
-                onChange={(e) => setToken(e.target.value)}
-                placeholder="ghp_..."
-                type="password"
-              />
-            </div>
-            <Button size="sm" onClick={handleSave} disabled={saving}>
-              {saving ? "Saving..." : "Save"}
-            </Button>
+          <div className="rounded-lg border bg-muted/20 p-4">
+            <FieldGroup>
+              <Field><FieldLabel htmlFor="git-provider">Provider</FieldLabel><Input id="git-provider" value={provider} onChange={(e) => setProvider(e.target.value)} placeholder="github" autoComplete="organization" /></Field>
+              <Field><FieldLabel htmlFor="git-username">Username <span className="text-muted-foreground">(optional)</span></FieldLabel><Input id="git-username" value={username} onChange={(e) => setUsername(e.target.value)} placeholder="octocat" autoComplete="username" /></Field>
+              <Field><FieldLabel htmlFor="git-token">Token</FieldLabel><Input id="git-token" value={token} onChange={(e) => setToken(e.target.value)} placeholder="ghp_..." type="password" autoComplete="new-password" /></Field>
+              {error && <FieldError>{error}</FieldError>}
+              <Button className="w-fit" onClick={() => void handleSave()} disabled={saving}>{saving ? "Saving..." : "Save credential"}</Button>
+            </FieldGroup>
           </div>
         )}
         {!credential?.has_token ? (
-          <p className="text-sm text-muted-foreground">No git credential configured.</p>
+          <p className="rounded-lg border border-dashed p-4 text-sm text-muted-foreground">No Git credential configured.</p>
         ) : (
-          <div className="flex items-center justify-between py-1.5">
-            <div className="flex items-center gap-2 text-sm">
-              <span className="font-medium capitalize">{credential.provider || "git"}</span>
-              {credential.username && (
-                <span className="text-muted-foreground">{credential.username}</span>
-              )}
-              <Badge variant="outline" className="text-xs font-mono">••••••••</Badge>
-            </div>
-            <Button variant="ghost" size="sm" className="text-destructive" onClick={() => setDeleteOpen(true)}>
-              Delete
-            </Button>
+          <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border p-4">
+            <div className="flex items-center gap-2 text-sm"><span className="font-medium capitalize">{credential.provider || "git"}</span>{credential.username && <span className="text-muted-foreground">{credential.username}</span>}<Badge variant="outline" className="font-mono">••••••••</Badge></div>
+            <Button variant="outline" size="sm" className="border-destructive/40 text-destructive hover:bg-destructive hover:text-destructive-foreground" onClick={() => { setError(null); setDeleteOpen(true); }}>Delete</Button>
           </div>
         )}
       </CardContent>
-
-      <AlertDialog open={deleteOpen} onOpenChange={setDeleteOpen}>
+      <AlertDialog open={deleteOpen} onOpenChange={(open) => !saving && setDeleteOpen(open)}>
         <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Delete git credential?</AlertDialogTitle>
-            <AlertDialogDescription>
-              Private repo clones/pulls and sandbox `git commit`/`push` will
-              stop working until a new credential is configured. This action
-              cannot be undone.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction onClick={handleDelete}>Delete</AlertDialogAction>
-          </AlertDialogFooter>
+          <AlertDialogHeader><AlertDialogTitle>Delete Git credential?</AlertDialogTitle><AlertDialogDescription>Private repository clone/pull and sandbox Git push operations stop working until a new credential is configured. This action cannot be undone.</AlertDialogDescription></AlertDialogHeader>
+          {error && <FieldError>{error}</FieldError>}
+          <AlertDialogFooter><AlertDialogCancel disabled={saving}>Cancel</AlertDialogCancel><AlertDialogAction disabled={saving} onClick={(event) => { event.preventDefault(); void handleDelete(); }}>{saving ? "Deleting..." : "Delete"}</AlertDialogAction></AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
     </Card>

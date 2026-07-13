@@ -4,7 +4,6 @@ import { useState } from "react";
 import { updateProject } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   Select,
@@ -14,6 +13,8 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { useProjectContext } from "../project-context";
+import { PageHeader, PageHeaderDescription, PageHeaderTitle } from "@/components/page-header";
+import { Field, FieldError, FieldGroup, FieldLabel } from "@/components/ui/field";
 
 // Parse the compose_yaml to extract service names from the top-level services: block.
 // Safe minimal extraction without adding a YAML parser dependency.
@@ -96,34 +97,36 @@ export default function ProjectSettingsPage() {
   };
 
   return (
-    <div className="p-6 max-w-xl mx-auto">
-      <h1 className="text-2xl font-bold mb-6">Settings</h1>
+    <div className="mx-auto max-w-4xl space-y-6 p-4 sm:p-6">
+      <PageHeader><div><PageHeaderTitle>Settings</PageHeaderTitle><PageHeaderDescription>Project identity, routing, and deployment source settings.</PageHeaderDescription></div></PageHeader>
       <Card>
         <CardHeader>
           <CardTitle className="text-sm">Project Settings</CardTitle>
         </CardHeader>
-        <CardContent className="space-y-3">
-          <div className="space-y-1">
-            <Label className="text-xs">Name</Label>
-            <Input value={editName} onChange={(e) => setEditName(e.target.value)} />
-          </div>
-          <div className="space-y-1">
-            <Label className="text-xs">Domain</Label>
+        <CardContent className="space-y-5">
+          <FieldGroup>
+          <Field>
+            <FieldLabel htmlFor="project-name">Name</FieldLabel>
+            <Input id="project-name" value={editName} onChange={(e) => setEditName(e.target.value)} />
+          </Field>
+          <Field>
+            <FieldLabel htmlFor="project-domain">Domain</FieldLabel>
             <Input
+              id="project-domain"
               value={editDomain}
               onChange={(e) => setEditDomain(e.target.value)}
               placeholder="example.com"
             />
-          </div>
-          <div className="space-y-1">
-            <Label className="text-xs">Branch</Label>
-            <Input value={editBranch} onChange={(e) => setEditBranch(e.target.value)} />
-          </div>
+          </Field>
+          <Field>
+            <FieldLabel htmlFor="project-branch">Branch</FieldLabel>
+            <Input id="project-branch" value={editBranch} onChange={(e) => setEditBranch(e.target.value)} />
+          </Field>
 
           {hasCompose && (
-            <div className="space-y-1">
-              <Label className="text-xs">Expose Service</Label>
-              <div className="space-y-1">
+            <Field>
+              <FieldLabel>Expose service</FieldLabel>
+              <div>
                 <Select value={editExposedService} onValueChange={setEditExposedService}>
                   <SelectTrigger>
                     <SelectValue placeholder="Select a service (optional)" />
@@ -143,12 +146,11 @@ export default function ProjectSettingsPage() {
                   Currently exposed: <strong>{project.exposed_service}</strong>
                 </p>
               )}
-            </div>
+            </Field>
           )}
+          </FieldGroup>
 
-          {error && (
-            <p className="text-sm text-destructive whitespace-pre-wrap">{error}</p>
-          )}
+          {error && <FieldError className="whitespace-pre-wrap">{error}</FieldError>}
 
           <Button size="sm" onClick={handleSave} disabled={saving}>
             {saving ? "Saving..." : "Save"}

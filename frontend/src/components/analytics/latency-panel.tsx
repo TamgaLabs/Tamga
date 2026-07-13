@@ -2,6 +2,7 @@
 
 import React from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
 import { Clock } from "lucide-react";
 import type { LatencyPoint, MetricResolution } from "@/lib/metrics-types";
 import {
@@ -103,15 +104,16 @@ export function LatencyPanel({
 
   return (
     <Card className="w-full">
-      <CardHeader>
+      <CardHeader className="p-4 sm:p-6">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
             <Clock className="h-4 w-4 text-purple-500" />
             <CardTitle>Latency Percentiles</CardTitle>
           </div>
+          {isLoading && !isEmpty && <Badge variant="secondary">Refreshing</Badge>}
         </div>
       </CardHeader>
-      <CardContent className="space-y-4">
+      <CardContent className="space-y-4 p-4 pt-0 sm:p-6 sm:pt-0">
         {isEmpty ? (
           <div className="flex h-48 items-center justify-center text-sm text-muted-foreground">
             No data available
@@ -227,11 +229,6 @@ export function LatencyPanel({
               </div>
             </div>
           </>
-        )}
-        {isLoading && (
-          <div className="flex h-48 items-center justify-center text-sm text-muted-foreground">
-            Loading...
-          </div>
         )}
       </CardContent>
     </Card>

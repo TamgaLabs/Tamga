@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { Settings2 } from "lucide-react";
 
 const sections = [
   { href: "/settings/appearance", label: "Appearance" },
@@ -15,20 +16,24 @@ export default function SettingsLayout({ children }: { children: React.ReactNode
   const pathname = usePathname();
 
   return (
-    <div className="flex min-h-screen">
-      <aside className="w-48 shrink-0 border-r border-border p-4">
-        <h1 className="text-lg font-bold px-2 mb-4">Settings</h1>
-        <nav className="space-y-1">
+    <div className="flex min-h-full flex-col md:min-h-[calc(100svh-3.5rem)] md:flex-row">
+      <aside className="w-full shrink-0 border-b border-border bg-muted/20 p-3 md:w-56 md:border-r md:border-b-0 md:p-4">
+        <div className="mb-3 flex items-center gap-2 px-2 pt-1">
+          <Settings2 className="size-4 text-muted-foreground" aria-hidden="true" />
+          <h1 className="font-semibold tracking-tight">Settings</h1>
+        </div>
+        <nav aria-label="Settings sections" className="grid grid-cols-2 gap-1 sm:grid-cols-3 md:block md:space-y-1">
           {sections.map((s) => {
             const active = pathname.startsWith(s.href);
             return (
               <Link
                 key={s.href}
                 href={s.href}
-                className={`block px-3 py-2 rounded-md text-sm transition-colors ${
+                aria-current={active ? "page" : undefined}
+                className={`block rounded-md px-3 py-2 text-sm font-medium transition-colors ${
                   active
-                    ? "bg-muted text-foreground"
-                    : "text-muted-foreground hover:text-foreground hover:bg-muted"
+                    ? "bg-background text-foreground shadow-sm"
+                    : "text-muted-foreground hover:bg-background/70 hover:text-foreground"
                 }`}
               >
                 {s.label}
@@ -37,7 +42,7 @@ export default function SettingsLayout({ children }: { children: React.ReactNode
           })}
         </nav>
       </aside>
-      <div className="flex-1">{children}</div>
+      <div className="min-w-0 flex-1">{children}</div>
     </div>
   );
 }

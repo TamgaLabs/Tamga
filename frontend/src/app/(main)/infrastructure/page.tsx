@@ -7,6 +7,11 @@ import { useSystemTopology } from "@/hooks/useTopology";
 import { useGlobalTrafficOverlay } from "@/components/topology/useTrafficOverlay";
 import { TopologyGraph } from "@/components/topology";
 import type { TopologyNode } from "@/lib/api";
+import { PageHeader, PageHeaderActions, PageHeaderDescription, PageHeaderTitle } from "@/components/page-header";
+import { Badge } from "@/components/ui/badge";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Skeleton } from "@/components/ui/skeleton";
+import { AlertCircle, Info, RefreshCw } from "lucide-react";
 
 export default function InfrastructurePage() {
   const { user, loading: authLoading } = useAuth();
@@ -36,16 +41,16 @@ export default function InfrastructurePage() {
   }
 
   return (
-    <div className="p-6 max-w-7xl mx-auto">
-      {/* Header */}
-      <div className="mb-8">
-        <h1 className="text-2xl font-bold mb-4">Infrastructure</h1>
-      </div>
+    <div className="mx-auto max-w-7xl p-4 sm:p-6">
+      <PageHeader className="mb-6">
+        <div><PageHeaderTitle>Infrastructure</PageHeaderTitle><PageHeaderDescription>Live container topology with traffic health overlays.</PageHeaderDescription></div>
+        <PageHeaderActions><Badge variant="secondary" className="gap-1.5"><RefreshCw className="size-3" />Refreshes every 8s</Badge></PageHeaderActions>
+      </PageHeader>
 
       {/* Error state */}
       {error && (
-        <div className="mb-6 p-4 bg-destructive/10 border border-destructive/30 rounded-lg text-sm text-destructive">
-          Failed to load topology: {error.message}
+        <div role="alert" className="mb-6 flex gap-3 rounded-xl border border-destructive/30 bg-destructive/10 p-4 text-sm text-destructive">
+          <AlertCircle className="mt-0.5 size-4 shrink-0" /><div><p className="font-medium">Topology is unavailable</p><p className="mt-1 text-destructive/80">{error.message}</p></div>
         </div>
       )}
 
@@ -62,40 +67,38 @@ export default function InfrastructurePage() {
           />
 
           {/* Legend for traffic overlay */}
-          <div className="mt-6 p-4 bg-card border border-border rounded-lg">
-            <h3 className="text-sm font-semibold mb-3">Traffic Overlay Legend</h3>
-            <div className="grid grid-cols-2 gap-4 text-xs">
+          <Card className="mt-6">
+            <CardHeader className="gap-2 p-4 pb-3 sm:p-5 sm:pb-3"><CardTitle className="flex items-center gap-2 text-sm"><Info className="size-4 text-muted-foreground" />Traffic overlay legend</CardTitle><p className="text-xs text-muted-foreground">Node colour shows errors; edge weight shows traffic entering services.</p></CardHeader>
+            <CardContent className="grid gap-5 p-4 pt-0 text-xs sm:grid-cols-2 sm:p-5 sm:pt-0">
               <div>
-                <div className="font-medium mb-2">Node Color (Error Rate)</div>
-                <div className="flex items-center gap-2 mb-1">
-                  <div className="w-4 h-4 rounded-full" style={{ backgroundColor: "hsl(142, 71%, 45%)" }} />
+                <div className="mb-2 font-medium">Node colour · error rate</div>
+                <div className="mb-1 flex items-center gap-2">
+                  <div className="size-3 rounded-full ring-1 ring-inset ring-black/10 dark:ring-white/15" style={{ backgroundColor: "hsl(142, 71%, 45%)" }} />
                   <span>&lt;1% errors (healthy)</span>
                 </div>
-                <div className="flex items-center gap-2 mb-1">
-                  <div className="w-4 h-4 rounded-full" style={{ backgroundColor: "hsl(43, 96%, 56%)" }} />
+                <div className="mb-1 flex items-center gap-2">
+                  <div className="size-3 rounded-full ring-1 ring-inset ring-black/10 dark:ring-white/15" style={{ backgroundColor: "hsl(43, 96%, 56%)" }} />
                   <span>1–5% errors (warning)</span>
                 </div>
                 <div className="flex items-center gap-2">
-                  <div className="w-4 h-4 rounded-full" style={{ backgroundColor: "hsl(0, 84.2%, 60.2%)" }} />
+                  <div className="size-3 rounded-full ring-1 ring-inset ring-black/10 dark:ring-white/15" style={{ backgroundColor: "hsl(0, 84.2%, 60.2%)" }} />
                   <span>≥5% errors (critical)</span>
                 </div>
               </div>
               <div>
-                <div className="font-medium mb-2">Edge Thickness (Request Volume)</div>
+                <div className="mb-2 font-medium">Edge weight · request volume</div>
                 <div className="text-muted-foreground">
                   Edges from Traefik to services thicken with request volume. Internal edges (app↔database) remain at base thickness—they have no Traefik metrics.
                 </div>
               </div>
-            </div>
-          </div>
+            </CardContent>
+          </Card>
         </>
       )}
 
       {/* Loading state (shown while initially fetching) */}
       {loading && !topology && (
-        <div className="text-center py-20 text-muted-foreground">
-          <p className="text-lg">Loading infrastructure...</p>
-        </div>
+        <div aria-label="Loading infrastructure"><Skeleton className="h-[32rem] w-full" /></div>
       )}
     </div>
   );

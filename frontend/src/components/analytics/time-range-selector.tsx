@@ -39,7 +39,7 @@ export function TimeRangeSelector({ value, onChange }: TimeRangeSelectorProps) {
   const ranges: TimeRange[] = ["1h", "24h", "7d"];
 
   return (
-    <div className="flex gap-2">
+    <div className="flex flex-wrap gap-2" aria-label="Time range">
       {ranges.map((range) => (
         <Button
           key={range}
