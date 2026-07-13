@@ -1,9 +1,9 @@
 ---
 id: SPRINT-005
 name: Tamga Console UI Polish
-status: planning
+status: complete
 created: 2026-07-12
-completed:
+completed: 2026-07-13
 ---
 
 ## Goal
@@ -64,18 +64,18 @@ accent (never as dense body or code text).
 - TEST-019 — [C0] Frontend runtime baseline integration verification — done
 - BUG-035 — [C0] Dashboard new-project route renders without authentication — done
 - BUG-036 — [C0] Frontend standalone Docker image starts server from the wrong path — done
-- FEAT-042 — [C1] Tamga Console shadcn design foundation — pending
-- FEAT-043 — [C1] Responsive Tamga Console application shell — pending
-- FEAT-044 — [C1] Dashboard and auth UI refresh — pending
-- FEAT-045 — [C1] Project workspace UI refresh — pending
-- FEAT-046 — [C1] Container operations UI refresh — pending
-- FEAT-047 — [C1] Settings and action-form UI refresh — pending
-- FEAT-048 — [C1] Code and terminal workspace UI refresh — pending
-- FEAT-049 — [C1] Analytics and infrastructure UI refresh — pending
-- TEST-020 — [C1] Tamga Console integrated UI verification — pending
-- BUG-037 — [C2] Terminating an agent session does not remove its Code-page terminal tab — pending
-- FEAT-050 — [C2] Colored, history-aware and completable agent shell — pending
-- TEST-021 — [C2] Terminal interaction reliability integration — pending
+- FEAT-042 — [C1] Tamga Console shadcn design foundation — done
+- FEAT-043 — [C1] Responsive Tamga Console application shell — done
+- FEAT-044 — [C1] Dashboard and auth UI refresh — done
+- FEAT-045 — [C1] Project workspace UI refresh — done
+- FEAT-046 — [C1] Container operations UI refresh — done
+- FEAT-047 — [C1] Settings and action-form UI refresh — done
+- FEAT-048 — [C1] Code and terminal workspace UI refresh — done
+- FEAT-049 — [C1] Analytics and infrastructure UI refresh — done
+- TEST-020 — [C1] Tamga Console integrated UI verification — done
+- BUG-037 — [C2] Terminating an agent session does not remove its Code-page terminal tab — done
+- FEAT-050 — [C2] Colored, history-aware and completable agent shell — done
+- TEST-021 — [C2] Terminal interaction reliability integration — done
 - TEST-022 — [C3-preflight] Test automation readiness audit — done
 - FEAT-051 — [C3] Deterministic frontend and backend test command foundation — done
 - FEAT-052 — [C3] Frontend unit-test foundation and critical behavior coverage — done
@@ -84,5 +84,27 @@ accent (never as dense body or code text).
 
 ## Release Notes
 ### Added
+- Tamga Console branding with Geist Pixel Square display typography
+- Tailwind CSS 4.3 with CSS-first theme tokens and shadcn Nova preset
+- Responsive sidebar with mobile Sheet drawer, icon collapse, Ctrl/Cmd+B toggle
+- Shared shadcn primitives: PageHeader, Card, Table, Empty, Skeleton, Field, InputGroup, AlertDialog, Sheet, Breadcrumb, Tooltip, Sonner
+- Light/dark theme with 25+ CSS custom properties and system preference tracking
+- Bash completion and git completion in agent sandbox terminals
+- Cross-tab command history sync in agent terminal sessions
+- Terminal tab helper utilities for snapshot merging and deterministic active-tab fallback
+
 ### Changed
+- Replaced Tailwind CSS 3 configuration with Tailwind 4.3 CSS-first `@theme inline` mapping
+- Login page rebuilt as Tamga Console split login block with shadcn Field/InputGroup
+- Dashboard shows loading skeletons, empty states, and error feedback with project status summaries
+- Project workspace uses shared PageHeader, Card, Table, Empty patterns with per-row container lifecycle feedback
+- Container inventory and detail pages use shadcn Card/Badge/AlertDialog with controlled destructive confirmations
+- Settings routes rebuilt on Field/Switch/RadioGroup/Select/Table with inactive form state handling
+- Code/terminal workspace uses Tabs, ScrollArea, Tooltip, Empty, and Badge for polished editor and terminal UX
+- Analytics and infrastructure pages use shared Card/Badge/Skeleton with responsive overflow for graph controls
+- Agent sandbox Dockerfile installs bash-completion and git-bash-completion packages
+
 ### Fixed
+- Terminating an agent session no longer leaves a stale tab in the Code workspace
+- Dashboard new-project route properly requires authentication
+- Standalone Docker image starts from the correct server path
