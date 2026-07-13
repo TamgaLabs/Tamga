@@ -421,6 +421,9 @@ services:
 // already cover.
 func newTestProjectServiceWithRealDocker(t *testing.T) (*service.ProjectService, *sqlite.DB, *dockerclient.Client) {
 	t.Helper()
+	if os.Getenv("TAMGA_TEST_DOCKER") != "1" {
+		t.Skip("Docker integration is enabled only by test-backend-docker")
+	}
 	docker, err := dockerclient.New()
 	if err != nil {
 		t.Skipf("docker client not available: %v", err)

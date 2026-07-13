@@ -5,13 +5,9 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"strings"
 	"testing"
-	"time"
 
 	"github.com/TamgaLabs/Tamga/backend/internal/config"
-	"github.com/TamgaLabs/Tamga/backend/internal/domain"
-	dockerclient "github.com/TamgaLabs/Tamga/backend/internal/repository/docker"
 	"github.com/TamgaLabs/Tamga/backend/internal/repository/sqlite"
 	"github.com/TamgaLabs/Tamga/backend/internal/repository/traefik"
 )
@@ -94,83 +90,6 @@ func TestProjectServiceCloneRepo(t *testing.T) {
 	}
 	if string(content) != "hello from clone test\n" {
 		t.Fatalf("unexpected cloned content: %q", content)
-	}
-}
-
-// TestProjectServiceDeployStackServiceNameAlias is TEST-014's rework
-// close-out: exercises deployStack itself (not just the docker client
-// primitive it's built on) with a real two-service compose (web + redis,
-// prebuilt images - no clone/build needed, so it runs in this sandbox),
-// then confirms from INSIDE the web container that the redis peer resolves
-// by its BARE service name "redis" - the exact check TEST-014 ran
-// (nslookup) and found NXDOMAIN on before CreateContainerOpts/
-// ConnectNetworks grew an aliases parameter and deployStack started
-// passing svc.Name as that alias. Skips (not fails) if no Docker daemon is
-// reachable, same gating as internal/tests/repository/docker_client_test.go.
-func TestProjectServiceDeployStackServiceNameAlias(t *testing.T) {
-	docker, err := dockerclient.New()
-	if err != nil {
-		t.Skipf("docker client not available: %v", err)
-	}
-	ctx := context.Background()
-	if _, err := docker.DockerInfo(ctx); err != nil {
-		t.Skipf("docker daemon not reachable: %v", err)
-	}
-
-	svc, _ := newTestProjectService(t)
-	svc.docker = docker
-
-	deployCtx, cancel := context.WithTimeout(ctx, 90*time.Second)
-	defer cancel()
-
-	project := &domain.Project{
-		Name:       "alias-test-" + t.Name(),
-		SourceType: domain.SourceTypeRemote,
-	}
-	if err := svc.db.CreateProject(project); err != nil {
-		t.Fatalf("create project row: %v", err)
-	}
-	t.Cleanup(func() {
-		cleanupCtx := context.Background()
-		netName := projectNetworkName(project.ID)
-		for _, service := range []string{"web", "redis"} {
-			name := serviceContainerName(project.ID, service)
-			docker.StopContainer(cleanupCtx, name)
-			docker.RemoveContainer(cleanupCtx, name)
-		}
-		docker.NetworkRemove(cleanupCtx, netName)
-	})
-
-	// nginx:alpine (not bare alpine) for "web" - its default CMD keeps the
-	// container running in the foreground so there's a live process to
-	// exec into afterward; matches TEST-014's own web+redis fixture choice.
-	// pullImages=true so deployStack pulls both images itself, same as a
-	// real compose deploy would.
-	services := []domain.ComposeService{
-		{Name: "redis", Image: "redis:7-alpine"},
-		{Name: "web", Image: "nginx:alpine", DependsOn: []string{"redis"}},
-	}
-
-	if err := svc.deployStack(deployCtx, project, services, true); err != nil {
-		t.Fatalf("deployStack: %v", err)
-	}
-
-	webName := serviceContainerName(project.ID, "web")
-	execID, err := docker.ExecCreate(deployCtx, webName, []string{"getent", "hosts", "redis"}, "")
-	if err != nil {
-		t.Fatalf("ExecCreate: %v", err)
-	}
-	hijacked, err := docker.ExecAttach(deployCtx, execID)
-	if err != nil {
-		t.Fatalf("ExecAttach: %v", err)
-	}
-	defer hijacked.Close()
-
-	buf := make([]byte, 4096)
-	n, _ := hijacked.Reader.Read(buf)
-	output := string(buf[:n])
-	if !strings.Contains(output, "redis") {
-		t.Errorf("bare service-name alias %q did not resolve from peer web container; getent output: %q", "redis", output)
 	}
 }
 

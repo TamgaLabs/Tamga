@@ -133,7 +133,10 @@ cleanup() {
       volume) docker volume inspect "$name" >/dev/null 2>&1 && docker volume rm -- "$name" || true ;;
       file)
         case "$name" in
-          /tmp/tamga-sdlc-*|"$PWD"/.sdlc-tmp/*) [[ -e "$name" ]] && rm -f -- "$name" ;;
+          # A task may record one private fixture directory below /tmp.  It
+          # is still an exact manifest entry; never infer a directory from a
+          # compose project name or a prefix during cleanup.
+          /tmp/tamga-sdlc-*|"$PWD"/.sdlc-tmp/*) [[ -e "$name" ]] && rm -rf -- "$name" ;;
           *) echo "refusing unsafe file path: $name" >&2; failed=true ;;
         esac
         ;;

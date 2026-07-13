@@ -108,16 +108,6 @@ passed as a `?token=` query param instead.
 | GET    | `/api/code/{projectId}/file`                                      | Bearer  | Read file                 |
 | PUT    | `/api/code/{projectId}/file`                                      | Bearer  | Write file                |
 
-### Agent Providers
-
-| Method | Path                         | Auth    | Description                |
-|--------|------------------------------|---------|----------------------------|
-| GET    | `/api/agent-providers`       | Bearer  | List providers             |
-| GET    | `/api/agent-providers/{id}`  | Bearer  | Get provider               |
-| POST   | `/api/agent-providers`       | Bearer  | Create provider            |
-| PUT    | `/api/agent-providers/{id}`  | Bearer  | Update provider            |
-| DELETE | `/api/agent-providers/{id}`  | Bearer  | Delete provider            |
-
 ### System / Docker
 
 | Method | Path                                   | Auth    | Description               |
@@ -133,14 +123,6 @@ passed as a `?token=` query param instead.
 | PUT    | `/api/system/containers/{id}/resources`| Bearer  | Update resources          |
 | POST   | `/api/system/prune`                    | Bearer  | Prune Docker system       |
 | GET    | `/api/system/info`                     | Bearer  | Docker info               |
-
-### API Keys
-
-| Method | Path                    | Auth    | Description       |
-|--------|-------------------------|---------|-------------------|
-| GET    | `/api/system/api-keys`  | Bearer  | List API keys     |
-| POST   | `/api/system/api-keys`  | Bearer  | Set API key       |
-| DELETE | `/api/system/api-keys/{id}` | Bearer | Delete API key  |
 
 ## Environment Variables
 
@@ -180,16 +162,33 @@ See `.env.example` for all configurable variables and defaults.
 
 ## Makefile
 
-| Command      | Description                        |
-|--------------|------------------------------------|
-| `make setup` | Copy `.env.example` to `.env`      |
-| `make build` | Build Docker images                |
-| `make up`    | Start production stack             |
-| `make down`  | Stop production stack              |
-| `make logs`  | Tail backend container logs        |
-| `make test`  | Run Go tests                       |
-| `make smoke-test` | Run smoke tests against running stack |
-| `make clean` | Stop and remove volumes            |
+| Command | Description |
+|---|---|
+| `make setup` | Copy `.env.example` to `.env` |
+| `make build` | Build Docker images |
+| `make up` | Start production stack |
+| `make down` | Stop production stack |
+| `make logs` | Tail backend container logs |
+| `make clean` | Stop and remove volumes |
+
+## Test Commands
+
+The test lanes are intentionally separate. Fast commands do not require
+Docker and never start or change a compose stack; every command returns a
+single process exit status suitable for local use and CI.
+
+| Lane | Command | Contract |
+|---|---|---|
+| Backend unit | `make test` or `make test-backend-unit` | Docker-free Go tests. Docker-reaching tests are selected only by the dedicated Docker lane. |
+| Frontend static | `make test-frontend-static` | Runs lint plus an offline production build; no API or Docker is used. |
+| Isolated API | `make test-backend-api` | Runs the auth and project scripts sequentially with their own temporary databases, ports, and cleanup. Requires `go`, `curl`, `git`, and `sqlite3`. |
+| Docker integration | `TAMGA_TEST_DOCKER_OWNED=1 make test-backend-docker` | Requires a fresh, CI/job-owned Docker daemon. It refuses known terminal fixture names, builds the two required images, runs serially, and removes only resources it owns. It never runs against a shared developer daemon. |
+| Frontend unit | `make test-frontend-unit` | Stable entry point for the Vitest suite supplied by FEAT-052. |
+| Browser E2E | `E2E_BASE_URL=https://… make test-e2e` | Stable entry point for FEAT-053. The URL must name a CI-owned stack; no stack is inferred or started. |
+| Live-stack smoke | `CADDY_HOST=https://… ADMIN_PASSWORD=… make test-live-smoke` | Operator-only check against an explicitly supplied disposable stack. It can mutate auth/project data and is never a default or CI lane. |
+
+`make smoke-test` remains a deprecated compatibility alias for
+`make test-live-smoke` and has the same explicit environment requirements.
 
 ## Smoke Tests
 
@@ -199,17 +198,14 @@ Verify that a running (or freshly-brought-up) Tamga stack is healthy and basic f
 - Auth flow (setup, login, token generation)
 - Basic project CRUD round-trip (create, list, delete)
 
-Run the smoke tests against an already-running stack:
+Run the smoke tests only against an explicitly selected, disposable running stack:
 
 ```bash
-make smoke-test
+CADDY_HOST=https://localhost ADMIN_PASSWORD=... make test-live-smoke
 ```
 
-Or bring up the stack and run tests in one command:
-
-```bash
-./scripts/smoke-test.sh --up
-```
+Do not use `--up` as a CI default: the smoke script is a live-stack check and
+creates authentication/project state in its target database.
 
 The script exits 0 on success with per-step output, or exits 1+ with a clear error message identifying which check failed. Example output:
 

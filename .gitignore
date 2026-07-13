@@ -27,6 +27,9 @@ node_modules/
 .next/
 frontend/.next/
 frontend/node_modules/
+frontend/playwright-report/
+frontend/test-results/
+frontend/blob-report/
 
 # OS
 .DS_Store

@@ -8,7 +8,9 @@
     "build": "next build",
     "build:offline": "NEXT_PUBLIC_OFFLINE_MODE=true next build",
     "start": "next start",
-    "lint": "next lint"
+    "lint": "next lint",
+    "test:unit": "test -x ./node_modules/.bin/vitest || { echo 'Frontend unit tests require Vitest (provided by FEAT-052); install declared dependencies first.' >&2; exit 2; }; exec ./node_modules/.bin/vitest run",
+    "test:e2e": "test -f ./playwright.config.ts && test -x ./node_modules/.bin/playwright || { echo 'Browser E2E requires the Playwright dependency and config supplied by FEAT-053.' >&2; exit 2; }; test -n \"$E2E_BASE_URL\" && test -n \"$E2E_ADMIN_PASSWORD\" && test \"$E2E_OWNED_STACK\" = 1 || { echo 'Browser E2E requires E2E_BASE_URL, E2E_ADMIN_PASSWORD, and E2E_OWNED_STACK=1 for a CI-owned disposable Tamga stack.' >&2; exit 2; }; exec ./node_modules/.bin/playwright test"
   },
   "dependencies": {
     "@monaco-editor/react": "^4.7.0",
@@ -38,14 +40,17 @@
     "tailwindcss-animate": "^1.0.7"
   },
   "devDependencies": {
+    "@playwright/test": "1.61.1",
     "@types/node": "^22.0.0",
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
     "autoprefixer": "^10.0.0",
     "eslint": "^9.0.0",
     "eslint-config-next": "^15.0.0",
+    "jsdom": "26.1.0",
     "postcss": "^8.0.0",
     "tailwindcss": "^3.4.0",
-    "typescript": "^5.0.0"
+    "typescript": "^5.0.0",
+    "vitest": "3.2.4"
   }
 }

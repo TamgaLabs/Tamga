@@ -173,7 +173,6 @@ check "me: tampered (valid-looking) token -> 401" GET "/auth/me" 401 '' "Bearer 
 # --- authMiddleware across other protected routes ---
 log_step "authMiddleware on other protected routes (router.go)"
 check "projects: no token -> 401"                 GET "/projects" 401
-check "agent-providers: no token -> 401"           GET "/agent-providers" 401
 check "system/containers: no token -> 401"        GET "/system/containers" 401
 check "projects: garbage token -> 401"            GET "/projects" 401 '' "Bearer garbage"
 check "projects: valid token -> not blocked (200)" GET "/projects" 200 '' "Bearer ${TOKEN}"

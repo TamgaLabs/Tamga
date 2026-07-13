@@ -1,0 +1,43 @@
+services:
+  traefik:
+    image: traefik:v3.7
+    ports:
+      - "${E2E_HTTP_PORT}:80"
+      - "${E2E_HTTPS_PORT}:443"
+    volumes:
+      - ../traefik/traefik.yml:/etc/traefik/traefik.yml:ro
+      - ${E2E_DYNAMIC_DIR}:/etc/traefik/dynamic:ro
+      - ${E2E_TRAEFIK_DATA_DIR}:/data
+    networks:
+      - e2e-network
+
+  backend:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile.backend
+    image: ${E2E_IMAGE_PREFIX}-backend
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ${E2E_DATA_DIR}:/data
+      - ${E2E_DYNAMIC_DIR}:/etc/traefik/dynamic
+      - ..:/tamga-src:ro
+    env_file:
+      - ${E2E_BACKEND_ENV_FILE}
+    environment:
+      HOST_DATA_DIR: ${E2E_DATA_DIR}
+      SYSTEM_CODE_DIR: /tamga-src
+    networks:
+      - e2e-network
+
+  frontend:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile.frontend
+    image: ${E2E_IMAGE_PREFIX}-frontend
+    networks:
+      - e2e-network
+
+networks:
+  e2e-network:
+    name: ${E2E_NETWORK_NAME}
+    driver: bridge
