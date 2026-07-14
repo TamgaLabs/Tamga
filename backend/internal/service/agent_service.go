@@ -373,7 +373,7 @@ func terminalSessionPidFile(sessionID string) string {
 }
 
 // execBash starts the session's shell process. It wraps the actual
-// `/bin/bash` invocation in a tiny `echo $$ > pidfile; exec /bin/bash` so
+// `/bin/bash -i` invocation in a tiny `echo $$ > pidfile; exec /bin/bash -i` so
 // the shell's own PID - as seen inside the *container's* PID namespace - is
 // recorded to a file before `exec` replaces the process image with bash
 // (keeping the same PID). See killSessionProcess for why this is needed:
@@ -384,7 +384,7 @@ func terminalSessionPidFile(sessionID string) string {
 // container's own namespace sidesteps that mismatch entirely.
 func (s *AgentService) execBash(ctx context.Context, containerName, workDir, sessionID string) (string, error) {
 	pidFile := terminalSessionPidFile(sessionID)
-	cmd := []string{"/bin/bash", "-c", fmt.Sprintf("echo $$ > %s; exec /bin/bash", pidFile)}
+	cmd := []string{"/bin/bash", "-c", fmt.Sprintf("echo $$ > %s; exec /bin/bash -i", pidFile)}
 	return s.docker.ExecCreate(ctx, containerName, cmd, workDir)
 }
 

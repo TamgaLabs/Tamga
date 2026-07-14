@@ -14,6 +14,10 @@ history:
 ## Summary
 <What is verified and why.>
 
+**Cluster:** <cluster or "standalone">
+
+**Verifies:** <part IDs or "this standalone task">
+
 ## Scope
 - <flow/module>
 
@@ -44,5 +48,5 @@ history:
 <Tester appends.>
 
 ## Pipeline Telemetry
-| date | role | model | effort | result | duration | rework |
-|---|---|---|---|---|---|---|
+| date | role | model | effort | result | duration | tokens | rework |
+|---|---|---|---|---|---|---|---|

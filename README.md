@@ -87,10 +87,13 @@ The backend auto-runs database migrations on startup. An admin user is created a
 ### Agent Terminal
 
 A WebSocket-backed terminal (xterm.js on the frontend) into an on-demand
-sandbox container. The container is created when the terminal connects and
-stopped + removed when it disconnects. Run whatever agent CLI you like
-(`opencode`, etc.) by hand inside it - the backend just proxies a shell, it
-doesn't speak any agent-specific protocol.
+sandbox container. Each interactive Bash session remains alive when its tab
+detaches and ends only when it is terminated or its shell exits. Command
+history is shared by tabs attached to the same live project sandbox, kept only
+inside that sandbox, and is removed when its final session ends and the
+sandbox is removed. The browser does not store terminal history. Run whatever
+agent CLI you like (`opencode`, etc.) by hand inside it - the backend just
+proxies a shell; it doesn't speak any agent-specific protocol.
 
 | Method | Path                                       | Auth    | Description                        |
 |--------|---------------------------------------------|---------|------------------------------------|

@@ -14,6 +14,12 @@ history:
 ## Summary
 <What and why.>
 
+**Part of:** <cluster or "standalone">
+
+**Cluster Test:** <TEST-ID or "none">
+
+**Depends on:** <IDs or "none">
+
 ## Requirements
 - <specific requirement>
 
@@ -43,5 +49,5 @@ history:
 <Tester appends.>
 
 ## Pipeline Telemetry
-| date | role | model | effort | result | duration | rework |
-|---|---|---|---|---|---|---|
+| date | role | model | effort | result | duration | tokens | rework |
+|---|---|---|---|---|---|---|---|

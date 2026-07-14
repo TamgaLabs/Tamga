@@ -14,6 +14,12 @@ history:
 ## Summary
 <Broken behavior and impact.>
 
+**Part of:** <cluster or "standalone">
+
+**Cluster Test:** <TEST-ID or "none">
+
+**Depends on:** <IDs or "none">
+
 ## Steps to Reproduce
 1. <step>
 
@@ -52,5 +58,5 @@ history:
 <Tester appends.>
 
 ## Pipeline Telemetry
-| date | role | model | effort | result | duration | rework |
-|---|---|---|---|---|---|---|
+| date | role | model | effort | result | duration | tokens | rework |
+|---|---|---|---|---|---|---|---|

@@ -1,6 +1,6 @@
 interface:
   display_name: "Tamga SDLC"
   short_description: "Plan and run Tamga's gated SDLC pipeline"
-  default_prompt: "Use $tamga-sdlc to inspect the board and advance the next eligible task through the gated pipeline."
+  default_prompt: "Use $sdlc to inspect the board and advance the next eligible task through the gated pipeline."
 policy:
   allow_implicit_invocation: true
