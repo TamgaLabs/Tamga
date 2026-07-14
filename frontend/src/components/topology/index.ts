@@ -1,2 +1,3 @@
 export { TopologyGraph } from "./TopologyGraph";
-export * from "./utils";
+export { TopologyNodeComponent } from "./TopologyNode";
+export { topologyToFlow } from "./utils";

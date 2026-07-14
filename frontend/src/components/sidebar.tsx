@@ -6,9 +6,11 @@ import {
   BarChart3,
   Code2,
   Container,
+  Globe,
   LayoutDashboard,
   LogOut,
   Network,
+  Server,
   Settings,
 } from "lucide-react";
 
@@ -26,14 +28,29 @@ import {
   SidebarRail,
   useSidebar,
 } from "@/components/ui/sidebar";
+import { ProjectSelector } from "@/components/project-selector";
+import { useWorkspace } from "@/contexts/workspace-context";
 
-const navigation = [
-  { href: "/dashboard", label: "Projects", icon: LayoutDashboard },
+type NavItem = { href: string; label: string; icon: typeof LayoutDashboard };
+
+const globalNav: NavItem[] = [
+  { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { href: "/containers", label: "Containers", icon: Container },
-  { href: "/code", label: "Code", icon: Code2 },
   { href: "/analytics", label: "Analytics", icon: BarChart3 },
-  { href: "/infrastructure", label: "Infrastructure", icon: Network },
-  { href: "/settings", label: "Settings", icon: Settings },
+  { href: "/infrastructure", label: "Topology", icon: Network },
+];
+
+const projectNav: NavItem[] = [
+  { href: "/projects/$id", label: "Dashboard", icon: LayoutDashboard },
+  { href: "/projects/$id/containers", label: "Containers", icon: Container },
+  { href: "/projects/$id/environment", label: "Environment", icon: Server },
+  { href: "/projects/$id/analytics", label: "Analytics", icon: BarChart3 },
+  { href: "/projects/$id/map", label: "Topology", icon: Network },
+  { href: "/projects/$id/code", label: "Code", icon: Code2 },
+];
+
+const nonProjectNav: NavItem[] = [
+  { href: "/dashboard/non-project", label: "Dashboard", icon: Globe },
 ];
 
 function isCurrentRoute(pathname: string, href: string) {
@@ -44,9 +61,23 @@ export function AppSidebar() {
   const pathname = usePathname();
   const { logout } = useAuth();
   const { isMobile, setOpenMobile, state } = useSidebar();
+  const { view, selectedProject } = useWorkspace();
   const showLabels = isMobile || state === "expanded";
   const closeMobileNavigation = () => {
     if (isMobile) setOpenMobile(false);
+  };
+
+  const navItems: NavItem[] = (() => {
+    if (view === "all") return globalNav;
+    if (view === "non-project") return nonProjectNav;
+    return projectNav;
+  })();
+
+  const resolveHref = (href: string) => {
+    if (typeof view === "number" && href.includes("$id")) {
+      return href.replace("$id", String(view));
+    }
+    return href;
   };
 
   return (
@@ -61,21 +92,27 @@ export function AppSidebar() {
           <span className="flex size-7 shrink-0 items-center justify-center rounded-md bg-sidebar-primary font-display text-xs text-sidebar-primary-foreground">
             T
           </span>
-          {showLabels && <span className="font-display text-sm tracking-wide">Tamga Console</span>}
+          {showLabels && <span className="font-display text-lg tracking-wide">Tamga Console</span>}
         </Link>
+        {showLabels && (
+          <div className="mt-2">
+            <ProjectSelector />
+          </div>
+        )}
       </SidebarHeader>
 
       <SidebarContent>
         <SidebarGroup>
-          {showLabels && <SidebarGroupLabel>Workspace</SidebarGroupLabel>}
+          {showLabels && <SidebarGroupLabel>{selectedProject?.name ?? "Workspace"}</SidebarGroupLabel>}
           <SidebarMenu>
-            {navigation.map(({ href, label, icon: Icon }) => {
-              const active = isCurrentRoute(pathname, href);
+            {navItems.map(({ href, label, icon: Icon }) => {
+              const resolvedHref = resolveHref(href);
+              const active = isCurrentRoute(pathname, resolvedHref);
               return (
                 <SidebarMenuItem key={href}>
-                  <SidebarMenuButton asChild isActive={active} tooltip={label}>
+                  <SidebarMenuButton asChild isActive={active}>
                     <Link
-                      href={href}
+                      href={resolvedHref}
                       aria-current={active ? "page" : undefined}
                       onClick={closeMobileNavigation}
                     >
@@ -93,9 +130,20 @@ export function AppSidebar() {
       <SidebarFooter className="border-t border-sidebar-border">
         <SidebarMenu>
           <SidebarMenuItem>
+            <SidebarMenuButton asChild isActive={isCurrentRoute(pathname, "/settings")}>
+              <Link
+                href="/settings"
+                aria-current={isCurrentRoute(pathname, "/settings") ? "page" : undefined}
+                onClick={closeMobileNavigation}
+              >
+                <Settings aria-hidden="true" />
+                {showLabels && <span>Settings</span>}
+              </Link>
+            </SidebarMenuButton>
+          </SidebarMenuItem>
+          <SidebarMenuItem>
             <SidebarMenuButton
               type="button"
-              tooltip="Logout"
               onClick={() => {
                 logout();
                 window.location.assign("/login");

@@ -142,11 +142,11 @@ SidebarTrigger.displayName = "SidebarTrigger"
 
 const SidebarRail = React.forwardRef<HTMLButtonElement, React.ComponentProps<"button">>(({ className, ...props }, ref) => {
   const { toggleSidebar } = useSidebar()
-  return <button ref={ref} type="button" tabIndex={-1} aria-label="Toggle sidebar" title="Toggle sidebar" onClick={toggleSidebar} className={cn("absolute inset-y-0 z-50 hidden w-4 -translate-x-1/2 cursor-ew-resize md:block", className)} {...props} />
+  return <button ref={ref} type="button" tabIndex={-1} aria-label="Toggle sidebar" title="Toggle sidebar" onClick={toggleSidebar} className={cn("absolute inset-y-0 z-50 hidden w-2 cursor-ew-resize md:block", className)} {...props} />
 })
 SidebarRail.displayName = "SidebarRail"
 
-const SidebarInset = React.forwardRef<HTMLDivElement, React.ComponentProps<"main">>(({ className, ...props }, ref) => <main ref={ref} className={cn("relative flex w-full flex-1 flex-col bg-background", className)} {...props} />)
+const SidebarInset = React.forwardRef<HTMLDivElement, React.ComponentProps<"main">>(({ className, ...props }, ref) => <main ref={ref} className={cn("relative flex flex-1 flex-col bg-background", className)} {...props} />)
 SidebarInset.displayName = "SidebarInset"
 const SidebarHeader = ({ className, ...props }: React.ComponentProps<"div">) => <div data-sidebar="header" className={cn("flex flex-col gap-2 p-2", className)} {...props} />
 const SidebarContent = ({ className, ...props }: React.ComponentProps<"div">) => <div data-sidebar="content" className={cn("flex min-h-0 flex-1 flex-col gap-2 overflow-auto", className)} {...props} />

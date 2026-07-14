@@ -1,6 +1,5 @@
 "use client";
 
-import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Command } from "lucide-react";
 
@@ -8,10 +7,8 @@ import { AppSidebar } from "@/components/sidebar";
 import {
   Breadcrumb,
   BreadcrumbItem,
-  BreadcrumbLink,
   BreadcrumbList,
   BreadcrumbPage,
-  BreadcrumbSeparator,
 } from "@/components/ui/breadcrumb";
 import {
   SidebarInset,
@@ -20,17 +17,18 @@ import {
   useSidebar,
 } from "@/components/ui/sidebar";
 import { cn } from "@/lib/utils";
+import { WorkspaceProvider, useWorkspace } from "@/contexts/workspace-context";
 
 const routeLabels: Record<string, string> = {
   analytics: "Analytics",
   appearance: "Appearance",
   code: "Code",
   containers: "Containers",
-  dashboard: "Projects",
+  dashboard: "Dashboard",
   environment: "Environment",
-  infrastructure: "Infrastructure",
+  infrastructure: "Topology",
   logs: "Logs",
-  map: "Map",
+  map: "Topology",
   network: "Network",
   new: "New project",
   projects: "Projects",
@@ -40,19 +38,20 @@ const routeLabels: Record<string, string> = {
   stats: "Stats",
   system: "System",
   git: "Git",
-  actions: "Actions",
 };
 
 function pageContext(pathname: string) {
+  if (pathname === "/dashboard/non-project") return "Non-project";
   const segments = pathname.split("/").filter(Boolean);
   const last = segments.at(-1);
-  if (!last) return "Projects";
+  if (!last) return "Dashboard";
   return routeLabels[last] ?? (Number.isNaN(Number(last)) ? last.replace(/-/g, " ") : "Details");
 }
 
 function ShellContent({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const { state } = useSidebar();
+  const { selectedProject } = useWorkspace();
   const context = pageContext(pathname);
 
   return (
@@ -67,14 +66,14 @@ function ShellContent({ children }: { children: React.ReactNode }) {
         <div className="h-5 w-px bg-border" aria-hidden="true" />
         <Breadcrumb className="min-w-0">
           <BreadcrumbList className="flex-nowrap overflow-hidden">
-            <BreadcrumbItem className="shrink-0">
-              <BreadcrumbLink asChild>
-                <Link href="/dashboard" className="font-display text-xs tracking-wide text-foreground">
-                  Tamga Console
-                </Link>
-              </BreadcrumbLink>
-            </BreadcrumbItem>
-            <BreadcrumbSeparator className="shrink-0" />
+            {selectedProject && (
+              <>
+                <BreadcrumbItem className="shrink-0">
+                  <BreadcrumbPage className="text-xs text-muted-foreground">{selectedProject.name}</BreadcrumbPage>
+                </BreadcrumbItem>
+                <BreadcrumbItem className="shrink-0 text-muted-foreground">/</BreadcrumbItem>
+              </>
+            )}
             <BreadcrumbItem className="min-w-0">
               <BreadcrumbPage className="block truncate capitalize">{context}</BreadcrumbPage>
             </BreadcrumbItem>
@@ -89,9 +88,11 @@ function ShellContent({ children }: { children: React.ReactNode }) {
 
 export function ConsoleShell({ children }: { children: React.ReactNode }) {
   return (
-    <SidebarProvider>
-      <AppSidebar />
-      <ShellContent>{children}</ShellContent>
-    </SidebarProvider>
+    <WorkspaceProvider>
+      <SidebarProvider>
+        <AppSidebar />
+        <ShellContent>{children}</ShellContent>
+      </SidebarProvider>
+    </WorkspaceProvider>
   );
 }

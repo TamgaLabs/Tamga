@@ -1,56 +1,111 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { AlertCircle, ArrowUpRight, FolderKanban, Globe2, Plus } from "lucide-react";
-
-import { listProjects, type Project } from "@/lib/api";
+import {
+  listContainers,
+  listProjects,
+  startContainer,
+  stopContainer,
+  restartContainer,
+  removeContainer,
+  type ContainerInfo,
+  type Project,
+} from "@/lib/api";
+import { useSystemMetrics } from "@/hooks/useMetrics";
 import { useAuth } from "@/lib/auth";
-import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { getShowSystem } from "@/lib/settings";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@/components/ui/empty";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@/components/ui/empty";
 import { PageHeader, PageHeaderActions, PageHeaderDescription, PageHeaderTitle } from "@/components/page-header";
 import { Skeleton } from "@/components/ui/skeleton";
+import { ContainerRow } from "../projects/[id]/container-row";
+import {
+  AlertDialog,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import { Search, Container as ContainerIcon, Plus, FolderKanban, AlertCircle } from "lucide-react";
+import { toast } from "sonner";
 
-const statusVariant: Record<string, "success" | "warning" | "error" | "info" | "default"> = {
-  running: "success",
-  building: "warning",
-  cloning: "info",
-  created: "info",
-  error: "error",
-};
+type Group = { projectId: number; name: string; containers: ContainerInfo[] };
 
-function ProjectSummary({ label, value, description }: { label: string; value: number; description: string }) {
-  return (
-    <Card>
-      <CardHeader className="space-y-1 pb-3">
-        <CardDescription>{label}</CardDescription>
-        <CardTitle className="text-2xl tabular-nums">{value}</CardTitle>
-      </CardHeader>
-      <CardContent className="text-xs text-muted-foreground">{description}</CardContent>
-    </Card>
-  );
-}
+function GlobalMetricsSummary() {
+  const now = Math.floor(Date.now() / 1000);
+  const { data: metrics, loading } = useSystemMetrics({ from: now - 86400, to: now }, { refetchInterval: 60000 });
 
-function DashboardLoading() {
-  return (
-    <div className="space-y-6" aria-label="Loading projects" aria-busy="true">
-      <div className="grid gap-4 sm:grid-cols-3">
-        {["summary-one", "summary-two", "summary-three"].map((key) => <Skeleton key={key} className="h-28" />)}
+  if (loading && !metrics) {
+    return (
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        {[0, 1, 2, 3].map((i) => <Skeleton key={i} className="h-24" />)}
       </div>
-      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-        {["project-one", "project-two", "project-three"].map((key) => <Skeleton key={key} className="h-40" />)}
-      </div>
+    );
+  }
+
+  if (!metrics) return null;
+
+  const latestRequestRate = metrics.request_rate.length > 0 ? metrics.request_rate[metrics.request_rate.length - 1] : null;
+  const totalErrors = metrics.status_class.reduce((sum, p) => sum + (p.count_4xx || 0) + (p.count_5xx || 0), 0);
+  const latestLatency = metrics.latency.length > 0 ? metrics.latency[metrics.latency.length - 1] : null;
+  const latestBandwidth = metrics.bandwidth.length > 0 ? metrics.bandwidth[metrics.bandwidth.length - 1] : null;
+
+  return (
+    <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      <Card>
+        <CardHeader className="space-y-1 pb-2">
+          <CardTitle className="text-xs text-muted-foreground">Request Rate</CardTitle>
+          <CardContent className="p-0 text-2xl tabular-nums">{latestRequestRate ? latestRequestRate.rate_per_sec.toFixed(1) : "0"}<span className="text-xs text-muted-foreground ml-1">req/s</span></CardContent>
+        </CardHeader>
+      </Card>
+      <Card>
+        <CardHeader className="space-y-1 pb-2">
+          <CardTitle className="text-xs text-muted-foreground">Status Errors</CardTitle>
+          <CardContent className="p-0 text-2xl tabular-nums">{totalErrors}<span className="text-xs text-muted-foreground ml-1">total</span></CardContent>
+        </CardHeader>
+      </Card>
+      <Card>
+        <CardHeader className="space-y-1 pb-2">
+          <CardTitle className="text-xs text-muted-foreground">Avg Latency</CardTitle>
+          <CardContent className="p-0 text-2xl tabular-nums">{latestLatency ? (latestLatency.p50 * 1000).toFixed(0) : "0"}<span className="text-xs text-muted-foreground ml-1">ms</span></CardContent>
+        </CardHeader>
+      </Card>
+      <Card>
+        <CardHeader className="space-y-1 pb-2">
+          <CardTitle className="text-xs text-muted-foreground">Bandwidth</CardTitle>
+          <CardContent className="p-0 text-2xl tabular-nums">{latestBandwidth ? formatBytes(latestBandwidth.bytes_in + latestBandwidth.bytes_out) : "0 B"}</CardContent>
+        </CardHeader>
+      </Card>
     </div>
   );
 }
 
-export default function DashboardPage() {
+function formatBytes(bytes: number): string {
+  if (bytes === 0) return "0 B";
+  const k = 1024;
+  const sizes = ["B", "KB", "MB", "GB", "TB"];
+  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + " " + sizes[i];
+}
+
+export default function GlobalDashboardPage() {
+  const [containers, setContainers] = useState<ContainerInfo[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
   const [loading, setLoading] = useState(true);
+  const [search, setSearch] = useState("");
+  const [deleteTarget, setDeleteTarget] = useState<ContainerInfo | null>(null);
   const [error, setError] = useState("");
+  const [actionError, setActionError] = useState("");
+  const [pendingContainerId, setPendingContainerId] = useState<string | null>(null);
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState("");
   const { user, loading: authLoading } = useAuth();
   const router = useRouter();
 
@@ -58,31 +113,102 @@ export default function DashboardPage() {
     if (!authLoading && !user) router.replace("/login");
   }, [user, authLoading, router]);
 
-  useEffect(() => {
+  const fetchAll = useCallback(() => {
     if (!user) return;
     setLoading(true);
     setError("");
-    listProjects()
-      .then(setProjects)
-      .catch((err: unknown) => {
-        setError(err instanceof Error ? err.message : "Unable to load projects");
+    Promise.all([listContainers(), listProjects()])
+      .then(([c, p]) => {
+        setContainers(c);
+        setProjects(p);
+      })
+      .catch((requestError) => {
+        console.error(requestError);
+        setError(requestError instanceof Error ? requestError.message : "Failed to load containers.");
       })
       .finally(() => setLoading(false));
   }, [user]);
 
-  const summary = useMemo(() => ({
-    running: projects.filter((project) => project.status === "running").length,
-    attention: projects.filter((project) => project.status === "error").length,
-  }), [projects]);
+  useEffect(fetchAll, [fetchAll]);
+
+  const handleAction = async (id: string, action: "start" | "stop" | "restart") => {
+    if (pendingContainerId) return;
+    const actionCopy = action === "restart" ? { pending: "Restarting", success: "restarted" } : action === "start" ? { pending: "Starting", success: "started" } : { pending: "Stopping", success: "stopped" };
+    const toastId = toast.loading(`${actionCopy.pending} container...`);
+    setActionError("");
+    setPendingContainerId(id);
+    try {
+      if (action === "start") await startContainer(id);
+      else if (action === "stop") await stopContainer(id);
+      else await restartContainer(id);
+      fetchAll();
+      toast.success(`Container ${actionCopy.success}.`, { id: toastId });
+    } catch (requestError) {
+      console.error(requestError);
+      const message = requestError instanceof Error ? requestError.message : `Failed to ${action} container.`;
+      setActionError(message);
+      toast.error(message, { id: toastId });
+    } finally { setPendingContainerId(null); }
+  };
+
+  const confirmDelete = async () => {
+    if (!deleteTarget) return;
+    if (deleting) return;
+    const toastId = toast.loading("Deleting container...");
+    setActionError("");
+    setDeleteError("");
+    setDeleting(true);
+    try {
+      await removeContainer(deleteTarget.id);
+      fetchAll();
+      toast.success("Container deleted.", { id: toastId });
+      setDeleteTarget(null);
+    } catch (requestError) {
+      console.error(requestError);
+      const message = requestError instanceof Error ? requestError.message : "Failed to delete container.";
+      setDeleteError(message);
+      toast.error(message, { id: toastId });
+    } finally { setDeleting(false); }
+  };
+
+  const showSystem = getShowSystem();
+
+  const filtered = (containers || []).filter((c) => {
+    const name = c.name || "";
+    const isSystem = !!c.system_type;
+    if (!showSystem && isSystem) return false;
+    if (search && !name.toLowerCase().includes(search.toLowerCase())) return false;
+    return true;
+  });
+
+  const projectsById = new Map(projects.map((p) => [p.id, p]));
+  const groupsById = new Map<number, ContainerInfo[]>();
+  const nonProject: ContainerInfo[] = [];
+  for (const c of filtered) {
+    if (c.project_id) {
+      const list = groupsById.get(c.project_id) || [];
+      list.push(c);
+      groupsById.set(c.project_id, list);
+    } else {
+      nonProject.push(c);
+    }
+  }
+  const groups: Group[] = Array.from(groupsById.entries())
+    .map(([projectId, list]) => ({
+      projectId,
+      name: projectsById.get(projectId)?.name || `Project #${projectId}`,
+      containers: list,
+    }))
+    .sort((a, b) => a.name.localeCompare(b.name));
 
   if (authLoading || !user) return null;
 
   return (
-    <main className="mx-auto w-full max-w-7xl space-y-6 p-4 sm:p-6 lg:p-8">
+    <div className="mx-auto max-w-6xl space-y-6 p-4 sm:p-6">
       <PageHeader>
         <div className="space-y-1">
-          <PageHeaderTitle>Projects</PageHeaderTitle>
-          <PageHeaderDescription>Deploy, monitor, and operate your applications.</PageHeaderDescription>
+          <PageHeaderTitle>Dashboard</PageHeaderTitle>
+          <PageHeaderDescription>Overview of all projects and containers.</PageHeaderDescription>
         </div>
         <PageHeaderActions>
           <Button onClick={() => router.push("/dashboard/new")}>
@@ -92,62 +218,80 @@ export default function DashboardPage() {
         </PageHeaderActions>
       </PageHeader>
 
-      {loading ? <DashboardLoading /> : error ? (
-        <Empty className="min-h-72 border-destructive/30">
+      <GlobalMetricsSummary />
+
+      {actionError && <p role="alert" className="rounded-md border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive">{actionError}</p>}
+
+      {loading ? (
+        <div className="space-y-3">
+          <Skeleton className="h-7 w-40" />
+          <Skeleton className="h-20 w-full" />
+          <Skeleton className="h-20 w-full" />
+        </div>
+      ) : error ? (
+        <Empty className="min-h-56 border-destructive/30">
           <EmptyHeader>
-            <EmptyMedia className="bg-destructive/10 text-destructive"><AlertCircle className="size-5" aria-hidden="true" /></EmptyMedia>
-            <EmptyTitle>Projects could not be loaded</EmptyTitle>
-            <EmptyDescription className="whitespace-pre-wrap">{error}</EmptyDescription>
+            <EmptyMedia className="bg-destructive/10 text-destructive"><AlertCircle className="size-5" /></EmptyMedia>
+            <EmptyTitle>Containers could not be loaded</EmptyTitle>
+            <EmptyDescription>{error}</EmptyDescription>
           </EmptyHeader>
-          <EmptyContent><Button variant="outline" onClick={() => window.location.reload()}>Try again</Button></EmptyContent>
+          <Button variant="outline" onClick={fetchAll}>Try again</Button>
         </Empty>
-      ) : projects.length === 0 ? (
-        <Empty className="min-h-72">
+      ) : filtered.length === 0 ? (
+        <Empty className="min-h-56">
           <EmptyHeader>
-            <EmptyMedia><FolderKanban className="size-5" aria-hidden="true" /></EmptyMedia>
-            <EmptyTitle>No projects yet</EmptyTitle>
-            <EmptyDescription>Create your first project to deploy it from a repository or Compose file.</EmptyDescription>
+            <EmptyMedia><ContainerIcon className="size-5" /></EmptyMedia>
+            <EmptyTitle>No containers found</EmptyTitle>
+            <EmptyDescription>{search ? "Try a different container name." : "Containers will appear here when they are available."}</EmptyDescription>
           </EmptyHeader>
-          <EmptyContent><Button onClick={() => router.push("/dashboard/new")}><Plus className="size-4" aria-hidden="true" />New project</Button></EmptyContent>
         </Empty>
       ) : (
-        <div className="space-y-6">
-          <section className="grid gap-4 sm:grid-cols-3" aria-label="Project summary">
-            <ProjectSummary label="Total projects" value={projects.length} description="Across all sources" />
-            <ProjectSummary label="Running" value={summary.running} description="Available and serving traffic" />
-            <ProjectSummary label="Needs attention" value={summary.attention} description="Projects reporting an error" />
-          </section>
-          <section className="space-y-3" aria-labelledby="project-list-title">
-            <div className="flex items-center justify-between"><h2 id="project-list-title" className="text-base font-semibold">All projects</h2><span className="text-sm text-muted-foreground">{projects.length} total</span></div>
-            <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-              {projects.map((project) => (
-                <Link
-                  key={project.id}
-                  href={`/projects/${project.id}`}
-                  aria-label={`Open project ${project.name}`}
-                  className="block rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-                >
-                  <Card className="group flex min-h-44 flex-col transition-colors hover:border-primary/50">
-                    <CardHeader className="flex-row items-start justify-between gap-3 space-y-0">
-                      <div className="min-w-0 space-y-1">
-                        <CardTitle className="truncate text-base">{project.name}</CardTitle>
-                        <CardDescription className="truncate">{project.repo_url || "Compose deployment"}</CardDescription>
-                      </div>
-                      <Badge variant={statusVariant[project.status] || "default"}>{project.status}</Badge>
-                    </CardHeader>
-                    <CardContent className="mt-auto space-y-4">
-                      {project.domain && <div className="flex min-w-0 items-center gap-2 text-sm text-muted-foreground"><Globe2 className="size-4 shrink-0" aria-hidden="true" /><span className="truncate">{project.domain}</span></div>}
-                      <span className="flex h-9 w-full items-center justify-between rounded-lg border border-border bg-background px-4 text-sm font-medium transition-colors group-hover:bg-accent group-hover:text-accent-foreground">
-                        Open project <ArrowUpRight className="size-4" aria-hidden="true" />
-                      </span>
-                    </CardContent>
-                  </Card>
-                </Link>
-              ))}
-            </div>
-          </section>
+        <div className="space-y-8">
+          {groups.map((g) => (
+            <section key={g.projectId}>
+              <Link
+                href={`/projects/${g.projectId}`}
+                className="inline-block text-sm font-semibold text-foreground hover:text-accent transition-colors mb-3"
+              >
+                {g.name}
+              </Link>
+              <div className="space-y-2">
+                {g.containers.map((c) => (
+                  <ContainerRow key={c.id} container={c} onAction={handleAction} onDelete={(container) => { setDeleteError(""); setDeleteTarget(container); }} actionPending={pendingContainerId === c.id || (deleting && deleteTarget?.id === c.id)} />
+                ))}
+              </div>
+            </section>
+          ))}
+          {nonProject.length > 0 && (
+            <section>
+              <h2 className="text-sm font-semibold text-foreground mb-3">Non-project</h2>
+              <div className="space-y-2">
+                {nonProject.map((c) => (
+                  <ContainerRow key={c.id} container={c} onAction={handleAction} onDelete={(container) => { setDeleteError(""); setDeleteTarget(container); }} actionPending={pendingContainerId === c.id || (deleting && deleteTarget?.id === c.id)} />
+                ))}
+              </div>
+            </section>
+          )}
         </div>
       )}
-    </main>
+
+      <AlertDialog open={!!deleteTarget} onOpenChange={(open) => { if (!open && !deleting) setDeleteTarget(null); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete container?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will permanently delete &quot;
+              {deleteTarget?.name || deleteTarget?.id.slice(0, 12)}&quot;. This action
+              cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          {deleteError && <p role="alert" className="rounded-md border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive">{deleteError}</p>}
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={deleting}>Cancel</AlertDialogCancel>
+            <Button type="button" variant="destructive" onClick={() => void confirmDelete()} disabled={deleting}>{deleting ? "Deleting..." : "Delete"}</Button>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </div>
   );
 }

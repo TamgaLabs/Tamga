@@ -29,7 +29,7 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en" suppressHydrationWarning className={cn(geistSans.variable, geistMono.variable, geistPixel.variable)}>
-      <body className="min-h-screen font-sans antialiased">
+      <body className="min-h-screen overflow-x-hidden font-sans antialiased">
         <ThemeProvider>
           <AuthProvider>{children}</AuthProvider>
           <OfflinePreviewBanner />

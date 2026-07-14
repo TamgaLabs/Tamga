@@ -94,7 +94,7 @@ export async function offlineApi(path: string, options: RequestInit = {}): Promi
   if (/^\/system\/containers\/[^/]+\/stats/.test(path)) return { cpu: { percent: 7.2, usage: 10000000, system: 40000000 }, mem: { usage: 73400320, limit: 536870912, percent: 13.7 }, net: { rx_bytes: 225000, tx_bytes: 815000, rx_packets: 320, tx_packets: 540 } };
   if (/^\/system\/containers\/[^/]+$/.test(path)) return containers[0];
   if (path === "/system/info") return { version: "offline-preview", os: "Linux", architecture: "amd64", containers: 2, running: 2, paused: 0, stopped: 0, images: 2, name: "Tamga preview", kernel: "offline", driver: "overlay2", memory: 8589934592, cpus: 8 };
-  if (path === "/system/metrics") return metrics;
+  if (/^\/system\/metrics/.test(path)) return metrics;
   if (path === "/system/topology") return topology;
   if (path === "/system/resource-limits") return { memory_bytes: 536870912, nano_cpus: 1000000000 };
   if (path === "/system/session-idle-timeout") return { timeout_seconds: 0 };

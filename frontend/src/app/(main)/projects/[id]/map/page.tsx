@@ -5,9 +5,9 @@ import { useRouter } from "next/navigation";
 import { useProjectContext } from "../project-context";
 import { useProjectTopology } from "@/hooks/useTopology";
 import { useProjectTrafficOverlay } from "@/components/topology/useTrafficOverlay";
-import { TopologyGraph } from "@/components/topology";
 import type { TopologyNode } from "@/lib/api";
-import { PageHeader, PageHeaderDescription, PageHeaderTitle } from "@/components/page-header";
+import { TopologyGraph } from "@/components/topology";
+import { PageHeader, PageHeaderActions, PageHeaderDescription, PageHeaderTitle } from "@/components/page-header";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -18,12 +18,10 @@ export default function ProjectMapPage() {
   const projectId = project.id;
   const router = useRouter();
 
-  // Fetch project topology with auto-refresh
   const { data: topology, loading, error } = useProjectTopology(projectId, {
-    refetchInterval: 8000, // Poll every 8 seconds
+    refetchInterval: 8000,
   });
 
-  // Compute traffic overlay decorations (FEAT-039)
   const { nodeDecorations, edgeDecorations, nodeStats } = useProjectTrafficOverlay(topology, projectId);
 
   const handleNodeClick = (node: TopologyNode) => {
@@ -32,16 +30,33 @@ export default function ProjectMapPage() {
 
   return (
     <div className="mx-auto max-w-7xl p-4 sm:p-6">
-      <PageHeader className="mb-6"><div><PageHeaderTitle>Map</PageHeaderTitle><PageHeaderDescription>Live topology and traffic paths for this project.</PageHeaderDescription></div><Badge variant="secondary" className="gap-1.5"><RefreshCw className="size-3" />Refreshes every 8s</Badge></PageHeader>
+      <PageHeader className="mb-6">
+        <div>
+          <PageHeaderTitle>Topology</PageHeaderTitle>
+          <PageHeaderDescription>Live topology and traffic paths for this project.</PageHeaderDescription>
+        </div>
+        <PageHeaderActions>
+          <Badge variant="secondary" className="gap-1.5">
+            <RefreshCw className="size-3" />
+            Refreshes every 8s
+          </Badge>
+        </PageHeaderActions>
+      </PageHeader>
 
-      {/* Error state */}
       {error && (
         <div role="alert" className="mb-6 flex gap-3 rounded-xl border border-destructive/30 bg-destructive/10 p-4 text-sm text-destructive">
-          <AlertCircle className="mt-0.5 size-4 shrink-0" /><div><p className="font-medium">Topology is unavailable</p><p className="mt-1 text-destructive/80">{error.message}</p></div>
+          <AlertCircle className="mt-0.5 size-4 shrink-0" />
+          <div>
+            <p className="font-medium">Topology is unavailable</p>
+            <p className="mt-1 text-destructive/80">{error.message}</p>
+          </div>
         </div>
       )}
 
-      {/* Topology graph */}
+      {loading && !topology && (
+        <div aria-label="Loading topology"><Skeleton className="h-[32rem] w-full" /></div>
+      )}
+
       {topology && (
         <>
           <TopologyGraph
@@ -53,9 +68,8 @@ export default function ProjectMapPage() {
             edgeDecorations={edgeDecorations}
           />
 
-          {/* Legend for traffic overlay */}
-          <Card className="mt-6">
-            <CardHeader className="gap-2 p-4 pb-3 sm:p-5 sm:pb-3"><CardTitle className="flex items-center gap-2 text-sm"><Info className="size-4 text-muted-foreground" />Traffic overlay legend</CardTitle><p className="text-xs text-muted-foreground">Node colour shows errors; edge weight shows traffic entering services.</p></CardHeader>
+          <Card className="mt-4">
+            <CardHeader className="gap-2 p-4 pb-3 sm:p-5 sm:pb-3"><CardTitle className="flex items-center gap-2 text-sm"><Info className="size-4 text-muted-foreground" />Traffic overlay</CardTitle><p className="text-xs text-muted-foreground">Node colour shows errors; edge weight shows traffic entering services.</p></CardHeader>
             <CardContent className="grid gap-5 p-4 pt-0 text-xs sm:grid-cols-2 sm:p-5 sm:pt-0">
               <div>
                 <div className="mb-2 font-medium">Node colour · error rate</div>
@@ -75,17 +89,12 @@ export default function ProjectMapPage() {
               <div>
                 <div className="mb-2 font-medium">Edge weight · request volume</div>
                 <div className="text-muted-foreground">
-                  Edges from Traefik to services thicken with request volume. Internal edges (app↔database) remain at base thickness—they have no Traefik metrics.
+                  Edges from Traefik to services thicken with request volume. Internal edges (app↔database) remain at base thickness.
                 </div>
               </div>
             </CardContent>
           </Card>
         </>
-      )}
-
-      {/* Loading state (shown while initially fetching) */}
-      {loading && !topology && (
-        <div aria-label="Loading map"><Skeleton className="h-[32rem] w-full" /></div>
       )}
     </div>
   );

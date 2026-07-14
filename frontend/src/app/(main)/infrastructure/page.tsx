@@ -5,8 +5,8 @@ import { useRouter } from "next/navigation";
 import { useAuth } from "@/lib/auth";
 import { useSystemTopology } from "@/hooks/useTopology";
 import { useGlobalTrafficOverlay } from "@/components/topology/useTrafficOverlay";
-import { TopologyGraph } from "@/components/topology";
 import type { TopologyNode } from "@/lib/api";
+import { TopologyGraph } from "@/components/topology";
 import { PageHeader, PageHeaderActions, PageHeaderDescription, PageHeaderTitle } from "@/components/page-header";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -17,44 +17,59 @@ export default function InfrastructurePage() {
   const { user, loading: authLoading } = useAuth();
   const router = useRouter();
 
-  // Fetch system topology with auto-refresh
   const { data: topology, loading, error } = useSystemTopology({
-    refetchInterval: 8000, // Poll every 8 seconds
+    refetchInterval: 8000,
   });
 
-  // Compute traffic overlay decorations (FEAT-039)
   const { nodeDecorations, edgeDecorations, nodeStats } = useGlobalTrafficOverlay(topology);
 
-  // Redirect if not authenticated
   useEffect(() => {
     if (!authLoading && !user) {
       router.replace("/login");
     }
   }, [user, authLoading, router]);
 
-  const handleNodeClick = (node: TopologyNode) => {
-    router.push(`/containers/${node.id}`);
-  };
-
   if (authLoading || !user) {
     return null;
   }
 
+  const handleNodeClick = (node: TopologyNode) => {
+    if (node.project_id) {
+      router.push(`/projects/${node.project_id}`);
+    } else {
+      router.push(`/containers/${node.id}`);
+    }
+  };
+
   return (
     <div className="mx-auto max-w-7xl p-4 sm:p-6">
       <PageHeader className="mb-6">
-        <div><PageHeaderTitle>Infrastructure</PageHeaderTitle><PageHeaderDescription>Live container topology with traffic health overlays.</PageHeaderDescription></div>
-        <PageHeaderActions><Badge variant="secondary" className="gap-1.5"><RefreshCw className="size-3" />Refreshes every 8s</Badge></PageHeaderActions>
+        <div>
+          <PageHeaderTitle>Topology</PageHeaderTitle>
+          <PageHeaderDescription>Live infrastructure graph of all services and their connections.</PageHeaderDescription>
+        </div>
+        <PageHeaderActions>
+          <Badge variant="secondary" className="gap-1.5">
+            <RefreshCw className="size-3" />
+            Refreshes every 8s
+          </Badge>
+        </PageHeaderActions>
       </PageHeader>
 
-      {/* Error state */}
       {error && (
         <div role="alert" className="mb-6 flex gap-3 rounded-xl border border-destructive/30 bg-destructive/10 p-4 text-sm text-destructive">
-          <AlertCircle className="mt-0.5 size-4 shrink-0" /><div><p className="font-medium">Topology is unavailable</p><p className="mt-1 text-destructive/80">{error.message}</p></div>
+          <AlertCircle className="mt-0.5 size-4 shrink-0" />
+          <div>
+            <p className="font-medium">Topology is unavailable</p>
+            <p className="mt-1 text-destructive/80">{error.message}</p>
+          </div>
         </div>
       )}
 
-      {/* Topology graph */}
+      {loading && !topology && (
+        <div aria-label="Loading topology"><Skeleton className="h-[32rem] w-full" /></div>
+      )}
+
       {topology && (
         <>
           <TopologyGraph
@@ -66,9 +81,8 @@ export default function InfrastructurePage() {
             edgeDecorations={edgeDecorations}
           />
 
-          {/* Legend for traffic overlay */}
-          <Card className="mt-6">
-            <CardHeader className="gap-2 p-4 pb-3 sm:p-5 sm:pb-3"><CardTitle className="flex items-center gap-2 text-sm"><Info className="size-4 text-muted-foreground" />Traffic overlay legend</CardTitle><p className="text-xs text-muted-foreground">Node colour shows errors; edge weight shows traffic entering services.</p></CardHeader>
+          <Card className="mt-4">
+            <CardHeader className="gap-2 p-4 pb-3 sm:p-5 sm:pb-3"><CardTitle className="flex items-center gap-2 text-sm"><Info className="size-4 text-muted-foreground" />Traffic overlay</CardTitle><p className="text-xs text-muted-foreground">Node colour shows errors; edge weight shows traffic entering services.</p></CardHeader>
             <CardContent className="grid gap-5 p-4 pt-0 text-xs sm:grid-cols-2 sm:p-5 sm:pt-0">
               <div>
                 <div className="mb-2 font-medium">Node colour · error rate</div>
@@ -88,17 +102,12 @@ export default function InfrastructurePage() {
               <div>
                 <div className="mb-2 font-medium">Edge weight · request volume</div>
                 <div className="text-muted-foreground">
-                  Edges from Traefik to services thicken with request volume. Internal edges (app↔database) remain at base thickness—they have no Traefik metrics.
+                  Edges from Traefik to services thicken with request volume. Internal edges (app↔database) remain at base thickness.
                 </div>
               </div>
             </CardContent>
           </Card>
         </>
-      )}
-
-      {/* Loading state (shown while initially fetching) */}
-      {loading && !topology && (
-        <div aria-label="Loading infrastructure"><Skeleton className="h-[32rem] w-full" /></div>
       )}
     </div>
   );

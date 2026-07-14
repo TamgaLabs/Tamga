@@ -1,17 +1,18 @@
 "use client";
 
 import React, { useMemo } from "react";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  ReactFlow,
+  Background,
+  MiniMap,
+  Controls,
+} from "@xyflow/react";
+import "@xyflow/react/dist/style.css";
+
 import type { TopologyNode } from "@/lib/api";
 import type { Topology } from "@/lib/topology-types";
-import {
-  calculateNodePositions,
-  getNodePosition,
-  getEdgePath,
-  getNodeTypeStyle,
-  getStatusColor,
-  calculateCanvasDimensions,
-} from "./utils";
+import { TopologyNodeComponent, type TopologyFlowNode } from "./TopologyNode";
+import { topologyToFlow } from "./utils";
 
 interface TopologyNodeDecorations {
   accentColor?: string;
@@ -22,35 +23,22 @@ interface TopologyEdgeDecorations {
 }
 
 interface TopologyNodeStats {
-  reqRate: number; // requests per second
-  errorPct: number; // error percentage (0-100)
-  p95Ms?: number; // p95 latency in milliseconds
+  reqRate: number;
+  errorPct: number;
+  p95Ms?: number;
 }
 
 interface TopologyGraphProps {
   topology: Topology;
   onNodeClick?: (node: TopologyNode) => void;
   loading?: boolean;
-  // Overlay seam for FEAT-039: per-node and per-edge decorations
   nodeDecorations?: Record<string, TopologyNodeDecorations>;
   edgeDecorations?: Record<string, TopologyEdgeDecorations>;
-  // Overlay seam for FEAT-039: per-node traffic mini-stats for hover
   nodeStats?: Record<string, TopologyNodeStats>;
 }
 
-const NODE_RADIUS = 30;
-const ICON_SIZE = 18;
+const nodeTypes = { topologyNode: TopologyNodeComponent };
 
-/**
- * TopologyGraph renders an infrastructure topology as an inline SVG.
- * Nodes are grouped by project_id and laid out deterministically.
- * Edges are drawn between nodes resolved by name.
- *
- * This is a presentational component: it does not fetch data or navigate.
- * The page/hook provides the topology data and handles navigation from onNodeClick.
- *
- * Overlay decorations (FEAT-039) can customize node colors and edge thickness.
- */
 export function TopologyGraph({
   topology,
   onNodeClick,
@@ -59,191 +47,64 @@ export function TopologyGraph({
   edgeDecorations,
   nodeStats,
 }: TopologyGraphProps) {
-  const { nodes, edges } = topology;
-
-  // Calculate node positions using deterministic layout
-  const positions = useMemo(() => calculateNodePositions(nodes), [nodes]);
-
-  // Calculate canvas dimensions
-  const { width, height } = useMemo(
-    () => calculateCanvasDimensions(positions),
-    [positions]
+  const { nodes: rfNodes, edges: rfEdges } = useMemo(
+    () =>
+      topologyToFlow(topology, {
+        nodeDecorations,
+        edgeDecorations,
+        nodeStats,
+        onNodeClick,
+      }),
+    [topology, nodeDecorations, edgeDecorations, nodeStats, onNodeClick],
   );
 
-  // Build a map of node name -> position for edge resolution
-  const nodePositionMap = useMemo(() => {
-    const map: Record<string, { x: number; y: number }> = {};
-    for (const pos of positions) {
-      map[pos.node.name] = { x: pos.x, y: pos.y };
-    }
-    return map;
-  }, [positions]);
-
-  // Empty state
-  if (nodes.length === 0) {
+  if (topology.nodes.length === 0) {
     return (
-      <Card>
-        <CardHeader>
-          <CardTitle>Infrastructure Topology</CardTitle>
-        </CardHeader>
-        <CardContent className="text-center text-muted-foreground py-12">
-          {loading ? "Loading topology..." : "No containers"}
-        </CardContent>
-      </Card>
+      <div className="rounded-lg border border-border bg-card p-12 text-center text-sm text-muted-foreground">
+        {loading ? "Loading topology..." : "No containers"}
+      </div>
     );
   }
 
   return (
-    <Card>
-      <CardHeader className="gap-1 p-4 sm:p-6">
-        <CardTitle>Infrastructure topology</CardTitle>
-        <p className="text-sm text-muted-foreground">Select a container to inspect it.</p>
-      </CardHeader>
-      <CardContent className="p-4 pt-0 sm:p-6 sm:pt-0">
-        <div className="w-full overflow-x-auto rounded-lg border border-border bg-muted/20" aria-label="Infrastructure topology graph">
-          <svg
-            viewBox={`0 0 ${width} ${height}`}
-            className="h-auto min-w-[42rem] w-full"
-            style={{ minHeight: "400px" }}
-          >
-            {/* Grid background (optional, subtle) */}
-            <defs>
-              <pattern
-                id="grid"
-                width="50"
-                height="50"
-                patternUnits="userSpaceOnUse"
-              >
-                <path
-                  d="M 50 0 L 0 0 0 50"
-                  fill="none"
-                  stroke="hsl(var(--border))"
-                  strokeWidth="0.5"
-                  opacity="0.2"
-                />
-              </pattern>
-            </defs>
-            <rect width={width} height={height} fill="hsl(var(--card))" />
-            <rect
-              width={width}
-              height={height}
-              fill="url(#grid)"
-              opacity="0.3"
-            />
-
-            {/* Edges (drawn first so they appear behind nodes) */}
-            <g className="topology-edges">
-              {edges.map((edge, idx) => {
-                const sourcePos = nodePositionMap[edge.source];
-                const targetPos = nodePositionMap[edge.target];
-
-                if (!sourcePos || !targetPos) return null;
-
-                const edgeKey = `${edge.source}:${edge.target}:${edge.network}`;
-                const decorations = edgeDecorations?.[edgeKey];
-                const pathD = getEdgePath(sourcePos, targetPos, NODE_RADIUS);
-
-                return (
-                  <path
-                    key={idx}
-                    d={pathD}
-                    fill="none"
-                    stroke="hsl(var(--border))"
-                    strokeWidth={decorations?.thickness ?? 2}
-                    opacity="0.6"
-                    className="cursor-default"
-                  />
-                );
-              })}
-            </g>
-
-            {/* Nodes */}
-            <g className="topology-nodes">
-              {positions.map(({ node, x, y }) => {
-                const typeStyle = getNodeTypeStyle(node.type);
-                const statusColor = getStatusColor(node.state);
-                const decorations = nodeDecorations?.[node.id];
-                const stats = nodeStats?.[node.id];
-
-                // Build hover title with stats if available
-                let tooltipText = `${node.name} (${node.type})\nProject: ${node.project_id}\nState: ${node.state}`;
-                if (stats) {
-                  tooltipText += `\n\nTraffic Stats:\nReq/s: ${stats.reqRate.toFixed(2)}\nError: ${stats.errorPct.toFixed(1)}%`;
-                  if (stats.p95Ms !== undefined) {
-                    tooltipText += `\nP95 Latency: ${stats.p95Ms.toFixed(0)}ms`;
-                  }
-                }
-
-                return (
-                  <g
-                    key={node.id}
-                    onClick={() => onNodeClick?.(node)}
-                    className={onNodeClick ? "cursor-pointer" : ""}
-                  >
-                    {/* Node circle background */}
-                    <circle
-                      cx={x}
-                      cy={y}
-                      r={NODE_RADIUS}
-                      fill={decorations?.accentColor || typeStyle.bgColor}
-                      stroke={typeStyle.color}
-                      strokeWidth="2"
-                      className="hover:opacity-80 transition-opacity"
-                    />
-
-                    {/* Status dot (running/exited indicator) */}
-                    <circle
-                      cx={x + NODE_RADIUS - 6}
-                      cy={y - NODE_RADIUS + 6}
-                      r="5"
-                      fill={statusColor}
-                      stroke="hsl(var(--card))"
-                      strokeWidth="2"
-                    />
-
-                    {/* Node label */}
-                    <text
-                      x={x}
-                      y={y + NODE_RADIUS + 20}
-                      textAnchor="middle"
-                      className="text-xs font-medium fill-foreground"
-                      style={{
-                        pointerEvents: "none",
-                        userSelect: "none",
-                      }}
-                    >
-                      {node.name.length > 20
-                        ? node.name.substring(0, 17) + "..."
-                        : node.name}
-                    </text>
-
-                    {/* Hover tooltip info */}
-                    <title>{tooltipText}</title>
-                  </g>
-                );
-              })}
-            </g>
-          </svg>
-        </div>
-
-        {/* Legend */}
-        <div className="mt-4 text-xs text-muted-foreground flex flex-wrap gap-4">
-          <div className="flex items-center gap-2">
-            <div
-              className="w-3 h-3 rounded-full"
-              style={{ backgroundColor: "hsl(var(--success))" }}
-            />
-            <span>Running</span>
-          </div>
-          <div className="flex items-center gap-2">
-            <div
-              className="w-3 h-3 rounded-full"
-              style={{ backgroundColor: "hsl(var(--muted-foreground))" }}
-            />
-            <span>Stopped</span>
-          </div>
-        </div>
-      </CardContent>
-    </Card>
+    <div className="rounded-lg border border-border bg-card overflow-hidden" style={{ height: "32rem" }}>
+      <ReactFlow
+        nodes={rfNodes as TopologyFlowNode[]}
+        edges={rfEdges}
+        nodeTypes={nodeTypes}
+        fitView
+        fitViewOptions={{ padding: 0.3 }}
+        minZoom={0.2}
+        maxZoom={2}
+        proOptions={{ hideAttribution: true }}
+        defaultEdgeOptions={{
+          style: { stroke: "hsl(var(--border))", strokeWidth: 1.5, opacity: 0.6 },
+        }}
+      >
+        <Background gap={24} size={1} color="hsl(var(--border))" />
+        <Controls showInteractive={false} />
+        <MiniMap
+          nodeColor={(n) => {
+            const d = n.data as { type?: string };
+            switch (d.type) {
+              case "proxy":
+                return "hsl(217, 91%, 60%)";
+              case "database":
+                return "hsl(262, 83%, 58%)";
+              case "cache":
+                return "hsl(38, 92%, 50%)";
+              case "web":
+                return "hsl(142, 71%, 45%)";
+              case "queue":
+                return "hsl(330, 81%, 60%)";
+              default:
+                return "hsl(220, 9%, 46%)";
+            }
+          }}
+          maskColor="hsl(var(--background) / 0.8)"
+          style={{ backgroundColor: "hsl(var(--card))" }}
+        />
+      </ReactFlow>
+    </div>
   );
 }
