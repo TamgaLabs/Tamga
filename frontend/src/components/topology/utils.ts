@@ -1,13 +1,15 @@
 import dagre from "dagre";
-import type { Node, Edge } from "@xyflow/react";
-import type { TopologyNode, TopologyEdge } from "@/lib/api";
+import type { Edge } from "@xyflow/react";
+import type { TopologyNode } from "@/lib/api";
 import type { Topology } from "@/lib/topology-types";
-import type { TopologyFlowNode, TopologyNodeData } from "./TopologyNode";
+import type { TopologyFlowNode } from "./TopologyNode";
+import type { ProjectClusterNode } from "./ProjectCluster";
 
 // ---------- Dagre layout ----------
 
 const NODE_W = 56;
 const NODE_H = 56;
+const CLUSTER_PAD = 28;
 
 /**
  * Assign a dagre rank based on node type so the graph flows
@@ -31,6 +33,7 @@ function typeRank(type: string): number {
 
 /**
  * Convert a Topology to reactflow Nodes + Edges with a dagre layout.
+ * Also generates project cluster rectangles behind groups of same-project nodes.
  */
 export function topologyToFlow(
   topology: Topology,
@@ -40,8 +43,12 @@ export function topologyToFlow(
     edgeDecorations?: Record<string, { thickness?: number }>;
     onNodeClick?: (node: TopologyNode) => void;
   },
-): { nodes: TopologyFlowNode[]; edges: Edge[] } {
+): { nodes: (TopologyFlowNode | ProjectClusterNode)[]; edges: Edge[] } {
   const { nodes: topoNodes, edges: topoEdges } = topology;
+
+  if (topoNodes.length === 0) {
+    return { nodes: [], edges: [] };
+  }
 
   // Build dagre graph
   const g = new dagre.graphlib.Graph();
@@ -76,16 +83,17 @@ export function topologyToFlow(
 
   dagre.layout(g);
 
-  // Build reactflow nodes
+  // Build reactflow nodes with absolute positions
+  const nodePositions = new Map<string, { x: number; y: number }>();
   const rfNodes: TopologyFlowNode[] = sorted.map((n) => {
     const pos = g.node(n.name);
+    const x = (pos.x ?? 0) - NODE_W / 2;
+    const y = (pos.y ?? 0) - NODE_H / 2;
+    nodePositions.set(n.name, { x, y });
     return {
       id: n.name,
       type: "topologyNode",
-      position: {
-        x: (pos.x ?? 0) - NODE_W / 2,
-        y: (pos.y ?? 0) - NODE_H / 2,
-      },
+      position: { x, y },
       data: {
         label: n.name,
         type: n.type,
@@ -99,6 +107,44 @@ export function topologyToFlow(
       },
     };
   });
+
+  // Build cluster nodes for projects with > 1 node
+  const projectNodes = new Map<number, string[]>();
+  for (const n of sorted) {
+    if (n.project_id > 0) {
+      const list = projectNodes.get(n.project_id) || [];
+      list.push(n.name);
+      projectNodes.set(n.project_id, list);
+    }
+  }
+
+  const clusterNodes: ProjectClusterNode[] = [];
+  for (const [projectId, nodeNames] of projectNodes) {
+    if (nodeNames.length < 2) continue;
+
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    for (const name of nodeNames) {
+      const pos = nodePositions.get(name)!;
+      minX = Math.min(minX, pos.x);
+      minY = Math.min(minY, pos.y);
+      maxX = Math.max(maxX, pos.x + NODE_W);
+      maxY = Math.max(maxY, pos.y + NODE_H);
+    }
+
+    clusterNodes.push({
+      id: `cluster-${projectId}`,
+      type: "projectCluster",
+      position: { x: minX - CLUSTER_PAD, y: minY - CLUSTER_PAD },
+      style: {
+        width: maxX - minX + CLUSTER_PAD * 2,
+        height: maxY - minY + CLUSTER_PAD * 2,
+      },
+      data: { label: `Project #${projectId}`, nodeCount: nodeNames.length },
+      selectable: false,
+      draggable: false,
+      zIndex: -1,
+    });
+  }
 
   // Build reactflow edges
   const rfEdges: Edge[] = [];
@@ -134,5 +180,5 @@ export function topologyToFlow(
     });
   }
 
-  return { nodes: rfNodes, edges: rfEdges };
+  return { nodes: [...clusterNodes, ...rfNodes], edges: rfEdges };
 }

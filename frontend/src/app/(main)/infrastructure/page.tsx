@@ -8,7 +8,7 @@ import { useGlobalTrafficOverlay } from "@/components/topology/useTrafficOverlay
 import type { TopologyNode } from "@/lib/api";
 import { TopologyGraph } from "@/components/topology";
 import { PageHeader, PageHeaderActions, PageHeaderDescription, PageHeaderTitle } from "@/components/page-header";
-import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { AlertCircle, Info, RefreshCw } from "lucide-react";
@@ -17,10 +17,7 @@ export default function InfrastructurePage() {
   const { user, loading: authLoading } = useAuth();
   const router = useRouter();
 
-  const { data: topology, loading, error } = useSystemTopology({
-    refetchInterval: 8000,
-  });
-
+  const { data: topology, loading, error, refetch } = useSystemTopology();
   const { nodeDecorations, edgeDecorations, nodeStats } = useGlobalTrafficOverlay(topology);
 
   useEffect(() => {
@@ -49,10 +46,10 @@ export default function InfrastructurePage() {
           <PageHeaderDescription>Live infrastructure graph of all services and their connections.</PageHeaderDescription>
         </div>
         <PageHeaderActions>
-          <Badge variant="secondary" className="gap-1.5">
-            <RefreshCw className="size-3" />
-            Refreshes every 8s
-          </Badge>
+          <Button variant="outline" size="sm" onClick={() => refetch()} disabled={loading}>
+            <RefreshCw className={`size-3.5 ${loading ? "animate-spin" : ""}`} />
+            Refresh
+          </Button>
         </PageHeaderActions>
       </PageHeader>
 

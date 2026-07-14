@@ -288,7 +288,7 @@ export default function CodeIDEPage() {
 
   return (
     <TooltipProvider delayDuration={300}>
-      <div className="h-full flex flex-col">
+      <div className="h-[calc(100dvh-3.5rem)] flex flex-col">
         {/* Top bar: mode switcher + project context */}
         <div className="flex items-center justify-between px-4 py-2 bg-card border-b border-border">
           <Tabs value={mode} onValueChange={(v) => {
@@ -350,7 +350,7 @@ export default function CodeIDEPage() {
                       <Button
                         variant="ghost"
                         size="icon"
-                        className="h-4 w-4 opacity-0 group-hover:opacity-60 hover:!opacity-100"
+                        className="h-4 w-4 opacity-60 hover:!opacity-100"
                         disabled={tab.pending}
                         onClick={(e) => {
                           e.stopPropagation();
@@ -397,6 +397,13 @@ export default function CodeIDEPage() {
                   knownSessionIds={tabs.filter((t) => !t.pending).map((t) => t.id)}
                   onSessionResolved={(realId) => handleSessionResolved(activeTab.id, realId)}
                   onConnectFailed={() => handleConnectFailed(activeTab.id)}
+                  onSessionTerminated={() => {
+                    terminatedSessionIds.current.add(activeTab.id);
+                    setTabs((prev) => {
+                      setActiveTabId((current) => removeTerminalTab(prev, current, activeTab.id).activeTabId);
+                      return removeTerminalTab(prev, null, activeTab.id).tabs;
+                    });
+                  }}
                 />
               ) : (
                 <Empty className="min-h-0 flex-1 border-dashed rounded-none">

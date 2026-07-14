@@ -20,20 +20,15 @@ export function AgentTerminal({
   knownSessionIds,
   onSessionResolved,
   onConnectFailed,
+  onSessionTerminated,
 }: {
   projectId: number;
-  /** Reattach to this existing session. Omit to create a brand new one. */
   sessionId?: string;
-  /**
-   * Session ids already known to the caller at mount time. Only used when
-   * `sessionId` is omitted (new-session mode), to figure out which session
-   * the backend just created for us - see the id-resolution note below.
-   */
   knownSessionIds?: string[];
-  /** New-session mode only: fires once the new session's real id is known. */
   onSessionResolved?: (id: string) => void;
-  /** Fires if the socket never opens (e.g. the 10-session cap was hit). */
   onConnectFailed?: () => void;
+  /** Fires when an established connection closes (session killed server-side). */
+  onSessionTerminated?: () => void;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
 
@@ -98,7 +93,11 @@ export function AgentTerminal({
     };
     ws.onclose = () => {
       term.writeln("\r\n\x1b[90m[connection closed]\x1b[0m");
-      if (isNewSession && !opened) onConnectFailed?.();
+      if (isNewSession && !opened) {
+        onConnectFailed?.();
+      } else if (opened) {
+        onSessionTerminated?.();
+      }
     };
     ws.onerror = () => {
       term.writeln("\r\n\x1b[31m[connection error]\x1b[0m");

@@ -46,7 +46,7 @@ export default function NonProjectDashboardPage() {
     setLoading(true);
     setError("");
     listContainers()
-      .then((all) => setContainers(all.filter((c) => !c.project_id)))
+      .then((all) => setContainers(all.filter((c) => !c.project_id && !c.system_type)))
       .catch((requestError) => {
         console.error(requestError);
         setError(requestError instanceof Error ? requestError.message : "Failed to load containers.");

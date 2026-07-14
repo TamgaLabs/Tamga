@@ -232,9 +232,7 @@ export function useProjectTrafficOverlay(
   topology: Topology | null,
   projectId: number
 ): TrafficOverlayResult {
-  const { data: projectMetrics, loading } = useProjectMetrics(projectId, undefined, {
-    refetchInterval: 8000, // Match topology poll interval
-  });
+  const { data: projectMetrics } = useProjectMetrics(projectId);
 
   return useMemo(() => {
     if (!topology) {
@@ -309,12 +307,8 @@ export function useGlobalTrafficOverlay(
 
     fetchAllMetrics();
 
-    // Set up polling
-    const interval = setInterval(fetchAllMetrics, 8000);
-
     return () => {
       isMounted = false;
-      clearInterval(interval);
     };
   }, [projectIds]);
 

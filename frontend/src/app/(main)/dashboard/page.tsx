@@ -183,12 +183,15 @@ export default function GlobalDashboardPage() {
 
   const projectsById = new Map(projects.map((p) => [p.id, p]));
   const groupsById = new Map<number, ContainerInfo[]>();
+  const systemContainers: ContainerInfo[] = [];
   const nonProject: ContainerInfo[] = [];
   for (const c of filtered) {
     if (c.project_id) {
       const list = groupsById.get(c.project_id) || [];
       list.push(c);
       groupsById.set(c.project_id, list);
+    } else if (c.system_type) {
+      systemContainers.push(c);
     } else {
       nonProject.push(c);
     }
@@ -267,6 +270,16 @@ export default function GlobalDashboardPage() {
               <h2 className="text-sm font-semibold text-foreground mb-3">Non-project</h2>
               <div className="space-y-2">
                 {nonProject.map((c) => (
+                  <ContainerRow key={c.id} container={c} onAction={handleAction} onDelete={(container) => { setDeleteError(""); setDeleteTarget(container); }} actionPending={pendingContainerId === c.id || (deleting && deleteTarget?.id === c.id)} />
+                ))}
+              </div>
+            </section>
+          )}
+          {systemContainers.length > 0 && (
+            <section>
+              <h2 className="text-sm font-semibold text-foreground mb-3">System</h2>
+              <div className="space-y-2">
+                {systemContainers.map((c) => (
                   <ContainerRow key={c.id} container={c} onAction={handleAction} onDelete={(container) => { setDeleteError(""); setDeleteTarget(container); }} actionPending={pendingContainerId === c.id || (deleting && deleteTarget?.id === c.id)} />
                 ))}
               </div>

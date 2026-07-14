@@ -23,6 +23,8 @@ function deriveViewFromPath(pathname: string): WorkspaceView {
   if (pathname === "/dashboard/non-project") return "non-project";
   const projectMatch = pathname.match(/^\/projects\/(\d+)/);
   if (projectMatch) return Number(projectMatch[1]);
+  const codeMatch = pathname.match(/^\/code\/(\d+)/);
+  if (codeMatch) return Number(codeMatch[1]);
   return "all";
 }
 

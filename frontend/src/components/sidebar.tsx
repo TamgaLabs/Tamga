@@ -35,7 +35,6 @@ type NavItem = { href: string; label: string; icon: typeof LayoutDashboard };
 
 const globalNav: NavItem[] = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
-  { href: "/containers", label: "Containers", icon: Container },
   { href: "/analytics", label: "Analytics", icon: BarChart3 },
   { href: "/infrastructure", label: "Topology", icon: Network },
 ];
@@ -46,7 +45,7 @@ const projectNav: NavItem[] = [
   { href: "/projects/$id/environment", label: "Environment", icon: Server },
   { href: "/projects/$id/analytics", label: "Analytics", icon: BarChart3 },
   { href: "/projects/$id/map", label: "Topology", icon: Network },
-  { href: "/projects/$id/code", label: "Code", icon: Code2 },
+  { href: "/code/$id", label: "Code", icon: Code2 },
 ];
 
 const nonProjectNav: NavItem[] = [
@@ -92,7 +91,7 @@ export function AppSidebar() {
           <span className="flex size-7 shrink-0 items-center justify-center rounded-md bg-sidebar-primary font-display text-xs text-sidebar-primary-foreground">
             T
           </span>
-          {showLabels && <span className="font-display text-lg tracking-wide">Tamga Console</span>}
+          {showLabels && <span className="font-display text-lg font-semibold tracking-wide">Tamga Console</span>}
         </Link>
         {showLabels && (
           <div className="mt-2">

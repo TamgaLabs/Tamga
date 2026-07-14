@@ -12,6 +12,7 @@ import "@xyflow/react/dist/style.css";
 import type { TopologyNode } from "@/lib/api";
 import type { Topology } from "@/lib/topology-types";
 import { TopologyNodeComponent, type TopologyFlowNode } from "./TopologyNode";
+import { ProjectClusterComponent, type ProjectClusterNode } from "./ProjectCluster";
 import { topologyToFlow } from "./utils";
 
 interface TopologyNodeDecorations {
@@ -37,7 +38,10 @@ interface TopologyGraphProps {
   nodeStats?: Record<string, TopologyNodeStats>;
 }
 
-const nodeTypes = { topologyNode: TopologyNodeComponent };
+const nodeTypes = {
+  topologyNode: TopologyNodeComponent,
+  projectCluster: ProjectClusterComponent,
+};
 
 export function TopologyGraph({
   topology,
@@ -69,7 +73,7 @@ export function TopologyGraph({
   return (
     <div className="rounded-lg border border-border bg-card overflow-hidden" style={{ height: "32rem" }}>
       <ReactFlow
-        nodes={rfNodes as TopologyFlowNode[]}
+        nodes={rfNodes as (TopologyFlowNode | ProjectClusterNode)[]}
         edges={rfEdges}
         nodeTypes={nodeTypes}
         fitView
@@ -77,6 +81,7 @@ export function TopologyGraph({
         minZoom={0.2}
         maxZoom={2}
         proOptions={{ hideAttribution: true }}
+        style={{ background: "hsl(var(--background))" }}
         defaultEdgeOptions={{
           style: { stroke: "hsl(var(--border))", strokeWidth: 1.5, opacity: 0.6 },
         }}
@@ -85,6 +90,7 @@ export function TopologyGraph({
         <Controls showInteractive={false} />
         <MiniMap
           nodeColor={(n) => {
+            if (n.type === "projectCluster") return "hsl(var(--muted) / 0.5)";
             const d = n.data as { type?: string };
             switch (d.type) {
               case "proxy":

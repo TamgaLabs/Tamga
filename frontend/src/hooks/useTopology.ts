@@ -1,11 +1,10 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { getSystemTopology, getProjectTopology, type Topology } from "@/lib/api";
 
 interface UseTopologyOptions {
   enabled?: boolean;
-  refetchInterval?: number;
 }
 
 export function useSystemTopology(options?: UseTopologyOptions) {
@@ -15,43 +14,25 @@ export function useSystemTopology(options?: UseTopologyOptions) {
 
   const enabled = options?.enabled ?? true;
 
+  const fetchData = useCallback(async () => {
+    try {
+      setLoading(true);
+      const result = await getSystemTopology();
+      setData(result);
+      setError(null);
+    } catch (err) {
+      setError(err instanceof Error ? err : new Error(String(err)));
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
   useEffect(() => {
     if (!enabled) return;
-
-    let isMounted = true;
-    const fetchData = async () => {
-      try {
-        setLoading(true);
-        const result = await getSystemTopology();
-        if (isMounted) {
-          setData(result);
-          setError(null);
-        }
-      } catch (err) {
-        if (isMounted) {
-          setError(err instanceof Error ? err : new Error(String(err)));
-        }
-      } finally {
-        if (isMounted) {
-          setLoading(false);
-        }
-      }
-    };
-
     fetchData();
+  }, [enabled, fetchData]);
 
-    const interval = options?.refetchInterval
-      ? setInterval(fetchData, options.refetchInterval)
-      : undefined;
-
-    return () => {
-      isMounted = false;
-      if (interval) clearInterval(interval);
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [enabled, options?.refetchInterval]);
-
-  return { data, loading, error };
+  return { data, loading, error, refetch: fetchData };
 }
 
 export function useProjectTopology(
@@ -64,41 +45,23 @@ export function useProjectTopology(
 
   const enabled = options?.enabled ?? true;
 
+  const fetchData = useCallback(async () => {
+    try {
+      setLoading(true);
+      const result = await getProjectTopology(projectId);
+      setData(result);
+      setError(null);
+    } catch (err) {
+      setError(err instanceof Error ? err : new Error(String(err)));
+    } finally {
+      setLoading(false);
+    }
+  }, [projectId]);
+
   useEffect(() => {
     if (!enabled) return;
-
-    let isMounted = true;
-    const fetchData = async () => {
-      try {
-        setLoading(true);
-        const result = await getProjectTopology(projectId);
-        if (isMounted) {
-          setData(result);
-          setError(null);
-        }
-      } catch (err) {
-        if (isMounted) {
-          setError(err instanceof Error ? err : new Error(String(err)));
-        }
-      } finally {
-        if (isMounted) {
-          setLoading(false);
-        }
-      }
-    };
-
     fetchData();
+  }, [enabled, fetchData]);
 
-    const interval = options?.refetchInterval
-      ? setInterval(fetchData, options.refetchInterval)
-      : undefined;
-
-    return () => {
-      isMounted = false;
-      if (interval) clearInterval(interval);
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [projectId, enabled, options?.refetchInterval]);
-
-  return { data, loading, error };
+  return { data, loading, error, refetch: fetchData };
 }
