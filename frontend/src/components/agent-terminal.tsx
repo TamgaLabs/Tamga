@@ -31,6 +31,7 @@ export function AgentTerminal({
   onSessionTerminated?: () => void;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
+  const cleaningUp = useRef(false);
 
   useEffect(() => {
     const el = containerRef.current;
@@ -54,54 +55,75 @@ export function AgentTerminal({
       return () => term.dispose();
     }
 
-    const ws = new WebSocket(agentTerminalUrl(projectId, sessionId));
-    ws.binaryType = "arraybuffer";
-    let opened = false;
+    // When reattaching to an existing session (e.g. after onSessionResolved
+    // changes the key and remounts this component), the previous WebSocket
+    // may not have fully detached on the server yet. A short delay lets the
+    // server process the close before we open a new connection.
+    const wsRef: { current: WebSocket | null } = { current: null };
+    let wsTimer: ReturnType<typeof setTimeout> | null = null;
+    let destroyed = false;
 
     const send = (msg: ClientMessage) => {
-      if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(msg));
+      const ws = wsRef.current;
+      if (ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(msg));
     };
 
-    ws.onopen = () => {
-      opened = true;
-      fitAddon.fit();
-      send({ type: "resize", cols: term.cols, rows: term.rows });
+    const setupSocket = () => {
+      const ws = new WebSocket(agentTerminalUrl(projectId, sessionId));
+      wsRef.current = ws;
+      ws.binaryType = "arraybuffer";
+      let opened = false;
 
-      // The WS handshake doesn't tell us the new session's id (server ->
-      // client is a raw byte stream, no envelope - see terminal_handler.go).
-      // So once the socket is open (meaning the backend has already created
-      // and registered the session), we re-fetch the session list and treat
-      // whichever id we didn't already know about as ours. This assumes the
-      // caller isn't racing another tab creation for the same project at
-      // the same instant, which is fine for a single-user local tool.
-      if (isNewSession && onSessionResolved) {
-        const known = new Set(knownSessionIds || []);
-        listAgentSessions(projectId)
-          .then((sessions) => {
-            const fresh = sessions.filter((s) => !known.has(s.id));
-            if (fresh.length === 0) return;
-            const newest = fresh.reduce((a, b) =>
-              a.created_at > b.created_at ? a : b
-            );
-            onSessionResolved(newest.id);
-          })
-          .catch(() => {});
-      }
+      ws.onopen = () => {
+        opened = true;
+        fitAddon.fit();
+        send({ type: "resize", cols: term.cols, rows: term.rows });
+
+        // The WS handshake doesn't tell us the new session's id (server ->
+        // client is a raw byte stream, no envelope - see terminal_handler.go).
+        // So once the socket is open (meaning the backend has already created
+        // and registered the session), we re-fetch the session list and treat
+        // whichever id we didn't already know about as ours. This assumes the
+        // caller isn't racing another tab creation for the same project at
+        // the same instant, which is fine for a single-user local tool.
+        if (isNewSession && onSessionResolved) {
+          const known = new Set(knownSessionIds || []);
+          listAgentSessions(projectId)
+            .then((sessions) => {
+              const fresh = sessions.filter((s) => !known.has(s.id));
+              if (fresh.length === 0) return;
+              const newest = fresh.reduce((a, b) =>
+                a.created_at > b.created_at ? a : b
+              );
+              onSessionResolved(newest.id);
+            })
+            .catch(() => {});
+        }
+      };
+      ws.onmessage = (ev) => {
+        term.write(ev.data instanceof ArrayBuffer ? new Uint8Array(ev.data) : ev.data);
+      };
+      ws.onclose = () => {
+        term.writeln("\r\n\x1b[90m[connection closed]\x1b[0m");
+        if (cleaningUp.current) return;
+        if (isNewSession && !opened) {
+          onConnectFailed?.();
+        } else if (opened) {
+          onSessionTerminated?.();
+        }
+      };
+      ws.onerror = () => {
+        term.writeln("\r\n\x1b[31m[connection error]\x1b[0m");
+      };
     };
-    ws.onmessage = (ev) => {
-      term.write(ev.data instanceof ArrayBuffer ? new Uint8Array(ev.data) : ev.data);
-    };
-    ws.onclose = () => {
-      term.writeln("\r\n\x1b[90m[connection closed]\x1b[0m");
-      if (isNewSession && !opened) {
-        onConnectFailed?.();
-      } else if (opened) {
-        onSessionTerminated?.();
-      }
-    };
-    ws.onerror = () => {
-      term.writeln("\r\n\x1b[31m[connection error]\x1b[0m");
-    };
+
+    if (sessionId) {
+      wsTimer = setTimeout(() => {
+        if (!destroyed) setupSocket();
+      }, 100);
+    } else {
+      setupSocket();
+    }
 
     const onData = term.onData((data) => send({ type: "input", data }));
 
@@ -113,12 +135,15 @@ export function AgentTerminal({
     resizeObserver.observe(el);
 
     return () => {
+      destroyed = true;
+      cleaningUp.current = true;
+      if (wsTimer) clearTimeout(wsTimer);
       resizeObserver.disconnect();
       onData.dispose();
       // Closing the socket only detaches - the session itself keeps running
       // server-side (FEAT-015) until explicitly terminated via the REST
       // endpoint, so this is safe on tab switch / unmount / navigation.
-      ws.close();
+      if (wsRef.current) wsRef.current.close();
       term.dispose();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps

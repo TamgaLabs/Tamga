@@ -8,8 +8,12 @@ import {
   writeFile,
   listAgentSessions,
   terminateAgentSession,
+  listContainers,
+  startContainer,
+  stopContainer,
   type FileEntry,
   type AgentSession,
+  type ContainerInfo,
 } from "@/lib/api";
 import { AgentTerminal } from "@/components/agent-terminal";
 import { mergeTerminalTabs, removeTerminalTab, type TerminalTab } from "@/lib/terminal-tabs";
@@ -59,6 +63,9 @@ import {
   X,
   Save,
   Lock,
+  Play,
+  Square,
+  Loader2,
 } from "lucide-react";
 import { toast } from "sonner";
 import dynamic from "next/dynamic";
@@ -92,6 +99,9 @@ export default function CodeIDEPage() {
   const [saveError, setSaveError] = useState<string | null>(null);
   const [tabPendingClose, setTabPendingClose] = useState<string | null>(null);
 
+  const [container, setContainer] = useState<ContainerInfo | null>(null);
+  const [containerActionPending, setContainerActionPending] = useState(false);
+
   const isReadOnly = !isProject;
 
   useEffect(() => {
@@ -117,6 +127,35 @@ export default function CodeIDEPage() {
     if (!user || mode !== "code") return;
     getFileTree(projectId).then(setFiles).catch(console.error);
   }, [projectId, user, mode]);
+
+  const fetchContainer = () => {
+    if (!isProject) return;
+    listContainers()
+      .then((all) => setContainer(all.find((c) => c.project_id === projectId) || null))
+      .catch(() => {});
+  };
+
+  useEffect(() => {
+    if (!user || !isProject) return;
+    fetchContainer();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [projectId, user, isProject]);
+
+  const handleContainerAction = async (action: "start" | "stop") => {
+    if (!container || containerActionPending) return;
+    const toastId = toast.loading(`${action === "start" ? "Starting" : "Stopping"} sandbox...`);
+    setContainerActionPending(true);
+    try {
+      if (action === "start") await startContainer(container.id);
+      else await stopContainer(container.id);
+      fetchContainer();
+      toast.success(`Sandbox ${action === "start" ? "started" : "stopped"}.`, { id: toastId });
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : `Failed to ${action} sandbox.`, { id: toastId });
+    } finally {
+      setContainerActionPending(false);
+    }
+  };
 
   const handleNewTab = () => {
     setTerminalError(null);
@@ -318,6 +357,46 @@ export default function CodeIDEPage() {
               Read-only
             </Badge>
           )}
+          {isProject && container && (
+            <div className="flex items-center gap-2">
+              <Badge variant={container.state === "running" ? "success" : container.state === "exited" ? "error" : "default"} className="gap-1 text-xs">
+                {container.state}
+              </Badge>
+              {container.state === "running" ? (
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="h-6 gap-1 text-xs"
+                      disabled={containerActionPending}
+                      onClick={() => void handleContainerAction("stop")}
+                    >
+                      {containerActionPending ? <Loader2 className="h-3 w-3 animate-spin" /> : <Square className="h-3 w-3" />}
+                      Stop
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>Stop the sandbox container</TooltipContent>
+                </Tooltip>
+              ) : container.state === "exited" ? (
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="h-6 gap-1 text-xs"
+                      disabled={containerActionPending}
+                      onClick={() => void handleContainerAction("start")}
+                    >
+                      {containerActionPending ? <Loader2 className="h-3 w-3 animate-spin" /> : <Play className="h-3 w-3" />}
+                      Start
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>Start the sandbox container</TooltipContent>
+                </Tooltip>
+              ) : null}
+            </div>
+          )}
         </div>
 
         {mode === "terminal" ? (
@@ -370,12 +449,17 @@ export default function CodeIDEPage() {
                     variant="ghost"
                     size="icon"
                     className="h-6 w-6 shrink-0"
+                    disabled={isProject && container !== null && container.state !== "running"}
                     onClick={handleNewTab}
                   >
                     <Plus className="h-4 w-4" />
                   </Button>
                 </TooltipTrigger>
-                <TooltipContent side="bottom">New terminal session</TooltipContent>
+                <TooltipContent side="bottom">
+                  {isProject && container !== null && container.state !== "running"
+                    ? "Sandbox is stopped. Start it to open a new session."
+                    : "New terminal session"}
+                </TooltipContent>
               </Tooltip>
             </div>
 
@@ -413,10 +497,23 @@ export default function CodeIDEPage() {
                     <EmptyDescription>Create a session to open a shell in this project&apos;s sandbox.</EmptyDescription>
                   </EmptyHeader>
                   <EmptyContent>
-                    <Button size="sm" onClick={handleNewTab}>
-                      <Plus className="h-4 w-4 mr-1" aria-hidden="true" />
-                      New session
-                    </Button>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Button
+                          size="sm"
+                          disabled={isProject && container !== null && container.state !== "running"}
+                          onClick={handleNewTab}
+                        >
+                          <Plus className="h-4 w-4 mr-1" aria-hidden="true" />
+                          New session
+                        </Button>
+                      </TooltipTrigger>
+                      {isProject && container !== null && container.state !== "running" && (
+                        <TooltipContent>
+                          Sandbox is stopped. Start it to open a new session.
+                        </TooltipContent>
+                      )}
+                    </Tooltip>
                   </EmptyContent>
                 </Empty>
               )}
