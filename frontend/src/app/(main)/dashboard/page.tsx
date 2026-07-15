@@ -277,7 +277,12 @@ export default function GlobalDashboardPage() {
           )}
           {systemContainers.length > 0 && (
             <section>
-              <h2 className="text-sm font-semibold text-foreground mb-3">System</h2>
+              <Link
+                href="/dashboard/system"
+                className="inline-block text-sm font-semibold text-foreground hover:text-accent transition-colors mb-3"
+              >
+                Tamga System
+              </Link>
               <div className="space-y-2">
                 {systemContainers.map((c) => (
                   <ContainerRow key={c.id} container={c} onAction={handleAction} onDelete={(container) => { setDeleteError(""); setDeleteTarget(container); }} actionPending={pendingContainerId === c.id || (deleting && deleteTarget?.id === c.id)} />

@@ -29,7 +29,7 @@ import {
   useSidebar,
 } from "@/components/ui/sidebar";
 import { ProjectSelector } from "@/components/project-selector";
-import { useWorkspace } from "@/contexts/workspace-context";
+import { useWorkspace, TAMGA_SYSTEM_ID } from "@/contexts/workspace-context";
 
 type NavItem = { href: string; label: string; icon: typeof LayoutDashboard };
 
@@ -88,10 +88,11 @@ export function AppSidebar() {
           aria-label="Tamga Console home"
           onClick={closeMobileNavigation}
         >
-          <span className="flex size-7 shrink-0 items-center justify-center rounded-md bg-sidebar-primary font-display text-xs text-sidebar-primary-foreground">
-            T
+          <span className="flex size-7 shrink-0 items-center justify-center overflow-hidden rounded-md bg-sidebar-primary">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src="/icon.svg" alt="" className="h-full w-full object-contain" />
           </span>
-          {showLabels && <span className="font-display text-lg font-semibold tracking-wide">Tamga Console</span>}
+          {showLabels && <span className="font-display text-xl tracking-wide">Tamga Console</span>}
         </Link>
         {showLabels && (
           <div className="mt-2">

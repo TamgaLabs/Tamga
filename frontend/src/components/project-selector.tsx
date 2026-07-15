@@ -6,8 +6,8 @@ import { listProjects, type Project } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { Check, ChevronsUpDown, FolderPlus, Search, Globe, Box, LayoutGrid } from "lucide-react";
-import { useWorkspace, type WorkspaceView } from "@/contexts/workspace-context";
+import { Check, ChevronsUpDown, FolderPlus, Search, Globe, Box, LayoutGrid, Server } from "lucide-react";
+import { useWorkspace, type WorkspaceView, TAMGA_SYSTEM_ID } from "@/contexts/workspace-context";
 
 export function ProjectSelector() {
   const { view, setView, projects } = useWorkspace();
@@ -18,6 +18,8 @@ export function ProjectSelector() {
   const filtered = projects.filter((p) =>
     p.name.toLowerCase().includes(search.toLowerCase())
   );
+  const systemProject = filtered.find((p) => p.id === TAMGA_SYSTEM_ID);
+  const realProjects = filtered.filter((p) => p.id !== TAMGA_SYSTEM_ID);
 
   const currentLabel = (() => {
     if (view === "all") return "All";
@@ -67,9 +69,26 @@ export function ProjectSelector() {
             {view === "all" && <Check className="size-4 shrink-0 ml-auto" aria-hidden="true" />}
           </button>
 
-          {filtered.length > 0 && (
+          {systemProject && (
+            <button
+              role="option"
+              aria-selected={view === TAMGA_SYSTEM_ID}
+              onClick={() => handleSelect(TAMGA_SYSTEM_ID)}
+              className={`flex w-full items-center gap-2 rounded px-2 py-2 text-left text-sm transition-colors ${
+                view === TAMGA_SYSTEM_ID
+                  ? "bg-muted text-foreground"
+                  : "text-muted-foreground hover:text-foreground hover:bg-muted"
+              }`}
+            >
+              <Server className="size-4 shrink-0" aria-hidden="true" />
+              <span className="truncate">Tamga System</span>
+              {view === TAMGA_SYSTEM_ID && <Check className="size-4 shrink-0 ml-auto" aria-hidden="true" />}
+            </button>
+          )}
+
+          {realProjects.length > 0 && (
             <div className="pt-1">
-              {filtered.map((p) => (
+              {realProjects.map((p) => (
                 <button
                   key={p.id}
                   role="option"

@@ -42,6 +42,7 @@ import { ContainerRow } from "./container-row";
 import { CardDescription } from "@/components/ui/card";
 import { toast } from "sonner";
 import { MoreVertical, Play, RotateCw, Square, Trash2, Activity } from "lucide-react";
+import { TAMGA_SYSTEM_ID } from "@/contexts/workspace-context";
 
 const statusVariant: Record<string, "success" | "warning" | "error" | "info" | "default"> = {
   running: "success",
@@ -130,6 +131,7 @@ export default function ProjectDashboardPage() {
   const [deleting, setDeleting] = useState(false);
 
   useEffect(() => {
+    if (project.id === TAMGA_SYSTEM_ID) return;
     listDeployments(project.id).then(setDeployments).catch((error) => {
       console.error(error);
       setDeploymentsError(error instanceof Error ? error.message : "Failed to load deployments.");
@@ -140,7 +142,7 @@ export default function ProjectDashboardPage() {
     setContainersLoading(true);
     setContainersError("");
     listContainers()
-      .then((all) => setContainers(all.filter((c) => c.project_id === project.id)))
+      .then((all) => setContainers(all.filter((c) => project.id === TAMGA_SYSTEM_ID ? !!c.system_type : c.project_id === project.id)))
       .catch((error) => {
         console.error(error);
         setContainersError(error instanceof Error ? error.message : "Failed to load containers.");
@@ -242,7 +244,7 @@ export default function ProjectDashboardPage() {
 
       {actionError && <p role="alert" className="rounded-md border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive">{actionError}</p>}
 
-      <MetricsSummary projectId={project.id} />
+      {project.id !== TAMGA_SYSTEM_ID && <MetricsSummary projectId={project.id} />}
 
       <div className="grid gap-4 md:grid-cols-2">
         <Card>

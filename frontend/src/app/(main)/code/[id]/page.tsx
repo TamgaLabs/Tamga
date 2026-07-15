@@ -18,6 +18,7 @@ import {
 import { AgentTerminal } from "@/components/agent-terminal";
 import { mergeTerminalTabs, removeTerminalTab, type TerminalTab } from "@/lib/terminal-tabs";
 import { useAuth } from "@/lib/auth";
+import { TAMGA_SYSTEM_ID } from "@/contexts/workspace-context";
 import { useTheme } from "@/lib/theme";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -131,7 +132,7 @@ export default function CodeIDEPage() {
   const fetchContainer = () => {
     if (!isProject) return;
     listContainers()
-      .then((all) => setContainer(all.find((c) => c.project_id === projectId) || null))
+      .then((all) => setContainer(all.find((c) => projectId === TAMGA_SYSTEM_ID ? !!c.system_type : c.project_id === projectId) || null))
       .catch(() => {});
   };
 
@@ -193,14 +194,24 @@ export default function CodeIDEPage() {
     try {
       await terminateAgentSession(projectId, id);
     } catch (e) {
-      setTerminalError(e instanceof Error ? e.message : "Failed to terminate session");
-      return;
+      // "Failed to fetch" happens when the browser gives up waiting for the
+      // backend (StopAgent can be slow). The session is likely already gone.
+      const msg = e instanceof Error ? e.message : "Failed to terminate session";
+      if (!msg.includes("Failed to fetch")) {
+        setTerminalError(msg);
+      }
+      // Fall through — the onSessionTerminated WS callback likely already
+      // removed the tab, but clean up here too just in case.
     }
     terminatedSessionIds.current.add(id);
     setTabs((prev) => {
-      setActiveTabId((current) => removeTerminalTab(prev, current, id).activeTabId);
-      return removeTerminalTab(prev, null, id).tabs;
+      const next = prev.filter((t) => t.id !== id);
+      setActiveTabId((cur) => (cur === id ? (next[0]?.id ?? null) : cur));
+      return next;
     });
+    // Refresh container state — the last session's termination triggers
+    // sandbox stop, so the container may no longer be running.
+    fetchContainer();
   };
 
   const activeTab = tabs.find((t) => t.id === activeTabId) || null;
@@ -487,6 +498,7 @@ export default function CodeIDEPage() {
                       setActiveTabId((current) => removeTerminalTab(prev, current, activeTab.id).activeTabId);
                       return removeTerminalTab(prev, null, activeTab.id).tabs;
                     });
+                    fetchContainer();
                   }}
                 />
               ) : (

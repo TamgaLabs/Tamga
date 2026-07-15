@@ -9,6 +9,13 @@ import {
   removeContainer,
   type ContainerInfo,
 } from "@/lib/api";
+import { useAuth } from "@/lib/auth";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@/components/ui/empty";
+import { PageHeader, PageHeaderActions, PageHeaderDescription, PageHeaderTitle } from "@/components/page-header";
+import { Skeleton } from "@/components/ui/skeleton";
+import { ContainerRow } from "../../projects/[id]/container-row";
 import {
   AlertDialog,
   AlertDialogCancel,
@@ -18,37 +25,33 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { useProjectContext } from "../project-context";
-import { ContainerRow } from "../container-row";
-import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from "@/components/ui/empty";
-import { PageHeader, PageHeaderDescription, PageHeaderTitle } from "@/components/page-header";
-import { Skeleton } from "@/components/ui/skeleton";
-import { Button } from "@/components/ui/button";
+import { Search, Container as ContainerIcon, Globe } from "lucide-react";
 import { toast } from "sonner";
-import { TAMGA_SYSTEM_ID } from "@/contexts/workspace-context";
 
-export default function ProjectContainersPage() {
-  const { project } = useProjectContext();
+export default function SystemDashboardPage() {
   const [containers, setContainers] = useState<ContainerInfo[]>([]);
   const [loading, setLoading] = useState(true);
+  const [search, setSearch] = useState("");
   const [deleteTarget, setDeleteTarget] = useState<ContainerInfo | null>(null);
   const [error, setError] = useState("");
   const [actionError, setActionError] = useState("");
   const [pendingContainerId, setPendingContainerId] = useState<string | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState("");
+  const { user, loading: authLoading } = useAuth();
 
   const fetchContainers = useCallback(() => {
+    if (!user) return;
     setLoading(true);
     setError("");
     listContainers()
-      .then((all) => setContainers(all.filter((c) => project.id === TAMGA_SYSTEM_ID ? !!c.system_type : c.project_id === project.id)))
+      .then((all) => setContainers(all.filter((c) => !!c.system_type)))
       .catch((requestError) => {
         console.error(requestError);
         setError(requestError instanceof Error ? requestError.message : "Failed to load containers.");
       })
       .finally(() => setLoading(false));
-  }, [project.id]);
+  }, [user]);
 
   useEffect(fetchContainers, [fetchContainers]);
 
@@ -92,20 +95,62 @@ export default function ProjectContainersPage() {
     } finally { setDeleting(false); }
   };
 
+  const filtered = containers.filter((c) => {
+    const name = c.name || "";
+    if (search && !name.toLowerCase().includes(search.toLowerCase())) return false;
+    return true;
+  });
+
+  if (authLoading || !user) return null;
+
   return (
     <div className="mx-auto max-w-6xl space-y-6 p-4 sm:p-6">
-      <PageHeader><div><PageHeaderTitle>Containers</PageHeaderTitle><PageHeaderDescription>Manage the containers attached to this project.</PageHeaderDescription></div></PageHeader>
+      <PageHeader>
+        <div className="space-y-1">
+          <PageHeaderTitle>Tamga System</PageHeaderTitle>
+          <PageHeaderDescription>System containers powering the Tamga platform.</PageHeaderDescription>
+        </div>
+        <PageHeaderActions>
+          <div className="relative w-full sm:w-72">
+            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+            <Input
+              type="text"
+              placeholder="Search by name..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              className="pl-8"
+            />
+          </div>
+        </PageHeaderActions>
+      </PageHeader>
+
       {actionError && <p role="alert" className="rounded-md border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive">{actionError}</p>}
 
       {loading ? (
-        <div className="space-y-2"><Skeleton className="h-16 w-full" /><Skeleton className="h-16 w-full" /></div>
+        <div className="space-y-3">
+          <Skeleton className="h-20 w-full" />
+          <Skeleton className="h-20 w-full" />
+        </div>
       ) : error ? (
-        <p role="alert" className="rounded-md border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive">{error}</p>
-      ) : containers.length === 0 ? (
-        <Empty><EmptyHeader><EmptyTitle>No containers yet</EmptyTitle><EmptyDescription>Deploy the project to create its first container.</EmptyDescription></EmptyHeader></Empty>
+        <Empty className="min-h-56 border-destructive/30">
+          <EmptyHeader>
+            <EmptyMedia className="bg-destructive/10 text-destructive"><Globe className="size-5" /></EmptyMedia>
+            <EmptyTitle>Containers could not be loaded</EmptyTitle>
+            <EmptyDescription>{error}</EmptyDescription>
+          </EmptyHeader>
+          <Button variant="outline" onClick={fetchContainers}>Try again</Button>
+        </Empty>
+      ) : filtered.length === 0 ? (
+        <Empty className="min-h-56">
+          <EmptyHeader>
+            <EmptyMedia><ContainerIcon className="size-5" /></EmptyMedia>
+            <EmptyTitle>No system containers</EmptyTitle>
+            <EmptyDescription>{search ? "Try a different container name." : "System containers will appear here."}</EmptyDescription>
+          </EmptyHeader>
+        </Empty>
       ) : (
         <div className="space-y-2">
-          {containers.map((c) => (
+          {filtered.map((c) => (
             <ContainerRow key={c.id} container={c} onAction={handleAction} onDelete={(container) => { setDeleteError(""); setDeleteTarget(container); }} actionPending={pendingContainerId === c.id || (deleting && deleteTarget?.id === c.id)} />
           ))}
         </div>

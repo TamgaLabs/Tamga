@@ -6,6 +6,7 @@ import { getProject, type Project } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { ProjectContextProvider } from "./project-context";
 import { Skeleton } from "@/components/ui/skeleton";
+import { TAMGA_SYSTEM_ID } from "@/contexts/workspace-context";
 
 export default function ProjectDetailLayout({ children }: { children: React.ReactNode }) {
   const params = useParams();
@@ -17,6 +18,21 @@ export default function ProjectDetailLayout({ children }: { children: React.Reac
 
   const fetchProject = useCallback(() => {
     if (!user || !params.id) return;
+    if (id === TAMGA_SYSTEM_ID) {
+      setProject({
+        id: TAMGA_SYSTEM_ID,
+        name: "Tamga System",
+        source_type: "local",
+        repo_url: "",
+        branch: "",
+        domain: "",
+        status: "running",
+        created_at: "",
+        updated_at: "",
+      });
+      setLoading(false);
+      return;
+    }
     setLoading(true);
     getProject(id)
       .then(setProject)

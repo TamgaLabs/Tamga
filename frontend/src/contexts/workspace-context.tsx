@@ -5,6 +5,21 @@ import { usePathname, useRouter } from "next/navigation";
 import { listProjects, type Project } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 
+/** Virtual project ID for system containers (tamga-backend, traefik, etc.). */
+export const TAMGA_SYSTEM_ID = -1;
+
+const TAMGA_SYSTEM_PROJECT: Project = {
+  id: TAMGA_SYSTEM_ID,
+  name: "Tamga System",
+  source_type: "local",
+  repo_url: "",
+  branch: "",
+  domain: "",
+  status: "running",
+  created_at: "",
+  updated_at: "",
+};
+
 export type WorkspaceView = "all" | "non-project" | number;
 
 type WorkspaceContextValue = {
@@ -21,9 +36,10 @@ const WorkspaceContext = createContext<WorkspaceContextValue | null>(null);
 function deriveViewFromPath(pathname: string): WorkspaceView {
   if (pathname === "/dashboard") return "all";
   if (pathname === "/dashboard/non-project") return "non-project";
-  const projectMatch = pathname.match(/^\/projects\/(\d+)/);
+  if (pathname === "/dashboard/system") return TAMGA_SYSTEM_ID;
+  const projectMatch = pathname.match(/^\/projects\/(-?\d+)/);
   if (projectMatch) return Number(projectMatch[1]);
-  const codeMatch = pathname.match(/^\/code\/(\d+)/);
+  const codeMatch = pathname.match(/^\/code\/(-?\d+)/);
   if (codeMatch) return Number(codeMatch[1]);
   return "all";
 }
@@ -33,6 +49,8 @@ function navigateForView(view: WorkspaceView, router: ReturnType<typeof useRoute
     router.push("/dashboard");
   } else if (view === "non-project") {
     router.push("/dashboard/non-project");
+  } else if (view === TAMGA_SYSTEM_ID) {
+    router.push("/dashboard/system");
   } else {
     router.push(`/projects/${view}`);
   }
@@ -71,11 +89,17 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
     [router]
   );
 
+  const allProjects = [TAMGA_SYSTEM_PROJECT, ...projects];
+
   const selectedProject =
-    typeof view === "number" ? projects.find((p) => p.id === view) ?? null : null;
+    typeof view === "number"
+      ? view === TAMGA_SYSTEM_ID
+        ? TAMGA_SYSTEM_PROJECT
+        : projects.find((p) => p.id === view) ?? null
+      : null;
 
   return (
-    <WorkspaceContext.Provider value={{ view, setView, projects, loading, selectedProject, refetchProjects }}>
+    <WorkspaceContext.Provider value={{ view, setView, projects: allProjects, loading, selectedProject, refetchProjects }}>
       {children}
     </WorkspaceContext.Provider>
   );

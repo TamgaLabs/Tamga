@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { KeyRound, LockKeyhole, TerminalSquare } from "lucide-react";
+import { KeyRound, LockKeyhole } from "lucide-react";
 
 import { login } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
@@ -36,8 +36,9 @@ export default function LoginPage() {
       <section className="flex items-center justify-center px-4 py-10 sm:px-6">
         <Card className="w-full max-w-md border-border/80 shadow-lg shadow-primary/5">
           <CardHeader className="space-y-3 pb-7">
-            <div className="flex size-10 items-center justify-center rounded-lg bg-primary text-primary-foreground">
-              <TerminalSquare className="size-5" aria-hidden="true" />
+            <div className="flex size-10 items-center justify-center overflow-hidden rounded-lg bg-primary">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src="/icon.svg" alt="" className="h-6 w-6 object-contain" />
             </div>
             <div className="space-y-1.5">
               <p className="font-display text-sm tracking-wide text-primary">Tamga Console</p>
@@ -78,10 +79,11 @@ export default function LoginPage() {
 
       <section className="hidden border-l border-border bg-sidebar p-10 lg:flex lg:flex-col lg:justify-between">
         <div className="flex items-center gap-3 text-sidebar-foreground">
-          <div className="flex size-9 items-center justify-center rounded-lg bg-sidebar-primary text-sidebar-primary-foreground">
-            <TerminalSquare className="size-5" aria-hidden="true" />
+          <div className="flex size-9 items-center justify-center overflow-hidden rounded-lg bg-sidebar-primary">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src="/icon.svg" alt="" className="h-5 w-5 object-contain" />
           </div>
-          <span className="font-display text-sm tracking-wide">Tamga Console</span>
+          <span className="font-display text-xl tracking-wide">Tamga Console</span>
         </div>
         <div className="max-w-md space-y-5">
           <p className="font-display text-xl leading-relaxed text-sidebar-foreground">OPERATE WITH CLARITY</p>

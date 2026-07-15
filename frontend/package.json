@@ -13,6 +13,7 @@
     "test:e2e": "test -f ./playwright.config.ts && test -x ./node_modules/.bin/playwright || { echo 'Browser E2E requires the Playwright dependency and config supplied by FEAT-053.' >&2; exit 2; }; test -n \"$E2E_BASE_URL\" && test -n \"$E2E_ADMIN_PASSWORD\" && test \"$E2E_OWNED_STACK\" = 1 || { echo 'Browser E2E requires E2E_BASE_URL, E2E_ADMIN_PASSWORD, and E2E_OWNED_STACK=1 for a CI-owned disposable Tamga stack.' >&2; exit 2; }; exec ./node_modules/.bin/playwright test"
   },
   "dependencies": {
+    "@fontsource/quantico": "^5.2.7",
     "@monaco-editor/react": "^4.7.0",
     "@radix-ui/react-alert-dialog": "^1.1.17",
     "@radix-ui/react-checkbox": "^1.3.5",

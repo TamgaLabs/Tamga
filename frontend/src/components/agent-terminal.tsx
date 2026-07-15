@@ -109,6 +109,12 @@ export function AgentTerminal({
         if (isNewSession && !opened) {
           onConnectFailed?.();
         } else if (opened) {
+          // TUI apps (opencode etc.) may leave the alternate screen buffer
+          // active if they exit via SIGINT without restoring it. Clear any
+          // stale content after a short delay so remaining output is visible.
+          setTimeout(() => {
+            term.write("\x1b[?1049l\x1b[2J\x1b[H");
+          }, 200);
           onSessionTerminated?.();
         }
       };
