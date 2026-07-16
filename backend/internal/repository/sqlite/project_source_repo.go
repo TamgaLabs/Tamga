@@ -7,8 +7,8 @@ import (
 )
 
 func (db *DB) CreateProjectSource(source *domain.ProjectSource) error {
-	result, err := db.Exec(`INSERT INTO project_sources
-        (project_id, display_name, remote_url, branch, workspace_path, status, error_summary)
+	result, err := db.Exec(`INSERT INTO seal_sources
+	        (seal_id, display_name, remote_url, branch, workspace_path, status, error_summary)
         VALUES (?, ?, ?, ?, ?, ?, ?)`,
 		source.ProjectID, source.DisplayName, source.RemoteURL, source.Branch,
 		source.WorkspacePath, source.Status, source.ErrorSummary)
@@ -21,9 +21,9 @@ func (db *DB) CreateProjectSource(source *domain.ProjectSource) error {
 
 func (db *DB) FindProjectSource(projectID, sourceID int64) (*domain.ProjectSource, error) {
 	source := &domain.ProjectSource{}
-	err := db.QueryRow(`SELECT id, project_id, display_name, remote_url, branch,
+	err := db.QueryRow(`SELECT id, seal_id, display_name, remote_url, branch,
         workspace_path, status, error_summary, created_at, updated_at
-        FROM project_sources WHERE project_id = ? AND id = ?`, projectID, sourceID).
+        FROM seal_sources WHERE seal_id = ? AND id = ?`, projectID, sourceID).
 		Scan(&source.ID, &source.ProjectID, &source.DisplayName, &source.RemoteURL,
 			&source.Branch, &source.WorkspacePath, &source.Status, &source.ErrorSummary,
 			&source.CreatedAt, &source.UpdatedAt)
@@ -34,9 +34,9 @@ func (db *DB) FindProjectSource(projectID, sourceID int64) (*domain.ProjectSourc
 }
 
 func (db *DB) ListProjectSources(projectID int64) ([]*domain.ProjectSource, error) {
-	rows, err := db.Query(`SELECT id, project_id, display_name, remote_url, branch,
+	rows, err := db.Query(`SELECT id, seal_id, display_name, remote_url, branch,
         workspace_path, status, error_summary, created_at, updated_at
-        FROM project_sources WHERE project_id = ? ORDER BY id`, projectID)
+        FROM seal_sources WHERE seal_id = ? ORDER BY id`, projectID)
 	if err != nil {
 		return nil, fmt.Errorf("list project sources: %w", err)
 	}
@@ -55,8 +55,8 @@ func (db *DB) ListProjectSources(projectID int64) ([]*domain.ProjectSource, erro
 }
 
 func (db *DB) UpdateProjectSource(source *domain.ProjectSource) error {
-	_, err := db.Exec(`UPDATE project_sources SET display_name=?, remote_url=?, branch=?,
-        workspace_path=?, status=?, error_summary=?, updated_at=CURRENT_TIMESTAMP WHERE id=? AND project_id=?`,
+	_, err := db.Exec(`UPDATE seal_sources SET display_name=?, remote_url=?, branch=?,
+	        workspace_path=?, status=?, error_summary=?, updated_at=CURRENT_TIMESTAMP WHERE id=? AND seal_id=?`,
 		source.DisplayName, source.RemoteURL, source.Branch, source.WorkspacePath,
 		source.Status, source.ErrorSummary, source.ID, source.ProjectID)
 	if err != nil {
@@ -66,7 +66,7 @@ func (db *DB) UpdateProjectSource(source *domain.ProjectSource) error {
 }
 
 func (db *DB) DeleteProjectSource(projectID, sourceID int64) error {
-	_, err := db.Exec("DELETE FROM project_sources WHERE project_id = ? AND id = ?", projectID, sourceID)
+	_, err := db.Exec("DELETE FROM seal_sources WHERE seal_id = ? AND id = ?", projectID, sourceID)
 	if err != nil {
 		return fmt.Errorf("delete project source: %w", err)
 	}

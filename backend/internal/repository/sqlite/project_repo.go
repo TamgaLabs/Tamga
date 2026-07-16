@@ -16,7 +16,7 @@ func (db *DB) CreateProject(p *domain.Project) error {
 	// pre-existing rows don't need a backfill, and the SELECTs below COALESCE
 	// them to '' so a NULL legacy row and an empty new row scan identically.
 	res, err := db.Exec(
-		"INSERT INTO projects (name, source_type, repo_url, branch, domain, status, container_id, compose_yaml, exposed_service) VALUES (?, ?, ?, ?, ?, ?, '', ?, ?)",
+		"INSERT INTO seals (name, source_type, repo_url, branch, domain, status, container_id, compose_yaml, exposed_service) VALUES (?, ?, ?, ?, ?, ?, '', ?, ?)",
 		p.Name, p.SourceType, p.RepoURL, p.Branch, p.Domain, p.Status, p.ComposeYAML, p.ExposedService,
 	)
 	if err != nil {
@@ -30,7 +30,7 @@ func (db *DB) CreateProject(p *domain.Project) error {
 func (db *DB) FindProject(id int64) (*domain.Project, error) {
 	p := &domain.Project{}
 	err := db.QueryRow(
-		"SELECT id, name, source_type, repo_url, branch, domain, status, container_id, COALESCE(compose_yaml, ''), COALESCE(exposed_service, ''), config_revision, build_revision, created_at, updated_at FROM projects WHERE id = ?", id,
+		"SELECT id, name, source_type, repo_url, branch, domain, status, container_id, COALESCE(compose_yaml, ''), COALESCE(exposed_service, ''), config_revision, build_revision, created_at, updated_at FROM seals WHERE id = ?", id,
 	).Scan(&p.ID, &p.Name, &p.SourceType, &p.RepoURL, &p.Branch, &p.Domain, &p.Status, &p.ContainerID, &p.ComposeYAML, &p.ExposedService, &p.ConfigRevision, &p.BuildRevision, &p.CreatedAt, &p.UpdatedAt)
 	if err != nil {
 		return nil, fmt.Errorf("find project: %w", err)
@@ -39,7 +39,7 @@ func (db *DB) FindProject(id int64) (*domain.Project, error) {
 }
 
 func (db *DB) ListProjects() ([]*domain.Project, error) {
-	rows, err := db.Query("SELECT id, name, source_type, repo_url, branch, domain, status, container_id, COALESCE(compose_yaml, ''), COALESCE(exposed_service, ''), config_revision, build_revision, created_at, updated_at FROM projects ORDER BY created_at DESC")
+	rows, err := db.Query("SELECT id, name, source_type, repo_url, branch, domain, status, container_id, COALESCE(compose_yaml, ''), COALESCE(exposed_service, ''), config_revision, build_revision, created_at, updated_at FROM seals ORDER BY created_at DESC")
 	if err != nil {
 		return nil, fmt.Errorf("list projects: %w", err)
 	}
@@ -58,7 +58,7 @@ func (db *DB) ListProjects() ([]*domain.Project, error) {
 
 func (db *DB) UpdateProject(p *domain.Project) error {
 	_, err := db.Exec(
-		"UPDATE projects SET name=?, source_type=?, repo_url=?, branch=?, domain=?, status=?, container_id=?, compose_yaml=?, exposed_service=?, config_revision=?, build_revision=?, updated_at=CURRENT_TIMESTAMP WHERE id=?",
+		"UPDATE seals SET name=?, source_type=?, repo_url=?, branch=?, domain=?, status=?, container_id=?, compose_yaml=?, exposed_service=?, config_revision=?, build_revision=?, updated_at=CURRENT_TIMESTAMP WHERE id=?",
 		p.Name, p.SourceType, p.RepoURL, p.Branch, p.Domain, p.Status, p.ContainerID, p.ComposeYAML, p.ExposedService, p.ConfigRevision, p.BuildRevision, p.ID,
 	)
 	if err != nil {
@@ -73,7 +73,7 @@ func (db *DB) UpdateProject(p *domain.Project) error {
 // configuration/source update.
 func (db *DB) SetBuildStateIfRevision(id, configRevision, buildRevision int64, status domain.ProjectStatus) (bool, error) {
 	result, err := db.Exec(
-		"UPDATE projects SET status=?, build_revision=?, updated_at=CURRENT_TIMESTAMP WHERE id=? AND config_revision=?",
+		"UPDATE seals SET status=?, build_revision=?, updated_at=CURRENT_TIMESTAMP WHERE id=? AND config_revision=?",
 		status, buildRevision, id, configRevision,
 	)
 	if err != nil {
@@ -87,7 +87,7 @@ func (db *DB) SetBuildStateIfRevision(id, configRevision, buildRevision int64, s
 }
 
 func (db *DB) DeleteProject(id int64) error {
-	_, err := db.Exec("DELETE FROM projects WHERE id = ?", id)
+	_, err := db.Exec("DELETE FROM seals WHERE id = ?", id)
 	if err != nil {
 		return fmt.Errorf("delete project: %w", err)
 	}

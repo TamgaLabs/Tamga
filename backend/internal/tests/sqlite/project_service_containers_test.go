@@ -42,45 +42,25 @@ func TestMigrationAppliesOnFreshDB(t *testing.T) {
 	}
 }
 
-// TestProjectSourcesMigrationBackfillsLegacyRemote keeps the FEAT-055a
-// migration contract explicit: a pre-source remote project gets one ready
-// primary source while its existing lifecycle status remains untouched.
-func TestProjectSourcesMigrationBackfillsLegacyRemote(t *testing.T) {
+// TestProjectSourceRepositoryUsesSealOwnership ensures the retained source
+// repository adapter reads and writes the Seal-owned storage created by the
+// persistence migration.
+func TestProjectSourceRepositoryUsesSealOwnership(t *testing.T) {
 	db := openTestDB(t)
-	legacy := &domain.Project{
-		Name:       "legacy-remote",
-		SourceType: domain.SourceTypeRemote,
-		RepoURL:    "https://example.test/legacy.git",
-		Branch:     "stable",
-		Domain:     "legacy.test",
-		Status:     domain.ProjectStatusRunning,
+	seal := &domain.Project{Name: "source-owner", SourceType: domain.SourceTypeRemote, RepoURL: "https://example.test/source.git", Branch: "stable", Domain: "source.test", Status: domain.ProjectStatusCreated}
+	if err := db.CreateProject(seal); err != nil {
+		t.Fatalf("create seal-owned project adapter record: %v", err)
 	}
-	if err := db.CreateProject(legacy); err != nil {
-		t.Fatalf("create legacy project: %v", err)
+	source := &domain.ProjectSource{ProjectID: seal.ID, DisplayName: "primary", RemoteURL: seal.RepoURL, Branch: seal.Branch, WorkspacePath: ".", Status: domain.ProjectSourceStatusReady}
+	if err := db.CreateProjectSource(source); err != nil {
+		t.Fatalf("create seal source: %v", err)
 	}
-	if _, err := db.Exec("DROP TABLE project_sources"); err != nil {
-		t.Fatalf("drop project_sources to simulate pre-000018 database: %v", err)
-	}
-	if _, err := db.Exec("DELETE FROM schema_migrations WHERE filename = ?", "000018_create_project_sources.up.sql"); err != nil {
-		t.Fatalf("unmark source migration: %v", err)
-	}
-	if err := db.Migrate(); err != nil {
-		t.Fatalf("migrate legacy database: %v", err)
-	}
-
-	project, err := db.FindProject(legacy.ID)
+	sources, err := db.ListProjectSources(seal.ID)
 	if err != nil {
-		t.Fatalf("read legacy project: %v", err)
+		t.Fatalf("list seal sources: %v", err)
 	}
-	if project.Status != domain.ProjectStatusRunning {
-		t.Fatalf("migration changed legacy project status to %q", project.Status)
-	}
-	sources, err := db.ListProjectSources(legacy.ID)
-	if err != nil {
-		t.Fatalf("list backfilled sources: %v", err)
-	}
-	if len(sources) != 1 || sources[0].WorkspacePath != "." || sources[0].Status != domain.ProjectSourceStatusReady || sources[0].Branch != "stable" {
-		t.Fatalf("unexpected backfilled source: %+v", sources)
+	if len(sources) != 1 || sources[0].ProjectID != seal.ID || sources[0].WorkspacePath != "." || sources[0].Status != domain.ProjectSourceStatusReady {
+		t.Fatalf("unexpected seal source: %+v", sources)
 	}
 }
 

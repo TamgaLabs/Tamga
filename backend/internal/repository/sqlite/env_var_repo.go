@@ -8,7 +8,7 @@ import (
 
 func (db *DB) CreateEnvVar(ev *domain.EnvVar) error {
 	res, err := db.Exec(
-		"INSERT INTO env_vars (project_id, key, value) VALUES (?, ?, ?)",
+		"INSERT INTO env_vars (seal_id, key, value) VALUES (?, ?, ?)",
 		ev.ProjectID, ev.Key, ev.Value,
 	)
 	if err != nil {
@@ -21,7 +21,7 @@ func (db *DB) CreateEnvVar(ev *domain.EnvVar) error {
 
 func (db *DB) ListEnvVars(projectID int64) ([]*domain.EnvVar, error) {
 	rows, err := db.Query(
-		"SELECT id, project_id, key, value, created_at, updated_at FROM env_vars WHERE project_id = ? ORDER BY key",
+		"SELECT id, seal_id, key, value, created_at, updated_at FROM env_vars WHERE seal_id = ? ORDER BY key",
 		projectID,
 	)
 	if err != nil {
@@ -41,7 +41,7 @@ func (db *DB) ListEnvVars(projectID int64) ([]*domain.EnvVar, error) {
 }
 
 func (db *DB) DeleteEnvVar(projectID, id int64) error {
-	_, err := db.Exec("DELETE FROM env_vars WHERE project_id = ? AND id = ?", projectID, id)
+	_, err := db.Exec("DELETE FROM env_vars WHERE seal_id = ? AND id = ?", projectID, id)
 	if err != nil {
 		return fmt.Errorf("delete env var: %w", err)
 	}
@@ -49,7 +49,7 @@ func (db *DB) DeleteEnvVar(projectID, id int64) error {
 }
 
 func (db *DB) DeleteEnvVarsByProject(projectID int64) error {
-	_, err := db.Exec("DELETE FROM env_vars WHERE project_id = ?", projectID)
+	_, err := db.Exec("DELETE FROM env_vars WHERE seal_id = ?", projectID)
 	if err != nil {
 		return fmt.Errorf("delete env vars by project: %w", err)
 	}
@@ -57,15 +57,15 @@ func (db *DB) DeleteEnvVarsByProject(projectID int64) error {
 }
 
 func (db *DB) UpsertServiceEnvVar(ev *domain.ServiceEnvVar) error {
-	res, err := db.Exec(`INSERT INTO service_env_vars (project_id, service_name, key, value)
+	res, err := db.Exec(`INSERT INTO service_env_vars (seal_id, service_name, key, value)
 		VALUES (?, ?, ?, ?)
-		ON CONFLICT(project_id, service_name, key) DO UPDATE SET value = excluded.value, updated_at = CURRENT_TIMESTAMP`,
+		ON CONFLICT(seal_id, service_name, key) DO UPDATE SET value = excluded.value, updated_at = CURRENT_TIMESTAMP`,
 		ev.ProjectID, ev.ServiceName, ev.Key, ev.Value)
 	if err != nil {
 		return fmt.Errorf("upsert service env var: %w", err)
 	}
 	if ev.ID == 0 {
-		if err := db.QueryRow("SELECT id, created_at, updated_at FROM service_env_vars WHERE project_id = ? AND service_name = ? AND key = ?", ev.ProjectID, ev.ServiceName, ev.Key).Scan(&ev.ID, &ev.CreatedAt, &ev.UpdatedAt); err != nil {
+		if err := db.QueryRow("SELECT id, created_at, updated_at FROM service_env_vars WHERE seal_id = ? AND service_name = ? AND key = ?", ev.ProjectID, ev.ServiceName, ev.Key).Scan(&ev.ID, &ev.CreatedAt, &ev.UpdatedAt); err != nil {
 			return fmt.Errorf("find upserted service env var: %w", err)
 		}
 	}
@@ -75,7 +75,7 @@ func (db *DB) UpsertServiceEnvVar(ev *domain.ServiceEnvVar) error {
 
 func (db *DB) ImportServiceEnvVars(vars []*domain.ServiceEnvVar) error {
 	for _, ev := range vars {
-		if _, err := db.Exec("INSERT INTO service_env_vars (project_id, service_name, key, value) VALUES (?, ?, ?, ?) ON CONFLICT(project_id, service_name, key) DO NOTHING", ev.ProjectID, ev.ServiceName, ev.Key, ev.Value); err != nil {
+		if _, err := db.Exec("INSERT INTO service_env_vars (seal_id, service_name, key, value) VALUES (?, ?, ?, ?) ON CONFLICT(seal_id, service_name, key) DO NOTHING", ev.ProjectID, ev.ServiceName, ev.Key, ev.Value); err != nil {
 			return fmt.Errorf("import service env var: %w", err)
 		}
 	}
@@ -83,7 +83,7 @@ func (db *DB) ImportServiceEnvVars(vars []*domain.ServiceEnvVar) error {
 }
 
 func (db *DB) ListServiceEnvVars(projectID int64, serviceName string) ([]*domain.ServiceEnvVar, error) {
-	rows, err := db.Query("SELECT id, project_id, service_name, key, value, created_at, updated_at FROM service_env_vars WHERE project_id = ? AND service_name = ? ORDER BY key", projectID, serviceName)
+	rows, err := db.Query("SELECT id, seal_id, service_name, key, value, created_at, updated_at FROM service_env_vars WHERE seal_id = ? AND service_name = ? ORDER BY key", projectID, serviceName)
 	if err != nil {
 		return nil, fmt.Errorf("list service env vars: %w", err)
 	}
@@ -100,7 +100,7 @@ func (db *DB) ListServiceEnvVars(projectID int64, serviceName string) ([]*domain
 }
 
 func (db *DB) ListServiceEnvVarsByProject(projectID int64) ([]*domain.ServiceEnvVar, error) {
-	rows, err := db.Query("SELECT id, project_id, service_name, key, value, created_at, updated_at FROM service_env_vars WHERE project_id = ? ORDER BY service_name, key", projectID)
+	rows, err := db.Query("SELECT id, seal_id, service_name, key, value, created_at, updated_at FROM service_env_vars WHERE seal_id = ? ORDER BY service_name, key", projectID)
 	if err != nil {
 		return nil, fmt.Errorf("list project service env vars: %w", err)
 	}
@@ -117,7 +117,7 @@ func (db *DB) ListServiceEnvVarsByProject(projectID int64) ([]*domain.ServiceEnv
 }
 
 func (db *DB) DeleteServiceEnvVar(projectID int64, serviceName string, id int64) error {
-	_, err := db.Exec("DELETE FROM service_env_vars WHERE project_id = ? AND service_name = ? AND id = ?", projectID, serviceName, id)
+	_, err := db.Exec("DELETE FROM service_env_vars WHERE seal_id = ? AND service_name = ? AND id = ?", projectID, serviceName, id)
 	if err != nil {
 		return fmt.Errorf("delete service env var: %w", err)
 	}
@@ -125,7 +125,7 @@ func (db *DB) DeleteServiceEnvVar(projectID int64, serviceName string, id int64)
 }
 
 func (db *DB) DeleteServiceEnvVarsByProject(projectID int64) error {
-	_, err := db.Exec("DELETE FROM service_env_vars WHERE project_id = ?", projectID)
+	_, err := db.Exec("DELETE FROM service_env_vars WHERE seal_id = ?", projectID)
 	if err != nil {
 		return fmt.Errorf("delete service env vars by project: %w", err)
 	}

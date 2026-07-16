@@ -8,7 +8,7 @@ import (
 
 func (db *DB) CreateDeployment(d *domain.Deployment) error {
 	res, err := db.Exec(
-		"INSERT INTO deployments (project_id, status, commit_sha, logs) VALUES (?, ?, ?, ?)",
+		"INSERT INTO deployments (seal_id, status, commit_sha, logs) VALUES (?, ?, ?, ?)",
 		d.ProjectID, d.Status, d.CommitSHA, d.Logs,
 	)
 	if err != nil {
@@ -22,7 +22,7 @@ func (db *DB) CreateDeployment(d *domain.Deployment) error {
 func (db *DB) FindDeployment(id int64) (*domain.Deployment, error) {
 	d := &domain.Deployment{}
 	err := db.QueryRow(
-		"SELECT id, project_id, status, commit_sha, logs, created_at, updated_at FROM deployments WHERE id = ?", id,
+		"SELECT id, seal_id, status, commit_sha, logs, created_at, updated_at FROM deployments WHERE id = ?", id,
 	).Scan(&d.ID, &d.ProjectID, &d.Status, &d.CommitSHA, &d.Logs, &d.CreatedAt, &d.UpdatedAt)
 	if err != nil {
 		return nil, fmt.Errorf("find deployment: %w", err)
@@ -32,7 +32,7 @@ func (db *DB) FindDeployment(id int64) (*domain.Deployment, error) {
 
 func (db *DB) ListDeployments(projectID int64) ([]*domain.Deployment, error) {
 	rows, err := db.Query(
-		"SELECT id, project_id, status, commit_sha, logs, created_at, updated_at FROM deployments WHERE project_id = ? ORDER BY created_at DESC",
+		"SELECT id, seal_id, status, commit_sha, logs, created_at, updated_at FROM deployments WHERE seal_id = ? ORDER BY created_at DESC",
 		projectID,
 	)
 	if err != nil {
@@ -63,7 +63,7 @@ func (db *DB) UpdateDeployment(d *domain.Deployment) error {
 }
 
 func (db *DB) DeleteDeploymentsByProject(projectID int64) error {
-	_, err := db.Exec("DELETE FROM deployments WHERE project_id = ?", projectID)
+	_, err := db.Exec("DELETE FROM deployments WHERE seal_id = ?", projectID)
 	if err != nil {
 		return fmt.Errorf("delete deployments: %w", err)
 	}

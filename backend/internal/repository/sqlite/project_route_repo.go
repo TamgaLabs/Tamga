@@ -8,7 +8,7 @@ import (
 )
 
 func (db *DB) ListProjectRoutes(projectID int64) ([]*domain.ProjectRoute, error) {
-	rows, err := db.Query("SELECT id, project_id, service_name, domain FROM project_routes WHERE project_id=? ORDER BY domain", projectID)
+	rows, err := db.Query("SELECT id, seal_id, service_name, domain FROM seal_routes WHERE seal_id=? ORDER BY domain", projectID)
 	if err != nil {
 		return nil, fmt.Errorf("list project routes: %w", err)
 	}
@@ -30,12 +30,12 @@ func (db *DB) ReplaceProjectRoutes(projectID int64, routes []*domain.ProjectRout
 		return err
 	}
 	defer tx.Rollback()
-	if _, err := tx.Exec("DELETE FROM project_routes WHERE project_id=?", projectID); err != nil {
+	if _, err := tx.Exec("DELETE FROM seal_routes WHERE seal_id=?", projectID); err != nil {
 		return err
 	}
 	for _, route := range routes {
 		route.ProjectID, route.Domain = projectID, strings.ToLower(strings.TrimSpace(route.Domain))
-		result, err := tx.Exec("INSERT INTO project_routes (project_id, service_name, domain) VALUES (?, ?, ?)", projectID, route.Service, route.Domain)
+		result, err := tx.Exec("INSERT INTO seal_routes (seal_id, service_name, domain) VALUES (?, ?, ?)", projectID, route.Service, route.Domain)
 		if err != nil {
 			return fmt.Errorf("save project route: %w", err)
 		}
