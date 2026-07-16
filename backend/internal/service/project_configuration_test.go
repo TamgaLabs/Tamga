@@ -202,6 +202,40 @@ func TestBuildDoesNotRestoreConfigurationChangedDuringBuild(t *testing.T) {
 	}
 }
 
+func TestBuildBuildsEveryConfiguredServiceAndDeployRequiresThatBuild(t *testing.T) {
+	svc, _ := newTestProjectService(t)
+	project := &domain.Project{Name: "stack", SourceType: domain.SourceTypeRemote, Status: domain.ProjectStatusConfiguring}
+	if err := svc.db.CreateProject(project); err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.db.CreateProjectSource(&domain.ProjectSource{ProjectID: project.ID, DisplayName: "stack", RemoteURL: "https://example.test/stack.git", Branch: "main", WorkspacePath: ".", Status: domain.ProjectSourceStatusReady}); err != nil {
+		t.Fatal(err)
+	}
+	compose := "services:\n  web:\n    build:\n      context: .\n  worker:\n    build:\n      context: ."
+	if _, err := svc.SaveConfiguration(context.Background(), project.ID, SaveProjectConfigurationRequest{ComposeYAML: compose}); err != nil {
+		t.Fatalf("save configuration: %v", err)
+	}
+	svc.docker = &dockerclient.Client{}
+	if err := svc.Deploy(context.Background(), project.ID); err == nil || !strings.Contains(err.Error(), "current successful build") {
+		t.Fatalf("Deploy before Build error = %v, want current-build gate", err)
+	}
+	var tags []string
+	svc.runBuildImage = func(_ context.Context, tag, _, _ string) error {
+		tags = append(tags, tag)
+		return nil
+	}
+	if err := svc.Build(context.Background(), project.ID); err != nil {
+		t.Fatalf("build services: %v", err)
+	}
+	if len(tags) != 2 || tags[0] != buildImageTag(project.ID, 1, "web") || tags[1] != buildImageTag(project.ID, 1, "worker") {
+		t.Fatalf("build tags = %v", tags)
+	}
+	stored, err := svc.db.FindProject(project.ID)
+	if err != nil || stored.Status != domain.ProjectStatusReadyToDeploy || stored.BuildRevision != stored.ConfigRevision {
+		t.Fatalf("successful build state = %+v, err=%v", stored, err)
+	}
+}
+
 func TestServiceEnvironmentImportsOnceAndValidatesConfiguredService(t *testing.T) {
 	svc, _ := newTestProjectService(t)
 	project := &domain.Project{Name: "web", SourceType: domain.SourceTypeRemote, Status: domain.ProjectStatusConfiguring}
@@ -237,5 +271,30 @@ func TestServiceEnvironmentImportsOnceAndValidatesConfiguredService(t *testing.T
 	}
 	if _, err := svc.UpsertServiceEnvVar(context.Background(), project.ID, "missing", "KEY", "value"); err == nil {
 		t.Fatal("expected unknown service rejection")
+	}
+}
+
+func TestSetRoutesAcceptsConfiguredServiceAndRejectsPathRouting(t *testing.T) {
+	svc, _ := newTestProjectService(t)
+	project := &domain.Project{Name: "web", SourceType: domain.SourceTypeRemote, Status: domain.ProjectStatusConfiguring}
+	if err := svc.db.CreateProject(project); err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.db.CreateProjectSource(&domain.ProjectSource{ProjectID: project.ID, DisplayName: "web", RemoteURL: "https://example.test/web.git", Branch: "main", WorkspacePath: ".", Status: domain.ProjectSourceStatusReady}); err != nil {
+		t.Fatal(err)
+	}
+	compose := "services:\n  web:\n    build:\n      context: .\n    ports:\n      - \"8080:8080\"\n  worker:\n    build:\n      context: ."
+	if _, err := svc.SaveConfiguration(context.Background(), project.ID, SaveProjectConfigurationRequest{ComposeYAML: compose}); err != nil {
+		t.Fatalf("save configuration: %v", err)
+	}
+	routes, err := svc.SetRoutes(context.Background(), project.ID, []*domain.ProjectRoute{{Service: "web", Domain: "App.Example.Test"}})
+	if err != nil || len(routes) != 1 || routes[0].Domain != "app.example.test" {
+		t.Fatalf("set configured route = %+v, err=%v", routes, err)
+	}
+	if _, err := svc.SetRoutes(context.Background(), project.ID, []*domain.ProjectRoute{{Service: "web", Domain: "app.example.test/admin"}}); err == nil {
+		t.Fatal("expected path-routing domain rejection")
+	}
+	if _, err := svc.SetRoutes(context.Background(), project.ID, []*domain.ProjectRoute{{Service: "missing", Domain: "missing.example.test"}}); err == nil {
+		t.Fatal("expected unconfigured service rejection")
 	}
 }

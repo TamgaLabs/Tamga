@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"net/netip"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -630,7 +631,7 @@ func (s *ProjectService) SetRoutes(ctx context.Context, id int64, routes []*doma
 	seen := map[string]bool{}
 	for _, route := range routes {
 		route.Service, route.Domain = strings.TrimSpace(route.Service), strings.ToLower(strings.TrimSpace(route.Domain))
-		if !known[route.Service] || route.Domain == "" {
+		if !known[route.Service] || !validRouteDomain(route.Domain) {
 			return nil, fmt.Errorf("route must name a configured service and domain")
 		}
 		if seen[route.Domain] {
@@ -647,6 +648,30 @@ func (s *ProjectService) SetRoutes(ctx context.Context, id int64, routes []*doma
 		}
 	}
 	return s.db.ListProjectRoutes(id)
+}
+
+func validRouteDomain(domain string) bool {
+	if len(domain) == 0 || len(domain) > 253 || strings.ContainsAny(domain, "/:@`*? ") {
+		return false
+	}
+	if _, err := netip.ParseAddr(domain); err == nil {
+		return false
+	}
+	labels := strings.Split(domain, ".")
+	if len(labels) < 2 {
+		return false
+	}
+	for _, label := range labels {
+		if len(label) == 0 || len(label) > 63 || label[0] == '-' || label[len(label)-1] == '-' {
+			return false
+		}
+		for _, r := range label {
+			if !(r >= 'a' && r <= 'z' || r >= '0' && r <= '9' || r == '-') {
+				return false
+			}
+		}
+	}
+	return true
 }
 
 func (s *ProjectService) Routes(ctx context.Context, id int64) ([]*domain.ProjectRoute, error) {
@@ -1190,6 +1215,9 @@ func (s *ProjectService) Delete(ctx context.Context, id int64) error {
 	if err := s.db.DeleteEnvVarsByProject(id); err != nil {
 		slog.Warn("delete env vars error", "project_id", id, "error", err)
 	}
+	if err := s.db.DeleteServiceEnvVarsByProject(id); err != nil {
+		slog.Warn("delete service env vars error", "project_id", id, "error", err)
+	}
 	if err := s.db.DeleteMetricsByProject(id); err != nil {
 		slog.Warn("delete metrics error", "project_id", id, "error", err)
 	}
@@ -1447,6 +1475,9 @@ func (s *ProjectService) DeleteServiceEnvVar(ctx context.Context, projectID int6
 }
 
 func (s *ProjectService) CreateEnvVar(ctx context.Context, projectID int64, key, value string) (*domain.EnvVar, error) {
+	if _, err := s.db.FindProject(projectID); err != nil {
+		return nil, fmt.Errorf("find project: %w", err)
+	}
 	ev := &domain.EnvVar{
 		ProjectID: projectID,
 		Key:       key,
@@ -1458,8 +1489,8 @@ func (s *ProjectService) CreateEnvVar(ctx context.Context, projectID int64, key,
 	return ev, nil
 }
 
-func (s *ProjectService) DeleteEnvVar(ctx context.Context, id int64) error {
-	return s.db.DeleteEnvVar(id)
+func (s *ProjectService) DeleteEnvVar(ctx context.Context, projectID, id int64) error {
+	return s.db.DeleteEnvVar(projectID, id)
 }
 
 func (s *ProjectService) Logs(ctx context.Context, id int64) (string, error) {

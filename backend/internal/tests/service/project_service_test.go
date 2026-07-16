@@ -154,7 +154,7 @@ func TestProjectServiceCRUD(t *testing.T) {
 		t.Fatalf("expected 1 env var, got %d", len(envVars))
 	}
 
-	if err := svc.DeleteEnvVar(ctx, ev.ID); err != nil {
+	if err := svc.DeleteEnvVar(ctx, project.ID, ev.ID); err != nil {
 		t.Fatalf("delete env var: %v", err)
 	}
 	envVars, err = svc.ListEnvVars(ctx, project.ID)

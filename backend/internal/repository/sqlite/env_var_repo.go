@@ -40,8 +40,8 @@ func (db *DB) ListEnvVars(projectID int64) ([]*domain.EnvVar, error) {
 	return vars, nil
 }
 
-func (db *DB) DeleteEnvVar(id int64) error {
-	_, err := db.Exec("DELETE FROM env_vars WHERE id = ?", id)
+func (db *DB) DeleteEnvVar(projectID, id int64) error {
+	_, err := db.Exec("DELETE FROM env_vars WHERE project_id = ? AND id = ?", projectID, id)
 	if err != nil {
 		return fmt.Errorf("delete env var: %w", err)
 	}

@@ -518,12 +518,17 @@ func (h *ProjectHandler) CreateEnvVar(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *ProjectHandler) DeleteEnvVar(w http.ResponseWriter, r *http.Request) {
+	projectID, err := projectIDParam(r)
+	if err != nil {
+		http.Error(w, "invalid id", http.StatusBadRequest)
+		return
+	}
 	vid, err := strconv.ParseInt(chi.URLParam(r, "envVarId"), 10, 64)
 	if err != nil {
 		http.Error(w, "invalid env var id", http.StatusBadRequest)
 		return
 	}
-	if err := h.svc.DeleteEnvVar(r.Context(), vid); err != nil {
+	if err := h.svc.DeleteEnvVar(r.Context(), projectID, vid); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
