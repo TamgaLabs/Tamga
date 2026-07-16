@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 import {
   BarChart3,
   Code2,
+  Wrench,
   Container,
   Globe,
   LayoutDashboard,
@@ -41,6 +42,7 @@ const globalNav: NavItem[] = [
 
 const projectNav: NavItem[] = [
   { href: "/projects/$id", label: "Dashboard", icon: LayoutDashboard },
+  { href: "/projects/$id/configure", label: "Configure", icon: Wrench },
   { href: "/projects/$id/containers", label: "Containers", icon: Container },
   { href: "/projects/$id/environment", label: "Environment", icon: Server },
   { href: "/projects/$id/analytics", label: "Analytics", icon: BarChart3 },

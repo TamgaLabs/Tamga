@@ -5,11 +5,15 @@ import "time"
 type ProjectStatus string
 
 const (
-	ProjectStatusCreated  ProjectStatus = "created"
-	ProjectStatusCloning  ProjectStatus = "cloning"
-	ProjectStatusBuilding ProjectStatus = "building"
-	ProjectStatusRunning  ProjectStatus = "running"
-	ProjectStatusError    ProjectStatus = "error"
+	ProjectStatusCreated       ProjectStatus = "created"
+	ProjectStatusCloning       ProjectStatus = "cloning"
+	ProjectStatusBuilding      ProjectStatus = "building"
+	ProjectStatusRunning       ProjectStatus = "running"
+	ProjectStatusError         ProjectStatus = "error"
+	ProjectStatusConfiguring   ProjectStatus = "configuring"
+	ProjectStatusCloneFailed   ProjectStatus = "clone_failed"
+	ProjectStatusBuildFailed   ProjectStatus = "build_failed"
+	ProjectStatusReadyToDeploy ProjectStatus = "ready_to_deploy"
 )
 
 type SourceType string
@@ -45,7 +49,44 @@ type Project struct {
 	// ExposedService is the compose service name project.Domain routes to.
 	// Empty means "no explicit override" - the deploy engine falls back to
 	// its single-published-port heuristic (see TEST-011 §2c).
-	ExposedService string    `json:"exposed_service,omitempty"`
-	CreatedAt      time.Time `json:"created_at"`
-	UpdatedAt      time.Time `json:"updated_at"`
+	ExposedService string           `json:"exposed_service,omitempty"`
+	CreatedAt      time.Time        `json:"created_at"`
+	UpdatedAt      time.Time        `json:"updated_at"`
+	Sources        []*ProjectSource `json:"sources,omitempty"`
+	ConfigRevision int64            `json:"config_revision"`
+	BuildRevision  int64            `json:"build_revision"`
+}
+
+// ProjectRoute is one explicitly public compose service. Domains are unique
+// across all projects; services without a route remain private.
+type ProjectRoute struct {
+	ID        int64  `json:"id"`
+	ProjectID int64  `json:"project_id"`
+	Service   string `json:"service"`
+	Domain    string `json:"domain"`
+}
+
+type ProjectSourceStatus string
+
+const (
+	ProjectSourceStatusPending     ProjectSourceStatus = "pending"
+	ProjectSourceStatusCloning     ProjectSourceStatus = "cloning"
+	ProjectSourceStatusReady       ProjectSourceStatus = "ready"
+	ProjectSourceStatusCloneFailed ProjectSourceStatus = "clone_failed"
+)
+
+// ProjectSource is an independently cloned source tree owned by a project.
+// WorkspacePath is relative to the project workspace; `.` is the primary
+// source and additional sources live below sources/<safe-name>.
+type ProjectSource struct {
+	ID            int64               `json:"id"`
+	ProjectID     int64               `json:"project_id"`
+	DisplayName   string              `json:"display_name"`
+	RemoteURL     string              `json:"remote_url,omitempty"`
+	Branch        string              `json:"branch,omitempty"`
+	WorkspacePath string              `json:"workspace_path"`
+	Status        ProjectSourceStatus `json:"status"`
+	ErrorSummary  string              `json:"error_summary,omitempty"`
+	CreatedAt     time.Time           `json:"created_at"`
+	UpdatedAt     time.Time           `json:"updated_at"`
 }

@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import {
   listDeployments,
   listContainers,
@@ -50,6 +51,10 @@ const statusVariant: Record<string, "success" | "warning" | "error" | "info" | "
   cloning: "info",
   created: "info",
   error: "error",
+  clone_failed: "error",
+  build_failed: "error",
+  ready_to_deploy: "info",
+  configuring: "warning",
 };
 
 function MetricsSummary({ projectId }: { projectId: number }) {
@@ -217,6 +222,11 @@ export default function ProjectDashboardPage() {
         </div>
         <PageHeaderActions>
           <Badge variant={statusVariant[project.status] || "default"}>{project.status}</Badge>
+          {project.source_type === "remote" && (
+            <Button asChild size="sm" variant={project.status === "ready_to_deploy" ? "default" : "outline"}>
+              <Link href={`/projects/${project.id}/configure`}>{project.status === "ready_to_deploy" ? "Deploy" : "Configure"}</Link>
+            </Button>
+          )}
           <DropdownMenu open={showActionsMenu} onOpenChange={setShowActionsMenu}>
             <DropdownMenuTrigger asChild>
               <Button variant="outline" size="sm">

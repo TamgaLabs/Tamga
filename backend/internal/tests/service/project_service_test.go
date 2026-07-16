@@ -103,11 +103,12 @@ func TestProjectServiceCRUD(t *testing.T) {
 		t.Fatalf("expected name 'my-app', got %q", project.Name)
 	}
 
-	// Create() kicks off deployment in a background goroutine. Docker is
-	// nil here, so it fails fast at requireDocker() and the project lands
-	// in ProjectStatusError. Poll rather than sleep a fixed amount, since
-	// this only needs to outlast goroutine scheduling, not any real I/O.
-	waitForProjectStatus(t, svc, project.ID, domain.ProjectStatusError)
+	// Remote projects now enter source configuration before any build/deploy.
+	// The invalid URL is deliberately not awaited here: clone runs
+	// asynchronously and may be network-bound in this unit-test process.
+	if project.Status != domain.ProjectStatusConfiguring {
+		t.Fatalf("expected configuring status, got %q", project.Status)
+	}
 
 	// Read
 	got, err := svc.Get(ctx, project.ID)
@@ -199,6 +200,86 @@ func waitForProjectStatus(t *testing.T, svc *service.ProjectService, id int64, w
 		time.Sleep(10 * time.Millisecond)
 	}
 	t.Fatalf("timed out waiting for project %d to reach status %q", id, want)
+}
+
+// TestProjectSourcesPersistAndInvalidateLifecycle keeps FEAT-055a's source
+// lifecycle checks deterministic: it seeds sources directly rather than
+// waiting on a network clone, then verifies configuration responses and the
+// synchronous invalidation boundary used by update/refresh.
+func TestProjectSourcesPersistAndInvalidateLifecycle(t *testing.T) {
+	svc, db := newTestProjectServiceWithDB(t)
+	ctx := context.Background()
+	project := &domain.Project{Name: "multi", SourceType: domain.SourceTypeRemote, RepoURL: "https://example.test/main.git", Branch: "main", Domain: "multi.test", Status: domain.ProjectStatusRunning, ContainerID: "old-container"}
+	if err := db.CreateProject(project); err != nil {
+		t.Fatalf("create project: %v", err)
+	}
+	primary := &domain.ProjectSource{ProjectID: project.ID, DisplayName: "primary", RemoteURL: "https://example.test/main.git", Branch: "main", WorkspacePath: ".", Status: domain.ProjectSourceStatusReady}
+	extra := &domain.ProjectSource{ProjectID: project.ID, DisplayName: "worker", RemoteURL: "https://example.test/worker.git", Branch: "main", WorkspacePath: "sources/worker", Status: domain.ProjectSourceStatusReady}
+	for _, source := range []*domain.ProjectSource{primary, extra} {
+		if err := db.CreateProjectSource(source); err != nil {
+			t.Fatalf("create source: %v", err)
+		}
+	}
+
+	got, err := svc.Get(ctx, project.ID)
+	if err != nil {
+		t.Fatalf("get project: %v", err)
+	}
+	if len(got.Sources) != 2 || got.Sources[1].WorkspacePath != "sources/worker" {
+		t.Fatalf("expected both persisted sources in configuration response, got %+v", got.Sources)
+	}
+
+	updated, err := svc.UpdateSource(ctx, project.ID, extra.ID, service.CreateProjectSourceRequest{DisplayName: "worker", RemoteURL: "https://token:secret@example.test/worker-v2.git", Branch: "release", WorkspacePath: "sources/worker"})
+	if err != nil {
+		t.Fatalf("update source: %v", err)
+	}
+	if updated.Status != domain.ProjectSourceStatusPending {
+		t.Fatalf("expected updated source pending for reclone, got %q", updated.Status)
+	}
+	if updated.RemoteURL != "https://example.test/worker-v2.git" {
+		t.Fatalf("expected credential-safe updated URL, got %q", updated.RemoteURL)
+	}
+	got, err = svc.Get(ctx, project.ID)
+	if err != nil {
+		t.Fatalf("get after update: %v", err)
+	}
+	if got.Status != domain.ProjectStatusConfiguring || got.ContainerID != "" {
+		t.Fatalf("expected update to invalidate readiness, got status=%q container=%q", got.Status, got.ContainerID)
+	}
+
+	compose := &domain.Project{Name: "compose", SourceType: domain.SourceTypeCompose, ComposeYAML: "services: {}", Status: domain.ProjectStatusRunning}
+	if err := db.CreateProject(compose); err != nil {
+		t.Fatalf("create compose project: %v", err)
+	}
+	if err := svc.RefreshAllSources(ctx, compose.ID); err == nil {
+		t.Fatal("expected pasted-compose project refresh to be rejected")
+	}
+}
+
+func TestProjectSourceRetryPreservesCredentialSafety(t *testing.T) {
+	svc, db := newTestProjectServiceWithDB(t)
+	ctx := context.Background()
+	project := &domain.Project{Name: "failed", SourceType: domain.SourceTypeRemote, RepoURL: "https://example.test/repo.git", Branch: "main", Domain: "failed.test", Status: domain.ProjectStatusCloneFailed}
+	if err := db.CreateProject(project); err != nil {
+		t.Fatalf("create project: %v", err)
+	}
+	source := &domain.ProjectSource{ProjectID: project.ID, DisplayName: "failed", RemoteURL: "https://example.test/repo.git", Branch: "main", WorkspacePath: ".", Status: domain.ProjectSourceStatusCloneFailed, ErrorSummary: "unable to clone source"}
+	if err := db.CreateProjectSource(source); err != nil {
+		t.Fatalf("create failed source: %v", err)
+	}
+	if err := svc.RefreshSource(ctx, project.ID, source.ID); err != nil {
+		t.Fatalf("retry failed source: %v", err)
+	}
+	got, err := svc.Get(ctx, project.ID)
+	if err != nil {
+		t.Fatalf("get after retry: %v", err)
+	}
+	if got.Status != domain.ProjectStatusConfiguring {
+		t.Fatalf("expected retry to re-enter configuring, got %q", got.Status)
+	}
+	if strings.Contains(got.Sources[0].RemoteURL, "@") || strings.Contains(got.Sources[0].ErrorSummary, "@") {
+		t.Fatalf("credentials leaked in source response: %+v", got.Sources[0])
+	}
 }
 
 // TestProjectServiceUpdateExposedService verifies that updating exposed_service

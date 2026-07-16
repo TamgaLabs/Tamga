@@ -30,8 +30,8 @@ func (db *DB) CreateProject(p *domain.Project) error {
 func (db *DB) FindProject(id int64) (*domain.Project, error) {
 	p := &domain.Project{}
 	err := db.QueryRow(
-		"SELECT id, name, source_type, repo_url, branch, domain, status, container_id, COALESCE(compose_yaml, ''), COALESCE(exposed_service, ''), created_at, updated_at FROM projects WHERE id = ?", id,
-	).Scan(&p.ID, &p.Name, &p.SourceType, &p.RepoURL, &p.Branch, &p.Domain, &p.Status, &p.ContainerID, &p.ComposeYAML, &p.ExposedService, &p.CreatedAt, &p.UpdatedAt)
+		"SELECT id, name, source_type, repo_url, branch, domain, status, container_id, COALESCE(compose_yaml, ''), COALESCE(exposed_service, ''), config_revision, build_revision, created_at, updated_at FROM projects WHERE id = ?", id,
+	).Scan(&p.ID, &p.Name, &p.SourceType, &p.RepoURL, &p.Branch, &p.Domain, &p.Status, &p.ContainerID, &p.ComposeYAML, &p.ExposedService, &p.ConfigRevision, &p.BuildRevision, &p.CreatedAt, &p.UpdatedAt)
 	if err != nil {
 		return nil, fmt.Errorf("find project: %w", err)
 	}
@@ -39,7 +39,7 @@ func (db *DB) FindProject(id int64) (*domain.Project, error) {
 }
 
 func (db *DB) ListProjects() ([]*domain.Project, error) {
-	rows, err := db.Query("SELECT id, name, source_type, repo_url, branch, domain, status, container_id, COALESCE(compose_yaml, ''), COALESCE(exposed_service, ''), created_at, updated_at FROM projects ORDER BY created_at DESC")
+	rows, err := db.Query("SELECT id, name, source_type, repo_url, branch, domain, status, container_id, COALESCE(compose_yaml, ''), COALESCE(exposed_service, ''), config_revision, build_revision, created_at, updated_at FROM projects ORDER BY created_at DESC")
 	if err != nil {
 		return nil, fmt.Errorf("list projects: %w", err)
 	}
@@ -48,7 +48,7 @@ func (db *DB) ListProjects() ([]*domain.Project, error) {
 	var projects []*domain.Project
 	for rows.Next() {
 		p := &domain.Project{}
-		if err := rows.Scan(&p.ID, &p.Name, &p.SourceType, &p.RepoURL, &p.Branch, &p.Domain, &p.Status, &p.ContainerID, &p.ComposeYAML, &p.ExposedService, &p.CreatedAt, &p.UpdatedAt); err != nil {
+		if err := rows.Scan(&p.ID, &p.Name, &p.SourceType, &p.RepoURL, &p.Branch, &p.Domain, &p.Status, &p.ContainerID, &p.ComposeYAML, &p.ExposedService, &p.ConfigRevision, &p.BuildRevision, &p.CreatedAt, &p.UpdatedAt); err != nil {
 			return nil, fmt.Errorf("scan project: %w", err)
 		}
 		projects = append(projects, p)
@@ -58,13 +58,32 @@ func (db *DB) ListProjects() ([]*domain.Project, error) {
 
 func (db *DB) UpdateProject(p *domain.Project) error {
 	_, err := db.Exec(
-		"UPDATE projects SET name=?, source_type=?, repo_url=?, branch=?, domain=?, status=?, container_id=?, compose_yaml=?, exposed_service=?, updated_at=CURRENT_TIMESTAMP WHERE id=?",
-		p.Name, p.SourceType, p.RepoURL, p.Branch, p.Domain, p.Status, p.ContainerID, p.ComposeYAML, p.ExposedService, p.ID,
+		"UPDATE projects SET name=?, source_type=?, repo_url=?, branch=?, domain=?, status=?, container_id=?, compose_yaml=?, exposed_service=?, config_revision=?, build_revision=?, updated_at=CURRENT_TIMESTAMP WHERE id=?",
+		p.Name, p.SourceType, p.RepoURL, p.Branch, p.Domain, p.Status, p.ContainerID, p.ComposeYAML, p.ExposedService, p.ConfigRevision, p.BuildRevision, p.ID,
 	)
 	if err != nil {
 		return fmt.Errorf("update project: %w", err)
 	}
 	return nil
+}
+
+// SetBuildStateIfRevision changes only build-owned fields when the project is
+// still at the configuration revision captured by Build.  It deliberately
+// avoids writing the rest of a stale Project struct back over a concurrent
+// configuration/source update.
+func (db *DB) SetBuildStateIfRevision(id, configRevision, buildRevision int64, status domain.ProjectStatus) (bool, error) {
+	result, err := db.Exec(
+		"UPDATE projects SET status=?, build_revision=?, updated_at=CURRENT_TIMESTAMP WHERE id=? AND config_revision=?",
+		status, buildRevision, id, configRevision,
+	)
+	if err != nil {
+		return false, fmt.Errorf("set build state: %w", err)
+	}
+	affected, err := result.RowsAffected()
+	if err != nil {
+		return false, fmt.Errorf("set build state rows affected: %w", err)
+	}
+	return affected == 1, nil
 }
 
 func (db *DB) DeleteProject(id int64) error {

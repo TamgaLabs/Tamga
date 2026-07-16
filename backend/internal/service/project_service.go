@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/docker/docker/api/types/container"
@@ -27,10 +28,19 @@ type ProjectService struct {
 	traefik *traefik.Client
 	cfg     config.Config
 	gitCred *GitCredentialService
+	// runCloneCommand is the narrow side-effect seam after cloneRepo has
+	// replaced the owned checkout directory. Production uses gitCloneCommand;
+	// focused lifecycle tests use it to control clone success or failure.
+	runCloneCommand func(context.Context, string, string, string) error
+	// runBuildImage is a narrow build seam for deterministic lifecycle tests.
+	// Production delegates to the Docker-backed implementation below.
+	runBuildImage func(context.Context, string, string, string) error
 }
 
 func NewProjectService(db *sqlite.DB, docker *dockerclient.Client, traefikClient *traefik.Client, cfg config.Config, gitCred *GitCredentialService) *ProjectService {
-	return &ProjectService{db: db, docker: docker, traefik: traefikClient, cfg: cfg, gitCred: gitCred}
+	svc := &ProjectService{db: db, docker: docker, traefik: traefikClient, cfg: cfg, gitCred: gitCred, runCloneCommand: gitCloneCommand}
+	svc.runBuildImage = svc.buildImageWithDockerfile
+	return svc
 }
 
 func (s *ProjectService) requireDocker() error {
@@ -51,8 +61,16 @@ type CreateProjectRequest struct {
 	// ExposedService, if set) via ParseComposeYAML before calling Create,
 	// so deploy() picks it up and runs FEAT-028's compose branch instead
 	// of the git clone+build path.
-	ComposeYAML    string `json:"compose_yaml,omitempty"`
-	ExposedService string `json:"exposed_service,omitempty"`
+	ComposeYAML    string                       `json:"compose_yaml,omitempty"`
+	ExposedService string                       `json:"exposed_service,omitempty"`
+	Sources        []CreateProjectSourceRequest `json:"sources,omitempty"`
+}
+
+type CreateProjectSourceRequest struct {
+	DisplayName   string `json:"display_name"`
+	RemoteURL     string `json:"remote_url"`
+	Branch        string `json:"branch,omitempty"`
+	WorkspacePath string `json:"workspace_path"`
 }
 
 func (s *ProjectService) Create(ctx context.Context, req CreateProjectRequest) (*domain.Project, error) {
@@ -61,6 +79,33 @@ func (s *ProjectService) Create(ctx context.Context, req CreateProjectRequest) (
 	}
 	if req.Branch == "" {
 		req.Branch = "main"
+	}
+	if req.SourceType == domain.SourceTypeRemote && req.ComposeYAML == "" {
+		sources := req.Sources
+		if len(sources) == 0 {
+			sources = []CreateProjectSourceRequest{{DisplayName: req.Name, RemoteURL: req.RepoURL, Branch: req.Branch, WorkspacePath: "."}}
+		}
+		primary := 0
+		paths := make(map[string]bool, len(sources))
+		for _, input := range sources {
+			source, err := newProjectSource(0, input)
+			if err != nil {
+				return nil, err
+			}
+			if paths[source.WorkspacePath] {
+				return nil, fmt.Errorf("source workspace_path must be unique")
+			}
+			paths[source.WorkspacePath] = true
+			if source.WorkspacePath == "." {
+				primary++
+				if req.RepoURL == "" {
+					req.RepoURL, req.Branch = source.RemoteURL, source.Branch
+				}
+			}
+		}
+		if primary != 1 {
+			return nil, fmt.Errorf("remote project must have exactly one primary source at .")
+		}
 	}
 
 	project := &domain.Project{
@@ -77,6 +122,36 @@ func (s *ProjectService) Create(ctx context.Context, req CreateProjectRequest) (
 	if err := s.db.CreateProject(project); err != nil {
 		return nil, fmt.Errorf("create project: %w", err)
 	}
+	if req.ComposeYAML != "" {
+		services, err := ParseComposeYAML(req.ComposeYAML)
+		if err != nil {
+			return nil, fmt.Errorf("parse compose environment: %w", err)
+		}
+		if err := s.importComposeEnvironment(project.ID, services); err != nil {
+			return nil, err
+		}
+	}
+
+	if req.SourceType == domain.SourceTypeRemote && req.ComposeYAML == "" {
+		project.Status = domain.ProjectStatusConfiguring
+		if err := s.db.UpdateProject(project); err != nil {
+			return nil, fmt.Errorf("set project configuring: %w", err)
+		}
+		sources := req.Sources
+		if len(sources) == 0 {
+			sources = []CreateProjectSourceRequest{{DisplayName: project.Name, RemoteURL: req.RepoURL, Branch: req.Branch, WorkspacePath: "."}}
+		}
+		for _, input := range sources {
+			source, err := newProjectSource(project.ID, input)
+			if err != nil {
+				return nil, err
+			}
+			if err := s.db.CreateProjectSource(source); err != nil {
+				return nil, err
+			}
+		}
+		project.Sources, _ = s.db.ListProjectSources(project.ID)
+	}
 	slog.Info("project created", "id", project.ID, "name", project.Name)
 
 	// Snapshot the project's initial state to return to the caller before
@@ -89,15 +164,281 @@ func (s *ProjectService) Create(ctx context.Context, req CreateProjectRequest) (
 	// progressed by the time the response is serialized.
 	result := *project
 
-	go func() {
-		if err := s.deploy(context.Background(), project); err != nil {
-			slog.Error("deploy failed", "project_id", project.ID, "error", err)
-			project.Status = domain.ProjectStatusError
-			s.db.UpdateProject(project)
-		}
-	}()
+	if project.Status == domain.ProjectStatusConfiguring {
+		go s.cloneSources(context.Background(), project.ID)
+	} else {
+		go func() {
+			if err := s.deploy(context.Background(), project); err != nil {
+				slog.Error("deploy failed", "project_id", project.ID, "error", err)
+				project.Status = domain.ProjectStatusError
+				s.db.UpdateProject(project)
+			}
+		}()
+	}
 
 	return &result, nil
+}
+
+func newProjectSource(projectID int64, input CreateProjectSourceRequest) (*domain.ProjectSource, error) {
+	if strings.TrimSpace(input.DisplayName) == "" || strings.TrimSpace(input.RemoteURL) == "" {
+		return nil, fmt.Errorf("source display_name and remote_url are required")
+	}
+	path, err := validateSourceWorkspacePath(input.WorkspacePath)
+	if err != nil {
+		return nil, err
+	}
+	branch := strings.TrimSpace(input.Branch)
+	if branch == "" {
+		branch = "main"
+	}
+	return &domain.ProjectSource{ProjectID: projectID, DisplayName: strings.TrimSpace(input.DisplayName), RemoteURL: redactGitURL(input.RemoteURL), Branch: branch, WorkspacePath: path, Status: domain.ProjectSourceStatusPending}, nil
+}
+
+func validateSourceWorkspacePath(path string) (string, error) {
+	if path == "" {
+		return "", fmt.Errorf("source workspace_path is required")
+	}
+	clean := filepath.Clean(path)
+	if filepath.IsAbs(path) || clean == ".." || strings.HasPrefix(clean, ".."+string(filepath.Separator)) {
+		return "", fmt.Errorf("source workspace_path must be relative and stay within the project workspace")
+	}
+	if clean == "." {
+		return clean, nil
+	}
+	parts := strings.Split(filepath.ToSlash(clean), "/")
+	if len(parts) != 2 || parts[0] != "sources" || !safeSourceName(parts[1]) {
+		return "", fmt.Errorf("additional source workspace_path must be sources/<safe-name>")
+	}
+	return filepath.ToSlash(clean), nil
+}
+
+func safeSourceName(value string) bool {
+	if value == "" {
+		return false
+	}
+	for _, r := range value {
+		if !(r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' || r == '-' || r == '_' || r == '.') {
+			return false
+		}
+	}
+	return value != "." && value != ".."
+}
+
+// redactGitURL keeps a usable URL while ensuring an embedded user/password is
+// never persisted or returned by the configuration API.
+func redactGitURL(raw string) string {
+	if at := strings.Index(raw, "@"); at > 0 {
+		if scheme := strings.Index(raw, "://"); scheme >= 0 && at > scheme+3 {
+			return raw[:scheme+3] + raw[at+1:]
+		}
+	}
+	return raw
+}
+
+// cloneSources owns the asynchronous source preparation lifecycle. It never
+// reports git's error text because clone URLs may contain credentials.
+func (s *ProjectService) cloneSources(ctx context.Context, projectID int64, only ...int64) {
+	project, err := s.db.FindProject(projectID)
+	if err != nil {
+		slog.Error("load project sources", "project_id", projectID, "error", err)
+		return
+	}
+	sources, err := s.db.ListProjectSources(projectID)
+	if err != nil {
+		slog.Error("list project sources", "project_id", projectID, "error", err)
+		return
+	}
+	selected := make(map[int64]bool, len(only))
+	for _, id := range only {
+		selected[id] = true
+	}
+	for _, source := range sources {
+		if len(selected) > 0 && !selected[source.ID] {
+			continue
+		}
+		source.Status = domain.ProjectSourceStatusCloning
+		source.ErrorSummary = ""
+		if err := s.db.UpdateProjectSource(source); err != nil {
+			slog.Error("set source cloning", "project_id", projectID, "source_id", source.ID, "error", err)
+			return
+		}
+		workDir := filepath.Join(s.cfg.DataDir, "projects", fmt.Sprintf("%d", projectID), filepath.FromSlash(source.WorkspacePath))
+		if err := s.cloneRepo(ctx, source.RemoteURL, source.Branch, workDir); err != nil {
+			source.Status = domain.ProjectSourceStatusCloneFailed
+			source.ErrorSummary = "unable to clone source"
+			if updateErr := s.db.UpdateProjectSource(source); updateErr != nil {
+				slog.Error("record source clone failure", "project_id", projectID, "source_id", source.ID, "error", updateErr)
+			}
+			project.Status = domain.ProjectStatusCloneFailed
+			_ = s.db.UpdateProject(project)
+			return
+		}
+		source.Status = domain.ProjectSourceStatusReady
+		if err := s.db.UpdateProjectSource(source); err != nil {
+			slog.Error("set source ready", "project_id", projectID, "source_id", source.ID, "error", err)
+			return
+		}
+	}
+
+	sources, err = s.db.ListProjectSources(projectID)
+	if err != nil {
+		return
+	}
+	for _, source := range sources {
+		if source.Status != domain.ProjectSourceStatusReady {
+			return
+		}
+	}
+	project.Status = domain.ProjectStatusConfiguring
+	_ = s.db.UpdateProject(project)
+}
+
+func (s *ProjectService) projectSources(project *domain.Project) error {
+	sources, err := s.db.ListProjectSources(project.ID)
+	if err != nil {
+		return fmt.Errorf("list project sources: %w", err)
+	}
+	project.Sources = sources
+	return nil
+}
+
+func (s *ProjectService) ListSources(ctx context.Context, projectID int64) ([]*domain.ProjectSource, error) {
+	if _, err := s.db.FindProject(projectID); err != nil {
+		return nil, fmt.Errorf("find project: %w", err)
+	}
+	return s.db.ListProjectSources(projectID)
+}
+
+func (s *ProjectService) CreateSource(ctx context.Context, projectID int64, input CreateProjectSourceRequest) (*domain.ProjectSource, error) {
+	project, err := s.db.FindProject(projectID)
+	if err != nil {
+		return nil, fmt.Errorf("find project: %w", err)
+	}
+	if project.SourceType != domain.SourceTypeRemote {
+		return nil, fmt.Errorf("project sources are only supported for remote projects")
+	}
+	source, err := newProjectSource(projectID, input)
+	if err != nil {
+		return nil, err
+	}
+	if source.WorkspacePath == "." {
+		return nil, fmt.Errorf("primary source already exists")
+	}
+	if err := s.db.CreateProjectSource(source); err != nil {
+		return nil, err
+	}
+	project.Status, project.ContainerID = domain.ProjectStatusConfiguring, ""
+	project.ConfigRevision++
+	project.BuildRevision = 0
+	if err := s.db.UpdateProject(project); err != nil {
+		return nil, fmt.Errorf("invalidate project configuration: %w", err)
+	}
+	go s.cloneSources(context.Background(), projectID, source.ID)
+	return source, nil
+}
+
+func (s *ProjectService) UpdateSource(ctx context.Context, projectID, sourceID int64, input CreateProjectSourceRequest) (*domain.ProjectSource, error) {
+	project, err := s.db.FindProject(projectID)
+	if err != nil {
+		return nil, fmt.Errorf("find project: %w", err)
+	}
+	if project.SourceType != domain.SourceTypeRemote {
+		return nil, fmt.Errorf("project sources are only supported for remote projects")
+	}
+	source, err := s.db.FindProjectSource(projectID, sourceID)
+	if err != nil {
+		return nil, fmt.Errorf("find project source: %w", err)
+	}
+	replacement, err := newProjectSource(projectID, input)
+	if err != nil {
+		return nil, err
+	}
+	if replacement.WorkspacePath != source.WorkspacePath {
+		return nil, fmt.Errorf("source workspace_path cannot be changed")
+	}
+	// A remote or branch change makes the owned checkout stale.  Treat it
+	// exactly like a single-source refresh: the next clone replaces that
+	// directory and the project must be configured again before it can build.
+	source.DisplayName, source.RemoteURL, source.Branch = replacement.DisplayName, replacement.RemoteURL, replacement.Branch
+	source.Status, source.ErrorSummary = domain.ProjectSourceStatusPending, ""
+	if err := s.db.UpdateProjectSource(source); err != nil {
+		return nil, err
+	}
+	project.Status, project.ContainerID = domain.ProjectStatusConfiguring, ""
+	project.ConfigRevision++
+	project.BuildRevision = 0
+	if err := s.db.UpdateProject(project); err != nil {
+		return nil, fmt.Errorf("invalidate project configuration: %w", err)
+	}
+	go s.cloneSources(context.Background(), projectID, sourceID)
+	return source, nil
+}
+
+func (s *ProjectService) DeleteSource(ctx context.Context, projectID, sourceID int64) error {
+	project, err := s.db.FindProject(projectID)
+	if err != nil {
+		return fmt.Errorf("find project: %w", err)
+	}
+	source, err := s.db.FindProjectSource(projectID, sourceID)
+	if err != nil {
+		return fmt.Errorf("find project source: %w", err)
+	}
+	if source.WorkspacePath == "." {
+		return fmt.Errorf("primary source cannot be deleted")
+	}
+	if err := s.db.DeleteProjectSource(projectID, sourceID); err != nil {
+		return err
+	}
+	project.Status, project.ContainerID = domain.ProjectStatusConfiguring, ""
+	project.ConfigRevision++
+	project.BuildRevision = 0
+	if err := s.db.UpdateProject(project); err != nil {
+		return err
+	}
+	return os.RemoveAll(filepath.Join(s.cfg.DataDir, "projects", fmt.Sprintf("%d", projectID), filepath.FromSlash(source.WorkspacePath)))
+}
+
+func (s *ProjectService) RefreshSource(ctx context.Context, projectID, sourceID int64) error {
+	project, err := s.db.FindProject(projectID)
+	if err != nil {
+		return fmt.Errorf("find project: %w", err)
+	}
+	if project.SourceType != domain.SourceTypeRemote {
+		return fmt.Errorf("project sources are not refreshable")
+	}
+	if _, err := s.db.FindProjectSource(projectID, sourceID); err != nil {
+		return fmt.Errorf("find project source: %w", err)
+	}
+	project.Status, project.ContainerID = domain.ProjectStatusConfiguring, ""
+	project.ConfigRevision++
+	project.BuildRevision = 0
+	if err := s.db.UpdateProject(project); err != nil {
+		return fmt.Errorf("invalidate project configuration: %w", err)
+	}
+	go s.cloneSources(context.Background(), projectID, sourceID)
+	return nil
+}
+
+func (s *ProjectService) RefreshAllSources(ctx context.Context, projectID int64) error {
+	sources, err := s.ListSources(ctx, projectID)
+	if err != nil {
+		return err
+	}
+	if len(sources) == 0 {
+		return fmt.Errorf("project has no refreshable sources")
+	}
+	project, err := s.db.FindProject(projectID)
+	if err != nil || project.SourceType != domain.SourceTypeRemote {
+		return fmt.Errorf("project sources are not refreshable")
+	}
+	project.Status, project.ContainerID = domain.ProjectStatusConfiguring, ""
+	project.ConfigRevision++
+	project.BuildRevision = 0
+	if err := s.db.UpdateProject(project); err != nil {
+		return fmt.Errorf("invalidate project configuration: %w", err)
+	}
+	go s.cloneSources(context.Background(), projectID)
+	return nil
 }
 
 // deploy resolves a project's compose services - either by parsing a real
@@ -162,6 +503,10 @@ func (s *ProjectService) deploy(ctx context.Context, project *domain.Project) er
 		}
 		services = []domain.ComposeService{synthesizeGitBuildService(tag, envVars)}
 	}
+	services, err := s.withDatabaseEnvironment(project.ID, services)
+	if err != nil {
+		return err
+	}
 
 	// 3. Start the (real or folded) compose stack - the unified path.
 	project.Status = domain.ProjectStatusBuilding
@@ -182,6 +527,162 @@ func (s *ProjectService) deploy(ctx context.Context, project *domain.Project) er
 	s.db.CreateDeployment(deployment)
 
 	return nil
+}
+
+// Build produces every image from the accepted, owned-source Compose
+// configuration. Its revision is persisted in the project row, making Deploy
+// a separate no-rebuild operation with a simple stale-config guard.
+func (s *ProjectService) Build(ctx context.Context, id int64) error {
+	if err := s.requireDocker(); err != nil {
+		return err
+	}
+	project, err := s.Get(ctx, id)
+	if err != nil {
+		return fmt.Errorf("find project: %w", err)
+	}
+	if project.Status == domain.ProjectStatusReadyToDeploy && project.BuildRevision == project.ConfigRevision {
+		return fmt.Errorf("current build is already available")
+	}
+	config, err := s.Configuration(ctx, id)
+	if err != nil || !config.BuildPermitted {
+		return fmt.Errorf("build is not permitted until sources and configuration are valid")
+	}
+	// Capture before any image work. All later state writes are conditional on
+	// this revision so a concurrent configuration change cannot be overwritten.
+	capturedRevision := project.ConfigRevision
+	if ok, err := s.db.SetBuildStateIfRevision(project.ID, capturedRevision, 0, domain.ProjectStatusBuilding); err != nil {
+		return err
+	} else if !ok {
+		return fmt.Errorf("configuration changed before build started")
+	}
+	for _, build := range config.Services {
+		contextDir := filepath.Join(s.cfg.DataDir, "projects", fmt.Sprintf("%d", id), filepath.FromSlash(build.Context))
+		if err := s.buildImageAt(ctx, buildImageTag(project.ID, capturedRevision, build.Name), contextDir, build.Dockerfile); err != nil {
+			_, _ = s.db.SetBuildStateIfRevision(project.ID, capturedRevision, 0, domain.ProjectStatusBuildFailed)
+			return fmt.Errorf("build service %q: %w", build.Name, err)
+		}
+	}
+	if ok, err := s.db.SetBuildStateIfRevision(project.ID, capturedRevision, capturedRevision, domain.ProjectStatusReadyToDeploy); err != nil {
+		return err
+	} else if !ok {
+		return fmt.Errorf("configuration changed during build")
+	}
+	return nil
+}
+
+func buildImageTag(projectID, revision int64, serviceName string) string {
+	return fmt.Sprintf("tamga-project-%d-r%d-%s", projectID, revision, serviceName)
+}
+
+func (s *ProjectService) buildImageAt(ctx context.Context, tag, workDir, dockerfile string) error {
+	return s.runBuildImage(ctx, tag, workDir, dockerfile)
+}
+
+// Deploy starts only the images created by the current successful Build.
+func (s *ProjectService) Deploy(ctx context.Context, id int64) error {
+	if err := s.requireDocker(); err != nil {
+		return err
+	}
+	project, err := s.db.FindProject(id)
+	if err != nil {
+		return fmt.Errorf("find project: %w", err)
+	}
+	if project.Status != domain.ProjectStatusReadyToDeploy || project.BuildRevision != project.ConfigRevision {
+		return fmt.Errorf("deploy requires a current successful build")
+	}
+	services, err := parseBuildRuntimeCompose(project.ComposeYAML)
+	if err != nil {
+		return fmt.Errorf("parse compose: %w", err)
+	}
+	for i := range services {
+		services[i].Image = buildImageTag(project.ID, project.BuildRevision, services[i].Name)
+	}
+	services, err = s.withDatabaseEnvironment(project.ID, services)
+	if err != nil {
+		return err
+	}
+	if err := s.deployStack(ctx, project, services, false); err != nil {
+		return err
+	}
+	if err := s.writeProjectRoutes(ctx, project); err != nil {
+		return err
+	}
+	project.Status = domain.ProjectStatusRunning
+	if err := s.db.UpdateProject(project); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (s *ProjectService) SetRoutes(ctx context.Context, id int64, routes []*domain.ProjectRoute) ([]*domain.ProjectRoute, error) {
+	project, err := s.Get(ctx, id)
+	if err != nil {
+		return nil, fmt.Errorf("find project: %w", err)
+	}
+	config, err := s.Configuration(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	known := map[string]bool{}
+	for _, svc := range config.Services {
+		known[svc.Name] = true
+	}
+	seen := map[string]bool{}
+	for _, route := range routes {
+		route.Service, route.Domain = strings.TrimSpace(route.Service), strings.ToLower(strings.TrimSpace(route.Domain))
+		if !known[route.Service] || route.Domain == "" {
+			return nil, fmt.Errorf("route must name a configured service and domain")
+		}
+		if seen[route.Domain] {
+			return nil, fmt.Errorf("route domains must be unique")
+		}
+		seen[route.Domain] = true
+	}
+	if err := s.db.ReplaceProjectRoutes(id, routes); err != nil {
+		return nil, err
+	}
+	if project.Status == domain.ProjectStatusRunning {
+		if err := s.writeProjectRoutes(ctx, project); err != nil {
+			return nil, err
+		}
+	}
+	return s.db.ListProjectRoutes(id)
+}
+
+func (s *ProjectService) Routes(ctx context.Context, id int64) ([]*domain.ProjectRoute, error) {
+	return s.db.ListProjectRoutes(id)
+}
+
+func (s *ProjectService) writeProjectRoutes(ctx context.Context, project *domain.Project) error {
+	routes, err := s.db.ListProjectRoutes(project.ID)
+	if err != nil {
+		return err
+	}
+	if len(routes) == 0 {
+		return s.traefik.RemoveRoute(project.ID)
+	}
+	containers, err := s.db.ListServiceContainers(project.ID)
+	if err != nil {
+		return err
+	}
+	byService := map[string]*domain.ServiceContainer{}
+	for _, c := range containers {
+		byService[c.ServiceName] = c
+	}
+	output := make([]traefik.Route, 0, len(routes))
+	for _, route := range routes {
+		c := byService[route.Service]
+		if c == nil {
+			return fmt.Errorf("route service %q is not deployed", route.Service)
+		}
+		port, err := s.docker.GetContainerPort(ctx, c.ContainerID)
+		if err != nil {
+			port = "80"
+		}
+		output = append(output, traefik.Route{Service: route.Service, Domain: route.Domain, Upstream: fmt.Sprintf("%s:%s", c.ContainerName, port)})
+	}
+	s.connectTraefikToNetwork(ctx, projectNetworkName(project.ID))
+	return s.traefik.ReplaceRoutes(project.ID, output)
 }
 
 // deployStack is FEAT-028's unified multi-service deploy path: every
@@ -227,9 +728,8 @@ func (s *ProjectService) deploy(ctx context.Context, project *domain.Project) er
 // each other only if THEY share a network), not transitive through a
 // third container that happens to be on both - so cross-project isolation
 // holds regardless of how many project networks Traefik itself joins
-// (verified live in TEST-014). This is only attempted when there is
-// actually a route to add (an exposed service resolved AND a domain set)
-// - a project with no domain gets no Traefik network wiring at all.
+// (verified live in TEST-014). The selected-route publisher attaches
+// Traefik only when at least one persisted project_route is present.
 func (s *ProjectService) deployStack(ctx context.Context, project *domain.Project, services []domain.ComposeService, pullImages bool) error {
 	netName := projectNetworkName(project.ID)
 	if err := s.docker.EnsureNetwork(ctx, netName, false); err != nil {
@@ -299,11 +799,9 @@ func (s *ProjectService) deployStack(ctx context.Context, project *domain.Projec
 		return fmt.Errorf("record service containers: %w", err)
 	}
 
-	// Resolve the exposed service and persist that resolution back onto
-	// project.ExposedService - whether it came from an explicit override
-	// or the heuristic - so it becomes the durable source of truth for
-	// ReconcileRoutes/Update/future redeploys, instead of every consumer
-	// re-running the heuristic against re-derived compose data.
+	// Keep legacy container metadata for old non-routing consumers. Public
+	// routing is intentionally not derived here: persisted project_routes is
+	// the sole authority and Deploy publishes it only after the stack is ready.
 	exposedName, hasExposed := detectExposedService(services, project.ExposedService)
 	project.ExposedService = ""
 	if hasExposed {
@@ -323,28 +821,6 @@ func (s *ProjectService) deployStack(ctx context.Context, project *domain.Projec
 	}
 	if project.ContainerID == "" && len(containers) > 0 {
 		project.ContainerID = containers[0].ContainerID
-	}
-
-	if hasExposed && project.Domain != "" {
-		exposedContainerName := serviceContainerName(project.ID, exposedName)
-		port := exposedTargetPort(byName[exposedName])
-		if port == "" {
-			resolvedPort, perr := s.docker.GetContainerPort(ctx, project.ContainerID)
-			if perr != nil {
-				resolvedPort = "80"
-			}
-			port = resolvedPort
-		}
-		upstream := fmt.Sprintf("%s:%s", exposedContainerName, port)
-
-		s.connectTraefikToNetwork(ctx, netName)
-
-		if err := s.traefik.AddRoute(project.ID, project.Domain, upstream); err != nil {
-			slog.Warn("traefik route failed", "project_id", project.ID, "domain", project.Domain, "error", err)
-			// non-fatal: containers are running, route can be added manually
-		} else {
-			slog.Info("traefik route added", "project_id", project.ID, "domain", project.Domain, "upstream", upstream)
-		}
 	}
 
 	return nil
@@ -496,17 +972,10 @@ func (s *ProjectService) exposedServiceRunning(ctx context.Context, project *dom
 	return false
 }
 
-// ReconcileRoutes re-writes every currently-running project's Traefik
-// route (and re-attaches Traefik to that project's network) on backend
-// startup - a defensive re-write against drift, not a Caddy-style
-// restore-after-wipe (Traefik's file-provider routes already persist on
-// disk across backend restarts by themselves; see main.go's call site).
-//
-// Unlike the pre-FEAT-028 version, the upstream is derived via
-// resolveExposedUpstream (project.ExposedService's own persisted
-// container row) rather than assuming a single "project-<id>" container -
-// a project can now have N service containers named
-// "project-<id>-<service>".
+// ReconcileRoutes re-publishes each running project's complete persisted
+// selected-route set on backend startup. This removes any stale legacy
+// project.Domain file and keeps project_routes as the sole public-routing
+// authority.
 func (s *ProjectService) ReconcileRoutes(ctx context.Context) {
 	if s.docker == nil {
 		return
@@ -518,20 +987,11 @@ func (s *ProjectService) ReconcileRoutes(ctx context.Context) {
 	}
 
 	for _, p := range projects {
-		if p.Status != domain.ProjectStatusRunning || p.Domain == "" {
+		if p.Status != domain.ProjectStatusRunning {
 			continue
 		}
-		upstream, ok := s.resolveExposedUpstream(ctx, p)
-		if !ok {
-			continue
-		}
-
-		s.connectTraefikToNetwork(ctx, projectNetworkName(p.ID))
-
-		if err := s.traefik.AddRoute(p.ID, p.Domain, upstream); err != nil {
-			slog.Warn("reconcile project route", "project_id", p.ID, "domain", p.Domain, "error", err)
-		} else {
-			slog.Info("reconciled project route", "project_id", p.ID, "domain", p.Domain, "upstream", upstream)
+		if err := s.writeProjectRoutes(ctx, p); err != nil {
+			slog.Warn("reconcile project routes", "project_id", p.ID, "error", err)
 		}
 	}
 }
@@ -574,6 +1034,10 @@ func (s *ProjectService) cloneRepo(ctx context.Context, repoURL, branch, workDir
 		}
 	}
 
+	return s.runCloneCommand(ctx, cloneURL, branch, workDir)
+}
+
+func gitCloneCommand(ctx context.Context, cloneURL, branch, workDir string) error {
 	cmd := exec.CommandContext(ctx, "git", "clone", "--branch", branch, "--single-branch", "--depth", "1", cloneURL, workDir)
 	cmd.Stdout = io.Discard
 	cmd.Stderr = io.Discard
@@ -584,6 +1048,10 @@ func (s *ProjectService) cloneRepo(ctx context.Context, repoURL, branch, workDir
 }
 
 func (s *ProjectService) buildImage(ctx context.Context, tag, workDir string) error {
+	return s.buildImageWithDockerfile(ctx, tag, workDir, "Dockerfile")
+}
+
+func (s *ProjectService) buildImageWithDockerfile(ctx context.Context, tag, workDir, dockerfile string) error {
 	var buf bytes.Buffer
 	tw := tar.NewWriter(&buf)
 
@@ -628,15 +1096,31 @@ func (s *ProjectService) buildImage(ctx context.Context, tag, workDir string) er
 		return fmt.Errorf("close tar: %w", err)
 	}
 
-	return s.docker.BuildImage(ctx, tag, "Dockerfile", &buf)
+	return s.docker.BuildImage(ctx, tag, dockerfile, &buf)
 }
 
 func (s *ProjectService) List(ctx context.Context) ([]*domain.Project, error) {
-	return s.db.ListProjects()
+	projects, err := s.db.ListProjects()
+	if err != nil {
+		return nil, err
+	}
+	for _, project := range projects {
+		if err := s.projectSources(project); err != nil {
+			return nil, err
+		}
+	}
+	return projects, nil
 }
 
 func (s *ProjectService) Get(ctx context.Context, id int64) (*domain.Project, error) {
-	return s.db.FindProject(id)
+	project, err := s.db.FindProject(id)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.projectSources(project); err != nil {
+		return nil, err
+	}
+	return project, nil
 }
 
 // Delete tears down a project's whole stack: every persisted service
@@ -811,6 +1295,10 @@ func (s *ProjectService) Restart(ctx context.Context, id int64) error {
 		tag := fmt.Sprintf("tamga-project-%d", project.ID)
 		services = []domain.ComposeService{synthesizeGitBuildService(tag, envVars)}
 	}
+	services, err = s.withDatabaseEnvironment(project.ID, services)
+	if err != nil {
+		return err
+	}
 
 	if err := s.deployStack(ctx, project, services, pullImages); err != nil {
 		return fmt.Errorf("redeploy stack: %w", err)
@@ -838,7 +1326,6 @@ func (s *ProjectService) Update(ctx context.Context, id int64, req UpdateProject
 	if err != nil {
 		return nil, fmt.Errorf("find project: %w", err)
 	}
-	oldDomain := project.Domain
 	oldExposedService := project.ExposedService
 
 	if req.Name != nil {
@@ -884,34 +1371,10 @@ func (s *ProjectService) Update(ctx context.Context, id int64, req UpdateProject
 		return nil, fmt.Errorf("update project: %w", err)
 	}
 
-	// Move the Traefik route when a deployed project's domain or exposed
-	// service changes - extends the TEST-010 fix to also rewrite the route
-	// when rebinding to a different service (FEAT-040). Since each
-	// project's route file is keyed by project ID, not domain, "moving"
-	// the route is just overwriting project-<id>.yml with the new Host()
-	// rule and the new service's upstream - no separate remove-old step
-	// needed unless the domain was cleared entirely. The upstream is
-	// resolved via resolveExposedUpstream (project.ExposedService's
-	// persisted container row) rather than assuming a single
-	// "project-<id>" container - FEAT-028 gives a project N service
-	// containers named "project-<id>-<service>" instead.
-	domainChanged := project.Domain != oldDomain
-	exposedServiceChanged := project.ExposedService != oldExposedService
-	if (domainChanged || exposedServiceChanged) && project.ContainerID != "" && s.docker != nil {
-		if project.Domain == "" {
-			if err := s.traefik.RemoveRoute(project.ID); err != nil {
-				slog.Warn("traefik remove route on domain change", "project_id", project.ID, "error", err)
-			}
-		} else if upstream, ok := s.resolveExposedUpstream(ctx, project); ok {
-			if err := s.traefik.AddRoute(project.ID, project.Domain, upstream); err != nil {
-				slog.Warn("traefik update route on domain or exposed service change", "project_id", project.ID, "domain", project.Domain, "exposed_service", project.ExposedService, "error", err)
-			} else {
-				s.connectTraefikToNetwork(ctx, projectNetworkName(project.ID))
-			}
-		} else {
-			slog.Warn("traefik update route on domain or exposed service change: no resolvable exposed service", "project_id", project.ID, "domain", project.Domain, "exposed_service", project.ExposedService)
-		}
-	}
+	// Legacy domain/exposed-service fields no longer control public routing;
+	// only persisted project_routes are published by Deploy, SetRoutes, and
+	// ReconcileRoutes. Keeping this update free of route writes prevents a
+	// stale legacy value from creating an unintended public service.
 
 	return project, nil
 }
@@ -922,6 +1385,65 @@ func (s *ProjectService) GetDeployments(ctx context.Context, id int64) ([]*domai
 
 func (s *ProjectService) ListEnvVars(ctx context.Context, projectID int64) ([]*domain.EnvVar, error) {
 	return s.db.ListEnvVars(projectID)
+}
+
+func (s *ProjectService) withDatabaseEnvironment(projectID int64, services []domain.ComposeService) ([]domain.ComposeService, error) {
+	globals, err := s.db.ListEnvVars(projectID)
+	if err != nil {
+		return nil, fmt.Errorf("list global env vars: %w", err)
+	}
+	scoped, err := s.db.ListServiceEnvVarsByProject(projectID)
+	if err != nil {
+		return nil, fmt.Errorf("list service env vars: %w", err)
+	}
+	return applyDatabaseEnvironment(services, globals, scoped), nil
+}
+
+func (s *ProjectService) supportedService(projectID int64, serviceName string) error {
+	project, err := s.db.FindProject(projectID)
+	if err != nil {
+		return fmt.Errorf("find project: %w", err)
+	}
+	var services []domain.ComposeService
+	if project.SourceType == domain.SourceTypeRemote {
+		services, err = parseBuildRuntimeCompose(project.ComposeYAML)
+	} else {
+		services, err = ParseComposeYAML(project.ComposeYAML)
+	}
+	if err != nil {
+		return fmt.Errorf("parse configured services: %w", err)
+	}
+	for _, service := range services {
+		if service.Name == serviceName {
+			return nil
+		}
+	}
+	return fmt.Errorf("service %q is not configured for project", serviceName)
+}
+
+func (s *ProjectService) ListServiceEnvVars(ctx context.Context, projectID int64, serviceName string) ([]*domain.ServiceEnvVar, error) {
+	if err := s.supportedService(projectID, serviceName); err != nil {
+		return nil, err
+	}
+	return s.db.ListServiceEnvVars(projectID, serviceName)
+}
+
+func (s *ProjectService) UpsertServiceEnvVar(ctx context.Context, projectID int64, serviceName, key, value string) (*domain.ServiceEnvVar, error) {
+	if err := s.supportedService(projectID, serviceName); err != nil {
+		return nil, err
+	}
+	ev := &domain.ServiceEnvVar{ProjectID: projectID, ServiceName: serviceName, Key: key, Value: value}
+	if err := s.db.UpsertServiceEnvVar(ev); err != nil {
+		return nil, err
+	}
+	return ev, nil
+}
+
+func (s *ProjectService) DeleteServiceEnvVar(ctx context.Context, projectID int64, serviceName string, id int64) error {
+	if err := s.supportedService(projectID, serviceName); err != nil {
+		return err
+	}
+	return s.db.DeleteServiceEnvVar(projectID, serviceName, id)
 }
 
 func (s *ProjectService) CreateEnvVar(ctx context.Context, projectID int64, key, value string) (*domain.EnvVar, error) {

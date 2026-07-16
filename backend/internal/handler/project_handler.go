@@ -49,20 +49,21 @@ func (h *ProjectHandler) Get(w http.ResponseWriter, r *http.Request) {
 
 func (h *ProjectHandler) Create(w http.ResponseWriter, r *http.Request) {
 	var req struct {
-		Name           string            `json:"name"`
-		SourceType     domain.SourceType `json:"source_type"`
-		RepoURL        string            `json:"repo_url"`
-		Branch         string            `json:"branch,omitempty"`
-		Domain         string            `json:"domain"`
-		ComposeYAML    string            `json:"compose_yaml,omitempty"`
-		ExposedService string            `json:"exposed_service,omitempty"`
+		Name           string                               `json:"name"`
+		SourceType     domain.SourceType                    `json:"source_type"`
+		RepoURL        string                               `json:"repo_url"`
+		Branch         string                               `json:"branch,omitempty"`
+		Domain         string                               `json:"domain"`
+		ComposeYAML    string                               `json:"compose_yaml,omitempty"`
+		ExposedService string                               `json:"exposed_service,omitempty"`
+		Sources        []service.CreateProjectSourceRequest `json:"sources,omitempty"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "invalid request body", http.StatusBadRequest)
 		return
 	}
-	if req.Name == "" || req.Domain == "" {
-		http.Error(w, "name and domain are required", http.StatusBadRequest)
+	if req.Name == "" {
+		http.Error(w, "name is required", http.StatusBadRequest)
 		return
 	}
 
@@ -102,7 +103,7 @@ func (h *ProjectHandler) Create(w http.ResponseWriter, r *http.Request) {
 		if req.SourceType == "" {
 			req.SourceType = domain.SourceTypeRemote
 		}
-		if req.SourceType == domain.SourceTypeRemote && req.RepoURL == "" {
+		if req.SourceType == domain.SourceTypeRemote && req.RepoURL == "" && len(req.Sources) == 0 {
 			http.Error(w, "repo_url is required for remote source", http.StatusBadRequest)
 			return
 		}
@@ -116,13 +117,162 @@ func (h *ProjectHandler) Create(w http.ResponseWriter, r *http.Request) {
 		Domain:         req.Domain,
 		ComposeYAML:    req.ComposeYAML,
 		ExposedService: req.ExposedService,
+		Sources:        req.Sources,
 	})
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 	w.WriteHeader(http.StatusCreated)
 	json.NewEncoder(w).Encode(project)
+}
+
+func (h *ProjectHandler) ListSources(w http.ResponseWriter, r *http.Request) {
+	projectID, err := projectIDParam(r)
+	if err != nil {
+		http.Error(w, "invalid id", http.StatusBadRequest)
+		return
+	}
+	sources, err := h.svc.ListSources(r.Context(), projectID)
+	if err != nil {
+		http.Error(w, "not found", http.StatusNotFound)
+		return
+	}
+	if sources == nil {
+		sources = []*domain.ProjectSource{}
+	}
+	json.NewEncoder(w).Encode(sources)
+}
+
+func (h *ProjectHandler) CreateSource(w http.ResponseWriter, r *http.Request) {
+	projectID, err := projectIDParam(r)
+	if err != nil {
+		http.Error(w, "invalid id", http.StatusBadRequest)
+		return
+	}
+	var req service.CreateProjectSourceRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "invalid request body", http.StatusBadRequest)
+		return
+	}
+	source, err := h.svc.CreateSource(r.Context(), projectID, req)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	w.WriteHeader(http.StatusCreated)
+	json.NewEncoder(w).Encode(source)
+}
+
+func (h *ProjectHandler) UpdateSource(w http.ResponseWriter, r *http.Request) {
+	projectID, sourceID, err := projectAndSourceID(r)
+	if err != nil {
+		http.Error(w, "invalid id", http.StatusBadRequest)
+		return
+	}
+	var req service.CreateProjectSourceRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "invalid request body", http.StatusBadRequest)
+		return
+	}
+	source, err := h.svc.UpdateSource(r.Context(), projectID, sourceID, req)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	json.NewEncoder(w).Encode(source)
+}
+
+func (h *ProjectHandler) DeleteSource(w http.ResponseWriter, r *http.Request) {
+	projectID, sourceID, err := projectAndSourceID(r)
+	if err != nil {
+		http.Error(w, "invalid id", http.StatusBadRequest)
+		return
+	}
+	if err := h.svc.DeleteSource(r.Context(), projectID, sourceID); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (h *ProjectHandler) RefreshSource(w http.ResponseWriter, r *http.Request) {
+	projectID, sourceID, err := projectAndSourceID(r)
+	if err != nil {
+		http.Error(w, "invalid id", http.StatusBadRequest)
+		return
+	}
+	if err := h.svc.RefreshSource(r.Context(), projectID, sourceID); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	w.WriteHeader(http.StatusAccepted)
+}
+
+func (h *ProjectHandler) RefreshAllSources(w http.ResponseWriter, r *http.Request) {
+	projectID, err := projectIDParam(r)
+	if err != nil {
+		http.Error(w, "invalid id", http.StatusBadRequest)
+		return
+	}
+	if err := h.svc.RefreshAllSources(r.Context(), projectID); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	w.WriteHeader(http.StatusAccepted)
+}
+
+func (h *ProjectHandler) Configuration(w http.ResponseWriter, r *http.Request) {
+	projectID, err := projectIDParam(r)
+	if err != nil {
+		http.Error(w, "invalid id", http.StatusBadRequest)
+		return
+	}
+	configuration, err := h.svc.Configuration(r.Context(), projectID)
+	if err != nil {
+		if strings.Contains(err.Error(), "find project") {
+			http.Error(w, "not found", http.StatusNotFound)
+			return
+		}
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	json.NewEncoder(w).Encode(configuration)
+}
+
+func (h *ProjectHandler) SaveConfiguration(w http.ResponseWriter, r *http.Request) {
+	projectID, err := projectIDParam(r)
+	if err != nil {
+		http.Error(w, "invalid id", http.StatusBadRequest)
+		return
+	}
+	var req service.SaveProjectConfigurationRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "invalid request body", http.StatusBadRequest)
+		return
+	}
+	configuration, err := h.svc.SaveConfiguration(r.Context(), projectID, req)
+	if err != nil {
+		if strings.Contains(err.Error(), "find project") {
+			http.Error(w, "not found", http.StatusNotFound)
+			return
+		}
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	json.NewEncoder(w).Encode(configuration)
+}
+
+func projectIDParam(r *http.Request) (int64, error) {
+	return strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
+}
+func projectAndSourceID(r *http.Request) (int64, int64, error) {
+	projectID, err := projectIDParam(r)
+	if err != nil {
+		return 0, 0, err
+	}
+	sourceID, err := strconv.ParseInt(chi.URLParam(r, "sourceId"), 10, 64)
+	return projectID, sourceID, err
 }
 
 func (h *ProjectHandler) Update(w http.ResponseWriter, r *http.Request) {
@@ -230,6 +380,68 @@ func (h *ProjectHandler) Restart(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 }
 
+func (h *ProjectHandler) Build(w http.ResponseWriter, r *http.Request) {
+	id, err := projectIDParam(r)
+	if err != nil {
+		http.Error(w, "invalid id", http.StatusBadRequest)
+		return
+	}
+	if err := h.svc.Build(r.Context(), id); err != nil {
+		http.Error(w, err.Error(), http.StatusConflict)
+		return
+	}
+	w.WriteHeader(http.StatusAccepted)
+}
+
+func (h *ProjectHandler) Deploy(w http.ResponseWriter, r *http.Request) {
+	id, err := projectIDParam(r)
+	if err != nil {
+		http.Error(w, "invalid id", http.StatusBadRequest)
+		return
+	}
+	if err := h.svc.Deploy(r.Context(), id); err != nil {
+		http.Error(w, err.Error(), http.StatusConflict)
+		return
+	}
+	w.WriteHeader(http.StatusOK)
+}
+
+func (h *ProjectHandler) Routes(w http.ResponseWriter, r *http.Request) {
+	id, err := projectIDParam(r)
+	if err != nil {
+		http.Error(w, "invalid id", http.StatusBadRequest)
+		return
+	}
+	routes, err := h.svc.Routes(r.Context(), id)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	if routes == nil {
+		routes = []*domain.ProjectRoute{}
+	}
+	json.NewEncoder(w).Encode(routes)
+}
+
+func (h *ProjectHandler) SetRoutes(w http.ResponseWriter, r *http.Request) {
+	id, err := projectIDParam(r)
+	if err != nil {
+		http.Error(w, "invalid id", http.StatusBadRequest)
+		return
+	}
+	var routes []*domain.ProjectRoute
+	if err := json.NewDecoder(r.Body).Decode(&routes); err != nil {
+		http.Error(w, "invalid request body", http.StatusBadRequest)
+		return
+	}
+	updated, err := h.svc.SetRoutes(r.Context(), id, routes)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	json.NewEncoder(w).Encode(updated)
+}
+
 func (h *ProjectHandler) Logs(w http.ResponseWriter, r *http.Request) {
 	id, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
 	if err != nil {
@@ -313,6 +525,63 @@ func (h *ProjectHandler) DeleteEnvVar(w http.ResponseWriter, r *http.Request) {
 	}
 	if err := h.svc.DeleteEnvVar(r.Context(), vid); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (h *ProjectHandler) ListServiceEnvVars(w http.ResponseWriter, r *http.Request) {
+	projectID, err := projectIDParam(r)
+	if err != nil {
+		http.Error(w, "invalid id", http.StatusBadRequest)
+		return
+	}
+	vars, err := h.svc.ListServiceEnvVars(r.Context(), projectID, chi.URLParam(r, "service"))
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	if vars == nil {
+		vars = []*domain.ServiceEnvVar{}
+	}
+	json.NewEncoder(w).Encode(vars)
+}
+
+func (h *ProjectHandler) UpsertServiceEnvVar(w http.ResponseWriter, r *http.Request) {
+	projectID, err := projectIDParam(r)
+	if err != nil {
+		http.Error(w, "invalid id", http.StatusBadRequest)
+		return
+	}
+	var req struct {
+		Key   string `json:"key"`
+		Value string `json:"value"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.Key == "" {
+		http.Error(w, "key is required", http.StatusBadRequest)
+		return
+	}
+	ev, err := h.svc.UpsertServiceEnvVar(r.Context(), projectID, chi.URLParam(r, "service"), req.Key, req.Value)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	json.NewEncoder(w).Encode(ev)
+}
+
+func (h *ProjectHandler) DeleteServiceEnvVar(w http.ResponseWriter, r *http.Request) {
+	projectID, err := projectIDParam(r)
+	if err != nil {
+		http.Error(w, "invalid id", http.StatusBadRequest)
+		return
+	}
+	varID, err := strconv.ParseInt(chi.URLParam(r, "envVarId"), 10, 64)
+	if err != nil {
+		http.Error(w, "invalid env var id", http.StatusBadRequest)
+		return
+	}
+	if err := h.svc.DeleteServiceEnvVar(r.Context(), projectID, chi.URLParam(r, "service"), varID); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)

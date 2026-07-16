@@ -71,9 +71,37 @@ export type Project = {
   // a project that hasn't been (re)deployed under the compose model.
   compose_yaml?: string;
   exposed_service?: string;
+  config_revision?: number;
+  build_revision?: number;
   created_at: string;
   updated_at: string;
 };
+
+export type ProjectSource = {
+  id: number;
+  project_id: number;
+  display_name: string;
+  remote_url: string;
+  branch: string;
+  workspace_path: string;
+  status: "pending" | "cloning" | "ready" | "clone_failed";
+  error_summary?: string;
+};
+
+export type ProjectConfiguration = {
+  sources: ProjectSource[];
+  facts: { workspace_path: string; dockerfile: boolean; compose_file?: string; nextjs: boolean }[];
+  pending_compose?: string;
+  accepted_compose?: string;
+  parse_errors: string[];
+  services: { name: string; context: string; dockerfile: string }[];
+  recommendation?: { kind: string };
+  build_permitted: boolean;
+  environment_owner: string;
+};
+
+export type ProjectRoute = { id?: number; project_id?: number; service: string; domain: string };
+export type ServiceEnvVar = EnvVar & { service_name: string };
 
 export type Deployment = {
   id: number;
@@ -132,6 +160,21 @@ export const getProjectLogs = (id: number) =>
 export const updateProject = (id: number, data: Partial<Project>) =>
   api<Project>(`/projects/${id}`, { method: "PUT", body: JSON.stringify(data) });
 
+export const listProjectSources = (projectId: number) => api<ProjectSource[]>(`/projects/${projectId}/sources`);
+export const createProjectSource = (projectId: number, data: Pick<ProjectSource, "display_name" | "remote_url" | "branch" | "workspace_path">) =>
+  api<ProjectSource>(`/projects/${projectId}/sources`, { method: "POST", body: JSON.stringify(data) });
+export const deleteProjectSource = (projectId: number, sourceId: number) => api<void>(`/projects/${projectId}/sources/${sourceId}`, { method: "DELETE" });
+export const refreshProjectSource = (projectId: number, sourceId: number) => api<void>(`/projects/${projectId}/sources/${sourceId}/refresh`, { method: "POST" });
+export const refreshAllProjectSources = (projectId: number) => api<void>(`/projects/${projectId}/sources/refresh`, { method: "POST" });
+export const getProjectConfiguration = (projectId: number) => api<ProjectConfiguration>(`/projects/${projectId}/configuration`);
+export const saveProjectConfiguration = (projectId: number, data: { compose_yaml?: string; accept_detected?: boolean; apply_nextjs_template?: boolean }) =>
+  api<ProjectConfiguration>(`/projects/${projectId}/configuration`, { method: "PUT", body: JSON.stringify(data) });
+export const buildProject = (projectId: number) => api<void>(`/projects/${projectId}/build`, { method: "POST" });
+export const deployProject = (projectId: number) => api<void>(`/projects/${projectId}/deploy`, { method: "POST" });
+export const listProjectRoutes = (projectId: number) => api<ProjectRoute[]>(`/projects/${projectId}/routes`);
+export const setProjectRoutes = (projectId: number, routes: ProjectRoute[]) =>
+  api<ProjectRoute[]>(`/projects/${projectId}/routes`, { method: "PUT", body: JSON.stringify(routes) });
+
 // Deployments
 export const listDeployments = (projectId: number) =>
   api<Deployment[]>(`/projects/${projectId}/deployments`);
@@ -146,6 +189,12 @@ export const createEnvVar = (projectId: number, key: string, value: string) =>
   });
 export const deleteEnvVar = (projectId: number, envVarId: number) =>
   api<void>(`/projects/${projectId}/env-vars/${envVarId}`, { method: "DELETE" });
+export const listServiceEnvVars = (projectId: number, service: string) =>
+  api<ServiceEnvVar[]>(`/projects/${projectId}/services/${encodeURIComponent(service)}/env-vars`);
+export const upsertServiceEnvVar = (projectId: number, service: string, key: string, value: string) =>
+  api<ServiceEnvVar>(`/projects/${projectId}/services/${encodeURIComponent(service)}/env-vars`, { method: "PUT", body: JSON.stringify({ key, value }) });
+export const deleteServiceEnvVar = (projectId: number, service: string, envVarId: number) =>
+  api<void>(`/projects/${projectId}/services/${encodeURIComponent(service)}/env-vars/${envVarId}`, { method: "DELETE" });
 
 // Containers
 export type ContainerInfo = {

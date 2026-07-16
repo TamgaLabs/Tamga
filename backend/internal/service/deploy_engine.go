@@ -80,6 +80,36 @@ func envVarsToMap(vars []*domain.EnvVar) map[string]string {
 	return m
 }
 
+// applyDatabaseEnvironment makes the database the only deployment-time
+// environment source. Compose values are imported once when configuration is
+// first accepted, then deliberately ignored here so later YAML edits cannot
+// override DB-owned values.
+func applyDatabaseEnvironment(services []domain.ComposeService, globals []*domain.EnvVar, scoped []*domain.ServiceEnvVar) []domain.ComposeService {
+	global := envVarsToMap(globals)
+	byService := make(map[string]map[string]string)
+	for _, value := range scoped {
+		if byService[value.ServiceName] == nil {
+			byService[value.ServiceName] = make(map[string]string)
+		}
+		byService[value.ServiceName][value.Key] = value.Value
+	}
+	for i := range services {
+		env := make(map[string]string, len(global)+len(byService[services[i].Name]))
+		for key, value := range global {
+			env[key] = value
+		}
+		for key, value := range byService[services[i].Name] {
+			env[key] = value
+		}
+		if len(env) == 0 {
+			services[i].Environment = nil
+		} else {
+			services[i].Environment = env
+		}
+	}
+	return services
+}
+
 // envMapToSlice converts a compose service's normalized environment map
 // (domain.ComposeService.Environment - whether parsed from real compose
 // YAML or produced by synthesizeGitBuildService) into the "KEY=VALUE"

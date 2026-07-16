@@ -150,6 +150,29 @@ func TestTraefikClientAddRouteOverwritesOnDomainChange(t *testing.T) {
 	}
 }
 
+func TestTraefikClientReplaceRoutesFailurePreservesPreviousCompleteConfig(t *testing.T) {
+	dir := t.TempDir()
+	client := traefik.New(dir)
+	if err := client.ReplaceRoutes(11, []traefik.Route{{Service: "web", Domain: "stable.example.com", Upstream: "project-11-web:80"}}); err != nil {
+		t.Fatalf("seed routes: %v", err)
+	}
+	path := filepath.Join(dir, "project-11.yml")
+	before, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read seeded config: %v", err)
+	}
+	if err := client.ReplaceRoutes(11, []traefik.Route{{Service: "api", Domain: "", Upstream: "project-11-api:8080"}}); err == nil {
+		t.Fatal("expected invalid selected-route write to fail")
+	}
+	after, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read config after failed replacement: %v", err)
+	}
+	if string(after) != string(before) {
+		t.Fatalf("failed route replacement changed public config:\nbefore:\n%s\nafter:\n%s", before, after)
+	}
+}
+
 // TestTraefikClientRemoveRoute covers deletion, including the no-op case
 // (a project that never got a route file, or whose file was already
 // removed) - RemoveRoute must not error either way.

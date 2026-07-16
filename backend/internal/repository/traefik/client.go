@@ -22,6 +22,10 @@ type Client struct {
 	dynamicDir string
 }
 
+// Route preserves per-project/service attribution while allowing one project
+// file to expose more than one explicitly selected compose service.
+type Route struct{ Service, Domain, Upstream string }
+
 // New returns a Client that manages route files in dynamicDir.
 func New(dynamicDir string) *Client {
 	return &Client{dynamicDir: dynamicDir}
@@ -72,32 +76,26 @@ type serverConfig struct {
 // directly attributable back to this project without a domain lookup
 // (TEST-010 §4).
 func (c *Client) AddRoute(projectID int64, domain, upstream string) error {
-	name := fmt.Sprintf("project-%d", projectID)
-	rule := fmt.Sprintf("Host(`%s`)", domain)
+	return c.ReplaceRoutes(projectID, []Route{{Domain: domain, Upstream: upstream}})
+}
 
-	cfg := dynamicConfig{
-		HTTP: httpConfig{
-			Routers: map[string]routerConfig{
-				name: {
-					Rule:        rule,
-					Service:     name,
-					EntryPoints: []string{"web"},
-				},
-				name + "-secure": {
-					Rule:        rule,
-					Service:     name,
-					EntryPoints: []string{"websecure"},
-					TLS:         &struct{}{},
-				},
-			},
-			Services: map[string]serviceConfig{
-				name: {
-					LoadBalancer: loadBalancerConfig{
-						Servers: []serverConfig{{URL: fmt.Sprintf("http://%s", upstream)}},
-					},
-				},
-			},
-		},
+// ReplaceRoutes atomically replaces every public route for one project. The
+// file is only renamed into place after all routers/services marshal, so a
+// failed deploy never leaves a partially public configuration behind.
+func (c *Client) ReplaceRoutes(projectID int64, routes []Route) error {
+	cfg := dynamicConfig{HTTP: httpConfig{Routers: map[string]routerConfig{}, Services: map[string]serviceConfig{}}}
+	for i, route := range routes {
+		if route.Domain == "" || route.Upstream == "" {
+			return fmt.Errorf("route domain and upstream are required")
+		}
+		name := fmt.Sprintf("project-%d-%d", projectID, i)
+		if len(routes) == 1 {
+			name = fmt.Sprintf("project-%d", projectID)
+		}
+		rule := fmt.Sprintf("Host(`%s`)", route.Domain)
+		cfg.HTTP.Routers[name] = routerConfig{Rule: rule, Service: name, EntryPoints: []string{"web"}}
+		cfg.HTTP.Routers[name+"-secure"] = routerConfig{Rule: rule, Service: name, EntryPoints: []string{"websecure"}, TLS: &struct{}{}}
+		cfg.HTTP.Services[name] = serviceConfig{LoadBalancer: loadBalancerConfig{Servers: []serverConfig{{URL: fmt.Sprintf("http://%s", route.Upstream)}}}}
 	}
 
 	body, err := yaml.Marshal(cfg)
@@ -105,8 +103,8 @@ func (c *Client) AddRoute(projectID int64, domain, upstream string) error {
 		return fmt.Errorf("marshal route config: %w", err)
 	}
 
-	header := fmt.Sprintf("# Managed by Tamga - do not edit by hand.\n# Regenerated on deploy/update, removed on delete, for project %d.\n", projectID)
-	return c.writeFile(name, append([]byte(header), body...))
+	header := fmt.Sprintf("# Managed by Tamga - do not edit by hand.\n# Regenerated atomically for project %d.\n", projectID)
+	return c.writeFile(fmt.Sprintf("project-%d", projectID), append([]byte(header), body...))
 }
 
 // RemoveRoute deletes projectID's dynamic-config file. A file that doesn't

@@ -42,6 +42,48 @@ func TestMigrationAppliesOnFreshDB(t *testing.T) {
 	}
 }
 
+// TestProjectSourcesMigrationBackfillsLegacyRemote keeps the FEAT-055a
+// migration contract explicit: a pre-source remote project gets one ready
+// primary source while its existing lifecycle status remains untouched.
+func TestProjectSourcesMigrationBackfillsLegacyRemote(t *testing.T) {
+	db := openTestDB(t)
+	legacy := &domain.Project{
+		Name:       "legacy-remote",
+		SourceType: domain.SourceTypeRemote,
+		RepoURL:    "https://example.test/legacy.git",
+		Branch:     "stable",
+		Domain:     "legacy.test",
+		Status:     domain.ProjectStatusRunning,
+	}
+	if err := db.CreateProject(legacy); err != nil {
+		t.Fatalf("create legacy project: %v", err)
+	}
+	if _, err := db.Exec("DROP TABLE project_sources"); err != nil {
+		t.Fatalf("drop project_sources to simulate pre-000018 database: %v", err)
+	}
+	if _, err := db.Exec("DELETE FROM schema_migrations WHERE filename = ?", "000018_create_project_sources.up.sql"); err != nil {
+		t.Fatalf("unmark source migration: %v", err)
+	}
+	if err := db.Migrate(); err != nil {
+		t.Fatalf("migrate legacy database: %v", err)
+	}
+
+	project, err := db.FindProject(legacy.ID)
+	if err != nil {
+		t.Fatalf("read legacy project: %v", err)
+	}
+	if project.Status != domain.ProjectStatusRunning {
+		t.Fatalf("migration changed legacy project status to %q", project.Status)
+	}
+	sources, err := db.ListProjectSources(legacy.ID)
+	if err != nil {
+		t.Fatalf("list backfilled sources: %v", err)
+	}
+	if len(sources) != 1 || sources[0].WorkspacePath != "." || sources[0].Status != domain.ProjectSourceStatusReady || sources[0].Branch != "stable" {
+		t.Fatalf("unexpected backfilled source: %+v", sources)
+	}
+}
+
 // TestMigrationAppliesOnCopiedLiveDB re-runs Migrate() against a throwaway
 // copy of the actual on-disk dev database (never the live file itself,
 // which openTestDB/this test never touches). Confirms migration 000016
@@ -177,7 +219,7 @@ func TestProjectComposeColumnsRoundTrip(t *testing.T) {
 
 // TestCreateProjectPersistsComposeFields is the regression guard for the
 // FEAT-029 fix: CreateProject must BIND compose_yaml/exposed_service from the
-// project (a compose project supplies them at create time), not hardcode ''.
+// project (a compose project supplies them at create time), not hardcode ”.
 // Before the fix the INSERT dropped these values and they only reappeared
 // once deploy()'s async UpdateProject ran — a race with the detail-page load
 // and a total loss across a backend restart.

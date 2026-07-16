@@ -1,7 +1,7 @@
 "use client";
 
-import { useState } from "react";
-import { updateProject } from "@/lib/api";
+import { useEffect, useState } from "react";
+import { getProjectConfiguration, updateProject } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -16,67 +16,27 @@ import { useProjectContext } from "../project-context";
 import { PageHeader, PageHeaderDescription, PageHeaderTitle } from "@/components/page-header";
 import { Field, FieldError, FieldGroup, FieldLabel } from "@/components/ui/field";
 
-// Parse the compose_yaml to extract service names from the top-level services: block.
-// Safe minimal extraction without adding a YAML parser dependency.
-function extractServices(composeYaml: string | undefined): string[] {
-  if (!composeYaml) return [];
-
-  const lines = composeYaml.split("\n");
-  const services: string[] = [];
-  let inServices = false;
-  let servicesBlockIndent: number | null = null;
-  let serviceIndentLevel: number | null = null;
-
-  for (const line of lines) {
-    const trimmed = line.trimStart();
-
-    // Skip empty lines and comments
-    if (!trimmed || trimmed.startsWith("#")) continue;
-
-    // Calculate indentation
-    const indent = line.length - trimmed.length;
-
-    // Check if we found the services: block
-    if (trimmed.startsWith("services:")) {
-      inServices = true;
-      servicesBlockIndent = indent;
-      // Service names will be at servicesBlockIndent + 2 (standard YAML indent)
-      serviceIndentLevel = indent + 2;
-      continue;
-    }
-
-    if (inServices && servicesBlockIndent !== null) {
-      // If we hit something at the same level as services: or less indented, we're done
-      if (indent <= servicesBlockIndent && trimmed) {
-        break;
-      }
-
-      // Service names are at serviceIndentLevel and have a colon
-      if (indent === serviceIndentLevel && trimmed.includes(":")) {
-        // Get the key name (before the colon)
-        const parts = trimmed.split(":");
-        const serviceName = parts[0].trim();
-        if (serviceName && !serviceName.startsWith("#")) {
-          services.push(serviceName);
-        }
-      }
-    }
-  }
-
-  return services;
-}
-
 export default function ProjectSettingsPage() {
   const { project, refetch } = useProjectContext();
   const [editName, setEditName] = useState(project.name);
   const [editDomain, setEditDomain] = useState(project.domain);
   const [editBranch, setEditBranch] = useState(project.branch);
   const [editExposedService, setEditExposedService] = useState(project.exposed_service || "");
+  const [services, setServices] = useState<string[]>([]);
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
 
-  const services = extractServices(project.compose_yaml);
-  const hasCompose = !!project.compose_yaml;
+  useEffect(() => {
+    let active = true;
+    getProjectConfiguration(project.id).then((configuration) => {
+      if (active) setServices(configuration.services.map(({ name }) => name));
+    }).catch(() => {
+      if (active) setServices([]);
+    });
+    return () => { active = false; };
+  }, [project.id]);
+
+  const hasServices = services.length > 0;
 
   const handleSave = async () => {
     setError("");
@@ -86,7 +46,7 @@ export default function ProjectSettingsPage() {
         name: editName,
         domain: editDomain,
         branch: editBranch,
-        ...(hasCompose ? { exposed_service: editExposedService } : {}),
+        ...(hasServices ? { exposed_service: editExposedService } : {}),
       });
       refetch();
     } catch (err: unknown) {
@@ -123,7 +83,7 @@ export default function ProjectSettingsPage() {
             <Input id="project-branch" value={editBranch} onChange={(e) => setEditBranch(e.target.value)} />
           </Field>
 
-          {hasCompose && (
+          {hasServices && (
             <Field>
               <FieldLabel>Expose service</FieldLabel>
               <div>

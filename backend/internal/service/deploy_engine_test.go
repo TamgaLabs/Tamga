@@ -51,6 +51,20 @@ func TestSynthesizeGitBuildServiceNoEnvVars(t *testing.T) {
 	}
 }
 
+func TestApplyDatabaseEnvironmentUsesServiceValuesOverGlobals(t *testing.T) {
+	services := []domain.ComposeService{{Name: "web", Environment: map[string]string{"FROM_YAML": "ignored"}}, {Name: "worker"}}
+	got := applyDatabaseEnvironment(services,
+		[]*domain.EnvVar{{Key: "SHARED", Value: "global"}, {Key: "GLOBAL_ONLY", Value: "yes"}},
+		[]*domain.ServiceEnvVar{{ServiceName: "web", Key: "SHARED", Value: "web"}, {ServiceName: "web", Key: "WEB_ONLY", Value: "yes"}},
+	)
+	if want := map[string]string{"SHARED": "web", "GLOBAL_ONLY": "yes", "WEB_ONLY": "yes"}; !reflect.DeepEqual(got[0].Environment, want) {
+		t.Fatalf("web environment = %v, want %v", got[0].Environment, want)
+	}
+	if want := map[string]string{"SHARED": "global", "GLOBAL_ONLY": "yes"}; !reflect.DeepEqual(got[1].Environment, want) {
+		t.Fatalf("worker environment = %v, want %v", got[1].Environment, want)
+	}
+}
+
 func TestDetectExposedServiceOverrideWins(t *testing.T) {
 	services := []domain.ComposeService{
 		{Name: "web", Ports: []domain.ComposePort{{Target: 8080}}},

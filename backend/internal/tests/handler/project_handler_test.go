@@ -55,7 +55,25 @@ func setupRouter(h *handler.ProjectHandler) *chi.Mux {
 	r.Delete("/projects/{id}", h.Delete)
 	r.Post("/projects/{id}/restart", h.Restart)
 	r.Get("/projects/{id}/logs", h.Logs)
+	r.Get("/projects/{id}/sources", h.ListSources)
+	r.Post("/projects/{id}/sources", h.CreateSource)
+	r.Put("/projects/{id}/sources/{sourceId}", h.UpdateSource)
+	r.Delete("/projects/{id}/sources/{sourceId}", h.DeleteSource)
+	r.Post("/projects/{id}/sources/{sourceId}/refresh", h.RefreshSource)
+	r.Post("/projects/{id}/sources/refresh", h.RefreshAllSources)
 	return r
+}
+
+func TestProjectHandler_CreateRejectsUnsafeSourcePath(t *testing.T) {
+	svc, _ := newTestProjectService(t)
+	r := setupRouter(handler.NewProjectHandler(svc))
+	body := `{"name":"multi","domain":"multi.test","sources":[{"display_name":"primary","remote_url":"https://example.test/a.git","workspace_path":"."},{"display_name":"bad","remote_url":"https://example.test/b.git","workspace_path":"../escape"}]}`
+	req := httptest.NewRequest(http.MethodPost, "/projects", bytes.NewBufferString(body))
+	resp := httptest.NewRecorder()
+	r.ServeHTTP(resp, req)
+	if resp.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 for unsafe source path, got %d: %s", resp.Code, resp.Body.String())
+	}
 }
 
 func TestProjectHandler_NotFound(t *testing.T) {

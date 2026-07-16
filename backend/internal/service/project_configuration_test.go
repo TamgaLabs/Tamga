@@ -81,7 +81,7 @@ func TestProjectConfigurationDetectedComposeAndMultiSourceNoTemplate(t *testing.
 	if err := os.WriteFile(filepath.Join(workspace, "package.json"), []byte(`{"dependencies":{"next":"15"}}`), 0644); err != nil {
 		t.Fatal(err)
 	}
-	detected := "services:\n  app:\n    build:\n      context: .\n      dockerfile: Dockerfile"
+	detected := "services:\n  app:\n    build:\n      context: sources/worker\n      dockerfile: Dockerfile"
 	if err := os.WriteFile(filepath.Join(workspace, "compose.yaml"), []byte(detected), 0644); err != nil {
 		t.Fatal(err)
 	}
@@ -94,8 +94,24 @@ func TestProjectConfigurationDetectedComposeAndMultiSourceNoTemplate(t *testing.
 		t.Fatalf("expected detected-but-pending multi-source config, got %+v", config)
 	}
 	config, err = svc.SaveConfiguration(context.Background(), project.ID, SaveProjectConfigurationRequest{AcceptDetected: true})
-	if err != nil || !config.BuildPermitted {
+	if err != nil || !config.BuildPermitted || len(config.Services) != 1 || config.Services[0].Context != "sources/worker" {
 		t.Fatalf("accept detected compose: config=%+v err=%v", config, err)
+	}
+}
+
+func TestProjectConfigurationRejectsEscapingDockerfilePath(t *testing.T) {
+	svc, _ := newTestProjectService(t)
+	project := &domain.Project{Name: "web", SourceType: domain.SourceTypeRemote, Status: domain.ProjectStatusConfiguring}
+	if err := svc.db.CreateProject(project); err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.db.CreateProjectSource(&domain.ProjectSource{ProjectID: project.ID, DisplayName: "web", RemoteURL: "https://example.test/web.git", Branch: "main", WorkspacePath: ".", Status: domain.ProjectSourceStatusReady}); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err := svc.SaveConfiguration(context.Background(), project.ID, SaveProjectConfigurationRequest{ComposeYAML: "services:\n  app:\n    build:\n      context: .\n      dockerfile: ../Dockerfile"})
+	if err == nil || !strings.Contains(err.Error(), "dockerfile must be workspace-relative") {
+		t.Fatalf("expected source-relative Dockerfile rejection, got %v", err)
 	}
 }
 
