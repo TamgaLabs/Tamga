@@ -51,4 +51,7 @@ data/
 .claude/settings.local.json
 .claude/*.tmp.*
 .opencode/
+.codex/
+codex/
+.claude/
 tasks/.obsidian/
