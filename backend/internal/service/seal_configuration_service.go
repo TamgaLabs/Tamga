@@ -334,12 +334,7 @@ func validateDirectSealCompose(content string) error {
 	if len(project.Services) == 0 {
 		return fmt.Errorf("compose file declares no services")
 	}
-	for name, service := range project.Services {
-		if len(service.Ports) > 0 {
-			return fmt.Errorf("service %q must not publish host ports", name)
-		}
-	}
-	return nil
+	return validateNoHostPortMappings(project.Services)
 }
 
 func (s *SealService) materializeGeneratedConfiguration(sealID int64) error {
@@ -395,6 +390,7 @@ func (s *SealService) generatedCompose(sealID int64, services []*domain.SealServ
 			}
 		}
 	}
+	output.WriteString("networks:\n  default:\n    internal: true\n")
 	return output.String(), needsNextJSDockerfile, nil
 }
 

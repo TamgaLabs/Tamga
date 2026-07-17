@@ -295,11 +295,11 @@ services:
   web:
     image: nginx:latest
     ports:
-      - "8080:80"
+      - "80"
   api:
     image: python:3.9
     ports:
-      - "8081:5000"
+      - "5000"
 `
 	project, err := svc.Create(ctx, service.CreateProjectRequest{
 		Name:           "multi-service-app",
@@ -349,11 +349,11 @@ services:
   web:
     image: nginx:latest
     ports:
-      - "8080:80"
+      - "80"
   api:
     image: python:3.9
     ports:
-      - "8081:5000"
+      - "5000"
 `
 	project, err := svc.Create(ctx, service.CreateProjectRequest{
 		Name:           "multi-service-app",
@@ -396,7 +396,7 @@ services:
   web:
     image: nginx:latest
     ports:
-      - "8080:80"
+      - "80"
 `
 	project, err := svc.Create(ctx, service.CreateProjectRequest{
 		Name:           "single-service-app",
@@ -435,11 +435,11 @@ services:
   web:
     image: nginx:latest
     ports:
-      - "8080:80"
+      - "80"
   api:
     image: python:3.9
     ports:
-      - "8081:5000"
+      - "5000"
 `
 	project, err := svc.Create(ctx, service.CreateProjectRequest{
 		Name:           "multi-service-app",

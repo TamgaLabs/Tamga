@@ -26,7 +26,7 @@ services:
   web:
     image: nginx:latest
     ports:
-      - "8080:80"
+      - "80"
     environment:
       - FOO=bar
       - BARE
@@ -54,7 +54,7 @@ services:
 	if web.Image != "nginx:latest" {
 		t.Errorf("web.Image = %q, want nginx:latest", web.Image)
 	}
-	wantPorts := []domain.ComposePort{{Published: "8080", Target: 80, Protocol: "tcp"}}
+	wantPorts := []domain.ComposePort{{Published: "", Target: 80, Protocol: "tcp"}}
 	if !reflect.DeepEqual(web.Ports, wantPorts) {
 		t.Errorf("web.Ports = %+v, want %+v", web.Ports, wantPorts)
 	}
@@ -89,7 +89,6 @@ services:
     image: nginx:latest
     ports:
       - target: 80
-        published: "8080"
         protocol: tcp
       - target: 9090
         protocol: udp
@@ -121,7 +120,7 @@ services:
 	}
 
 	wantPorts := []domain.ComposePort{
-		{Published: "8080", Target: 80, Protocol: "tcp"},
+		{Published: "", Target: 80, Protocol: "tcp"},
 		{Published: "", Target: 9090, Protocol: "udp"},
 	}
 	if !reflect.DeepEqual(web.Ports, wantPorts) {
@@ -298,5 +297,34 @@ func TestParseComposeYAMLRejectsInvalidYAML(t *testing.T) {
 	_, err := service.ParseComposeYAML("not: valid: yaml: [")
 	if err == nil {
 		t.Fatal("expected an error for invalid YAML, got nil")
+	}
+}
+
+func TestParseComposeYAMLRejectsEveryHostPortMappingForm(t *testing.T) {
+	for name, yaml := range map[string]string{
+		"short host port": `services:
+  web:
+    image: nginx:latest
+    ports: ["8080:80"]`,
+		"short host address": `services:
+  web:
+    image: nginx:latest
+    ports: ["127.0.0.1:8080:80/udp"]`,
+		"short range": `services:
+  web:
+    image: nginx:latest
+    ports: ["8080-8081:80-81"]`,
+		"long published": `services:
+  web:
+    image: nginx:latest
+    ports:
+      - target: 80
+        published: "8080"`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			if _, err := service.ParseComposeYAML(yaml); err == nil || !strings.Contains(err.Error(), "must not publish host ports") {
+				t.Fatalf("ParseComposeYAML() error = %v, want host-port rejection", err)
+			}
+		})
 	}
 }

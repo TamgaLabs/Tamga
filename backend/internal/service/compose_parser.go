@@ -94,6 +94,9 @@ func ParseComposeYAML(yamlContent string) ([]domain.ComposeService, error) {
 		if err := rejectUnsupportedFeatures(name, svc); err != nil {
 			return nil, err
 		}
+		if err := validateNoHostPortMappings(types.Services{name: svc}); err != nil {
+			return nil, err
+		}
 
 		dependsOn := make([]string, 0, len(svc.DependsOn))
 		for dep := range svc.DependsOn {
@@ -137,6 +140,22 @@ func rejectUnsupportedFeatures(name string, svc types.ServiceConfig) error {
 	}
 	if svc.HealthCheck != nil {
 		return fmt.Errorf("service %q: healthcheck is not supported yet; remove the healthcheck block", name)
+	}
+	return nil
+}
+
+// validateNoHostPortMappings rejects every compose syntax that publishes a
+// container port on the host. compose-go has already normalized short and long
+// forms into ServicePortConfig, so Published is the one fail-closed signal to
+// check. A target-only entry remains valid: it documents a container port but
+// creates no host listener.
+func validateNoHostPortMappings(services types.Services) error {
+	for name, svc := range services {
+		for _, port := range svc.Ports {
+			if port.Published != "" {
+				return fmt.Errorf("service %q must not publish host ports", name)
+			}
+		}
 	}
 	return nil
 }

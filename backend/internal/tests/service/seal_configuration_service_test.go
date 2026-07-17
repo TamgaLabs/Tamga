@@ -68,7 +68,7 @@ func TestSealServicesAuthorityAndNextJSGeneration(t *testing.T) {
 	if err != nil || strings.Contains(string(compose), "ports:") || !strings.Contains(string(compose), "expose:") {
 		t.Fatalf("generated compose must be private: %q err=%v", compose, err)
 	}
-	if !strings.Contains(string(compose), "web:") || !strings.Contains(string(compose), "worker:") || !strings.Contains(string(compose), "depends_on:") {
+	if !strings.Contains(string(compose), "web:") || !strings.Contains(string(compose), "worker:") || !strings.Contains(string(compose), "depends_on:") || !strings.Contains(string(compose), "networks:\n  default:\n    internal: true") {
 		t.Fatalf("generated compose must project every validated service and dependency: %q", compose)
 	}
 	dockerfile, err := os.ReadFile(filepath.Join(dataDir, "seals", "1", ".tamga", "generated", "Dockerfile"))
@@ -87,8 +87,20 @@ func TestSealServicesAuthorityAndNextJSGeneration(t *testing.T) {
 	if unchanged, err := os.ReadFile(filepath.Join(dataDir, "seals", "1", ".tamga", "generated", "compose.yaml")); err != nil || string(unchanged) != string(compose) {
 		t.Fatalf("direct configuration must not replace the generated artifact: %q err=%v", unchanged, err)
 	}
-	if _, err := svc.SaveConfiguration(context.Background(), seal.ID, service.SaveSealConfigurationRequest{ComposeYAML: "services:\n  web:\n    ports: [\"3000:3000\"]\n"}); err == nil {
-		t.Fatal("host port mapping was accepted")
+	for name, compose := range map[string]string{
+		"short":        "services:\n  web:\n    ports: [\"3000:3000\"]\n",
+		"host address": "services:\n  web:\n    ports: [\"127.0.0.1:3000:3000\"]\n",
+		"long":         "services:\n  web:\n    ports:\n      - target: 3000\n        published: \"3000\"\n",
+	} {
+		t.Run("reject host port "+name, func(t *testing.T) {
+			_, err := svc.SaveConfiguration(context.Background(), seal.ID, service.SaveSealConfigurationRequest{ComposeYAML: compose})
+			if err == nil || !strings.Contains(err.Error(), "must not publish host ports") {
+				t.Fatalf("host port mapping error = %v, want host-port rejection", err)
+			}
+		})
+	}
+	if _, err := svc.SaveConfiguration(context.Background(), seal.ID, service.SaveSealConfigurationRequest{ComposeYAML: "services:\n  web:\n    ports: [\"3000\"]\n"}); err != nil {
+		t.Fatalf("target-only container port was rejected: %v", err)
 	}
 	reset, err := svc.SaveConfiguration(context.Background(), seal.ID, service.SaveSealConfigurationRequest{Regenerate: true})
 	if err != nil || reset.Authority != "generated" || reset.DirectCompose != "" {

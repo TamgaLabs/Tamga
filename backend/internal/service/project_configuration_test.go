@@ -283,7 +283,7 @@ func TestSetRoutesAcceptsConfiguredServiceAndRejectsPathRouting(t *testing.T) {
 	if err := svc.db.CreateProjectSource(&domain.ProjectSource{ProjectID: project.ID, DisplayName: "web", RemoteURL: "https://example.test/web.git", Branch: "main", WorkspacePath: ".", Status: domain.ProjectSourceStatusReady}); err != nil {
 		t.Fatal(err)
 	}
-	compose := "services:\n  web:\n    build:\n      context: .\n    ports:\n      - \"8080:8080\"\n  worker:\n    build:\n      context: ."
+	compose := "services:\n  web:\n    build:\n      context: .\n    expose:\n      - \"8080\"\n  worker:\n    build:\n      context: ."
 	if _, err := svc.SaveConfiguration(context.Background(), project.ID, SaveProjectConfigurationRequest{ComposeYAML: compose}); err != nil {
 		t.Fatalf("save configuration: %v", err)
 	}

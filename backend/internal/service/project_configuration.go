@@ -224,6 +224,9 @@ func validateBuildCompose(yamlContent string, sources []*domain.ProjectSource) (
 	result := make([]ComposeBuildService, 0, len(names))
 	for _, name := range names {
 		svc := project.Services[name]
+		if err := validateNoHostPortMappings(types.Services{name: svc}); err != nil {
+			return nil, err
+		}
 		if svc.Image != "" || svc.Build == nil {
 			return nil, fmt.Errorf("service %q must use a supported build configuration, not image-only configuration", name)
 		}
@@ -259,6 +262,9 @@ func parseBuildRuntimeCompose(yamlContent string) ([]domain.ComposeService, erro
 		if len(svc.Profiles) > 0 || len(svc.Secrets) > 0 || svc.HealthCheck != nil {
 			return nil, fmt.Errorf("service %q uses unsupported runtime configuration", name)
 		}
+		if err := validateNoHostPortMappings(types.Services{name: svc}); err != nil {
+			return nil, err
+		}
 		deps := make([]string, 0, len(svc.DependsOn))
 		for dep := range svc.DependsOn {
 			deps = append(deps, dep)
@@ -276,5 +282,5 @@ func workspacePath(value string) (string, error) {
 	return filepath.ToSlash(clean), nil
 }
 
-const nextJSComposeTemplate = "services:\n  app:\n    build:\n      context: .\n      dockerfile: Dockerfile\n    ports:\n      - \"3000:3000\""
+const nextJSComposeTemplate = "services:\n  app:\n    build:\n      context: .\n      dockerfile: Dockerfile\n    expose:\n      - \"3000\""
 const nextJSDockerfile = "FROM node:20-alpine\nWORKDIR /app\nCOPY package*.json ./\nRUN npm ci\nCOPY . .\nRUN npm run build\nEXPOSE 3000\nCMD [\"npm\", \"run\", \"start\"]\n"

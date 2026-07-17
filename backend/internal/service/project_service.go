@@ -757,8 +757,8 @@ func (s *ProjectService) writeProjectRoutes(ctx context.Context, project *domain
 // Traefik only when at least one persisted project_route is present.
 func (s *ProjectService) deployStack(ctx context.Context, project *domain.Project, services []domain.ComposeService, pullImages bool) error {
 	netName := sealNetworkName(project.ID)
-	if err := s.docker.EnsureNetwork(ctx, netName, false); err != nil {
-		return fmt.Errorf("ensure project network: %w", err)
+	if err := s.docker.EnsureNetwork(ctx, netName, true); err != nil {
+		return fmt.Errorf("ensure Seal internal network: %w", err)
 	}
 
 	order, err := TopoSortServices(toComposeServiceDeps(services))
