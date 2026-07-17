@@ -3,12 +3,15 @@ package service
 import (
 	"context"
 	"fmt"
+	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/TamgaLabs/Tamga/backend/internal/config"
 	"github.com/TamgaLabs/Tamga/backend/internal/domain"
 	"github.com/TamgaLabs/Tamga/backend/internal/repository/sqlite"
+	"github.com/TamgaLabs/Tamga/backend/internal/repository/traefik"
 )
 
 type fakeSealRuntime struct {
@@ -48,6 +51,12 @@ func (r *fakeSealRuntime) InspectContainer(_ context.Context, id string) (sealRu
 		return sealRuntimeContainer{}, fmt.Errorf("not found")
 	}
 	return c, nil
+}
+func (r *fakeSealRuntime) FindContainerByComposeService(_ context.Context, service string) (string, error) {
+	return service, nil
+}
+func (r *fakeSealRuntime) NetworkConnect(_ context.Context, _ string, _ string, _ []string) error {
+	return nil
 }
 
 func newSealRuntimeTestService(t *testing.T) (*SealService, *sqlite.DB, *fakeSealRuntime) {
@@ -94,6 +103,67 @@ func TestSealRuntimeDeployPersistsActualContainerIdentityAndTarget(t *testing.T)
 	target, err := svc.RunningServiceTarget(context.Background(), seal.ID, service.ID)
 	if err != nil || target != "seal-1-web:8080" {
 		t.Fatalf("running target = %q, err=%v", target, err)
+	}
+}
+
+func TestSealRoutesPublishOnlyRoutedServicesAndWithdrawImmediately(t *testing.T) {
+	svc, db, _ := newSealRuntimeTestService(t)
+	dynamicDir := t.TempDir()
+	svc.SetRoutePublisher(traefik.New(dynamicDir))
+	seal := &domain.Seal{Name: "routes", SourceType: domain.SourceTypeCompose, Status: domain.ProjectStatusConfiguring, ConfigAuthority: configurationAuthorityDirect, ComposeYAML: "services:\n  web:\n    image: nginx:alpine\n    ports: [\"8080\"]\n  worker:\n    image: nginx:alpine\n    ports: [\"9000\"]\n"}
+	if err := db.CreateSeal(seal); err != nil {
+		t.Fatal(err)
+	}
+	repository := &domain.SealRepository{SealID: seal.ID, DisplayName: "app", RemoteURL: "https://example.invalid/app.git", Branch: "main", WorkspacePath: "repositories/app", Status: domain.ProjectSourceStatusReady}
+	if err := db.CreateSealRepository(repository); err != nil {
+		t.Fatal(err)
+	}
+	web := &domain.SealService{SealID: seal.ID, RepositoryID: repository.ID, Name: "web", BuildContext: ".", InternalPort: 8080}
+	worker := &domain.SealService{SealID: seal.ID, RepositoryID: repository.ID, Name: "worker", BuildContext: ".", InternalPort: 9000}
+	if err := db.CreateSealService(web); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.CreateSealService(worker); err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.Deploy(t.Context(), seal.ID); err != nil {
+		t.Fatalf("Deploy: %v", err)
+	}
+	first, err := svc.AddServiceRoute(t.Context(), seal.ID, web.ID, CreateSealServiceRouteRequest{Domain: "app.example.test"})
+	if err != nil {
+		t.Fatalf("add first route: %v", err)
+	}
+	second, err := svc.AddServiceRoute(t.Context(), seal.ID, web.ID, CreateSealServiceRouteRequest{Domain: "www.example.test"})
+	if err != nil {
+		t.Fatalf("add second route: %v", err)
+	}
+	path := filepath.Join(dynamicDir, "seal-1.yml")
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read proxy config: %v", err)
+	}
+	config := string(raw)
+	if !strings.Contains(config, "Host(`app.example.test`)") || !strings.Contains(config, "Host(`www.example.test`)") {
+		t.Fatalf("both web domains must be published: %s", config)
+	}
+	if strings.Contains(config, "worker") || strings.Contains(config, ":9000") {
+		t.Fatalf("unrouted worker must not be published: %s", config)
+	}
+	if strings.Count(config, "http://seal-1-web:8080") != 2 {
+		t.Fatalf("both routes must target the selected web service: %s", config)
+	}
+	if err := svc.DeleteServiceRoute(t.Context(), seal.ID, web.ID, first.ID); err != nil {
+		t.Fatalf("delete first route: %v", err)
+	}
+	raw, err = os.ReadFile(path)
+	if err != nil || strings.Contains(string(raw), "app.example.test") || !strings.Contains(string(raw), "www.example.test") {
+		t.Fatalf("delete must promptly replace only its route: %s, err=%v", raw, err)
+	}
+	if err := svc.DeleteServiceRoute(t.Context(), seal.ID, web.ID, second.ID); err != nil {
+		t.Fatalf("delete final route: %v", err)
+	}
+	if _, err := os.Stat(path); !os.IsNotExist(err) {
+		t.Fatalf("final route deletion must withdraw proxy config: %v", err)
 	}
 }
 

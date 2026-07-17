@@ -61,6 +61,7 @@ func main() {
 	gitCredentialService := service.NewGitCredentialService(db, cfg.JWTSecret)
 	projectService := service.NewProjectService(db, dockerClient, traefikClient, cfg, gitCredentialService)
 	sealService := service.NewSealService(db, cfg, dockerClient)
+	sealService.SetRoutePublisher(traefikClient)
 	agentService := service.NewAgentService(db, dockerClient, cfg, whitelistService, egressService, resourceLimitService, gitCredentialService, idleTimeoutService)
 	// Starts its own background scrape loop (FEAT-031).
 	service.NewMetricsScraperService(db, cfg.TraefikMetricsURL, cfg.TraefikMetricsPeriod)
@@ -84,8 +85,8 @@ func main() {
 	// (FEAT-028's per-project-network reachability design), in case that
 	// attachment itself was ever lost.
 	projectService.ReconcileRoutes(context.Background())
-	// Reconcile Seal runtime identity separately from legacy project route
-	// state. This intentionally does not publish routes.
+	// Reconcile Seal runtime identity and re-publish only its persisted exact
+	// service routes after their containers are verified running.
 	sealService.ReconcileRuntime(context.Background())
 
 	systemHandler := handler.NewSystemHandler()

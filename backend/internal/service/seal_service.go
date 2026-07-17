@@ -10,6 +10,7 @@ import (
 	"github.com/TamgaLabs/Tamga/backend/internal/domain"
 	dockerclient "github.com/TamgaLabs/Tamga/backend/internal/repository/docker"
 	"github.com/TamgaLabs/Tamga/backend/internal/repository/sqlite"
+	traefikrepo "github.com/TamgaLabs/Tamga/backend/internal/repository/traefik"
 )
 
 // SealService owns lifecycle operations that are valid before a Seal has any
@@ -18,6 +19,7 @@ type SealService struct {
 	db      *sqlite.DB
 	cfg     config.Config
 	runtime sealRuntime
+	routes  sealRoutePublisher
 }
 
 // NewSealService accepts an optional Docker client so configuration-only
@@ -29,6 +31,12 @@ func NewSealService(db *sqlite.DB, cfg config.Config, docker ...*dockerclient.Cl
 		svc.runtime = dockerSealRuntime{client: docker[0]}
 	}
 	return svc
+}
+
+// SetRoutePublisher gives the Seal runtime ownership of its dynamic proxy
+// configuration without coupling configuration-only callers to Traefik.
+func (s *SealService) SetRoutePublisher(publisher *traefikrepo.Client) {
+	s.routes = publisher
 }
 
 type CreateSealRequest struct {

@@ -9,6 +9,7 @@ import (
 
 	"github.com/TamgaLabs/Tamga/backend/internal/domain"
 	dockerclient "github.com/TamgaLabs/Tamga/backend/internal/repository/docker"
+	traefikrepo "github.com/TamgaLabs/Tamga/backend/internal/repository/traefik"
 )
 
 // sealRuntime is deliberately smaller than the Docker client. It captures the
@@ -21,6 +22,13 @@ type sealRuntime interface {
 	CreateContainer(context.Context, string, string, []string, string, []string, []string) (string, error)
 	StartContainer(context.Context, string) error
 	InspectContainer(context.Context, string) (sealRuntimeContainer, error)
+	FindContainerByComposeService(context.Context, string) (string, error)
+	NetworkConnect(context.Context, string, string, []string) error
+}
+
+type sealRoutePublisher interface {
+	ReplaceRoutes(int64, []traefikrepo.Route) error
+	RemoveRoute(int64) error
 }
 
 type sealRuntimeContainer struct {
@@ -61,6 +69,14 @@ func (r dockerSealRuntime) InspectContainer(ctx context.Context, id string) (sea
 		name = info.Name[1:]
 	}
 	return sealRuntimeContainer{ID: info.ID, Name: name, Running: info.State != nil && info.State.Running}, nil
+}
+
+func (r dockerSealRuntime) FindContainerByComposeService(ctx context.Context, service string) (string, error) {
+	return r.client.FindContainerByComposeService(ctx, service)
+}
+
+func (r dockerSealRuntime) NetworkConnect(ctx context.Context, network, container string, aliases []string) error {
+	return r.client.NetworkConnect(ctx, network, container, aliases)
 }
 
 func (s *SealService) requireRuntime() error {
@@ -148,13 +164,12 @@ func (s *SealService) deployRuntime(ctx context.Context, seal *domain.Seal, serv
 	if err := s.db.UpdateSeal(seal); err != nil {
 		return fmt.Errorf("record running Seal: %w", err)
 	}
-	return nil
+	return s.reconcileSealRoutes(ctx, seal)
 }
 
 // ReconcileRuntime recovers persisted service identity from Docker on API
-// startup. It never publishes Traefik routes; route reconciliation remains a
-// separate future concern. Missing or stopped services mark only their owning
-// Seal as error and leave its persisted identity intact for diagnosis.
+// startup and republishes routes only after every persisted service has been
+// verified running. Missing or stopped services lose proxy exposure.
 func (s *SealService) ReconcileRuntime(ctx context.Context) {
 	if s.runtime == nil {
 		return
@@ -166,6 +181,7 @@ func (s *SealService) ReconcileRuntime(ctx context.Context) {
 	}
 	for _, seal := range seals {
 		if seal.Status != domain.ProjectStatusRunning {
+			s.withdrawSealRoutes(seal.ID)
 			continue
 		}
 		containers, err := s.db.ListServiceContainers(seal.ID)
@@ -194,17 +210,98 @@ func (s *SealService) ReconcileRuntime(ctx context.Context) {
 		seal.ContainerID = refreshed[0].ContainerID
 		if err := s.db.UpdateSeal(seal); err != nil {
 			slog.Warn("reconcile Seal runtime: update Seal", "seal_id", seal.ID, "error", err)
+			continue
+		}
+		if err := s.reconcileSealRoutes(ctx, seal); err != nil {
+			slog.Warn("reconcile Seal routes", "seal_id", seal.ID, "error", err)
 		}
 	}
 }
 
 func (s *SealService) markSealRuntimeError(seal *domain.Seal, reason string, err error) {
 	seal.Status = domain.ProjectStatusError
+	s.withdrawSealRoutes(seal.ID)
 	if updateErr := s.db.UpdateSeal(seal); updateErr != nil {
 		slog.Warn("reconcile Seal runtime: "+reason, "seal_id", seal.ID, "error", err, "update_error", updateErr)
 		return
 	}
 	slog.Warn("reconcile Seal runtime: "+reason, "seal_id", seal.ID, "error", err)
+}
+
+// reconcileRunningSealRoutes updates proxy configuration after a route mutation
+// only when the Seal has an already-verified running runtime.
+func (s *SealService) reconcileRunningSealRoutes(ctx context.Context, sealID int64) error {
+	seal, err := s.db.FindSeal(sealID)
+	if err != nil {
+		return fmt.Errorf("find Seal: %w", err)
+	}
+	if seal.Status != domain.ProjectStatusRunning || s.routes == nil {
+		return nil
+	}
+	return s.reconcileSealRoutes(ctx, seal)
+}
+
+// reconcileSealRoutes projects every persisted exact-domain route for one
+// running Seal into its single atomic Traefik file. Services without routes are
+// deliberately omitted. A failed target lookup withdraws the old file rather
+// than leaving a stale public route behind.
+func (s *SealService) reconcileSealRoutes(ctx context.Context, seal *domain.Seal) error {
+	if s.routes == nil {
+		return nil
+	}
+	if seal.Status != domain.ProjectStatusRunning {
+		s.withdrawSealRoutes(seal.ID)
+		return nil
+	}
+	services, err := s.db.ListSealServices(seal.ID)
+	if err != nil {
+		return fmt.Errorf("list Seal services: %w", err)
+	}
+	output := make([]traefikrepo.Route, 0)
+	for _, service := range services {
+		routes, err := s.db.ListSealServiceRoutes(seal.ID, service.ID)
+		if err != nil {
+			return fmt.Errorf("list Seal service routes: %w", err)
+		}
+		if len(routes) == 0 {
+			continue
+		}
+		target, err := s.RunningServiceTarget(ctx, seal.ID, service.ID)
+		if err != nil {
+			s.withdrawSealRoutes(seal.ID)
+			return err
+		}
+		for _, route := range routes {
+			output = append(output, traefikrepo.Route{Service: service.Name, Domain: route.Domain, Upstream: target})
+		}
+	}
+	if len(output) == 0 {
+		s.withdrawSealRoutes(seal.ID)
+		return nil
+	}
+	if s.runtime != nil {
+		traefikName, err := s.runtime.FindContainerByComposeService(ctx, "traefik")
+		if err == nil {
+			if err := s.runtime.NetworkConnect(ctx, sealNetworkName(seal.ID), traefikName, nil); err != nil {
+				slog.Warn("connect traefik to Seal network", "seal_id", seal.ID, "error", err)
+			}
+		} else {
+			slog.Warn("traefik container not found, Seal route may be unreachable", "seal_id", seal.ID, "error", err)
+		}
+	}
+	if err := s.routes.ReplaceRoutes(seal.ID, output); err != nil {
+		return fmt.Errorf("write Seal routes: %w", err)
+	}
+	return nil
+}
+
+func (s *SealService) withdrawSealRoutes(sealID int64) {
+	if s.routes == nil {
+		return
+	}
+	if err := s.routes.RemoveRoute(sealID); err != nil {
+		slog.Warn("withdraw Seal routes", "seal_id", sealID, "error", err)
+	}
 }
 
 // RunningServiceTarget gives the later route publisher a verified internal

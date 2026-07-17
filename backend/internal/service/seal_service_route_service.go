@@ -39,6 +39,9 @@ func (s *SealService) AddServiceRoute(ctx context.Context, sealID, serviceID int
 		}
 		return nil, err
 	}
+	if err := s.reconcileRunningSealRoutes(ctx, sealID); err != nil {
+		return nil, err
+	}
 	return route, nil
 }
 
@@ -59,6 +62,9 @@ func (s *SealService) DeleteServiceRoute(ctx context.Context, sealID, serviceID,
 	}
 	if !deleted {
 		return ErrSealServiceRouteNotFound
+	}
+	if err := s.reconcileRunningSealRoutes(ctx, sealID); err != nil {
+		return err
 	}
 	return nil
 }
