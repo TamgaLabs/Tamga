@@ -49,9 +49,9 @@ func TestSealServiceCreateEstablishesEmptyOwnedWorkspace(t *testing.T) {
 	}
 
 	workspace := filepath.Join(dataDir, "seals", "1")
-	compose, err := os.ReadFile(filepath.Join(workspace, "compose.yaml"))
+	compose, err := os.ReadFile(filepath.Join(workspace, ".tamga", "generated", "compose.yaml"))
 	if err != nil {
-		t.Fatalf("read empty Seal compose file: %v", err)
+		t.Fatalf("read Tamga-owned empty Seal compose file: %v", err)
 	}
 	if string(compose) != "services: {}\n" {
 		t.Fatalf("unexpected empty Seal compose file: %q", compose)
@@ -64,6 +64,9 @@ func TestSealServiceCreateEstablishesEmptyOwnedWorkspace(t *testing.T) {
 	}
 	if parsed.Services == nil || len(parsed.Services) != 0 {
 		t.Fatalf("expected parsed services: {}, got %#v", parsed.Services)
+	}
+	if _, err := os.Stat(filepath.Join(workspace, "compose.yaml")); !os.IsNotExist(err) {
+		t.Fatalf("generated configuration must stay out of the default workspace: %v", err)
 	}
 
 	for _, prohibited := range []string{".git", "sources"} {

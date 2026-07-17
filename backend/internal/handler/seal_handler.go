@@ -3,6 +3,9 @@ package handler
 import (
 	"encoding/json"
 	"net/http"
+	"strconv"
+
+	"github.com/go-chi/chi/v5"
 
 	"github.com/TamgaLabs/Tamga/backend/internal/service"
 )
@@ -35,4 +38,150 @@ func (h *SealHandler) Create(w http.ResponseWriter, r *http.Request) {
 	}
 	w.WriteHeader(http.StatusCreated)
 	json.NewEncoder(w).Encode(seal)
+}
+
+func (h *SealHandler) ListRepositories(w http.ResponseWriter, r *http.Request) {
+	sealID, ok := sealIDFromRequest(w, r)
+	if !ok {
+		return
+	}
+	repositories, err := h.svc.ListRepositories(r.Context(), sealID)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusNotFound)
+		return
+	}
+	json.NewEncoder(w).Encode(repositories)
+}
+
+func (h *SealHandler) CreateRepository(w http.ResponseWriter, r *http.Request) {
+	sealID, ok := sealIDFromRequest(w, r)
+	if !ok {
+		return
+	}
+	var req service.CreateSealRepositoryRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "invalid request body", http.StatusBadRequest)
+		return
+	}
+	repository, err := h.svc.CreateRepository(r.Context(), sealID, req)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	w.WriteHeader(http.StatusCreated)
+	json.NewEncoder(w).Encode(repository)
+}
+
+func (h *SealHandler) RefreshRepository(w http.ResponseWriter, r *http.Request) {
+	sealID, ok := sealIDFromRequest(w, r)
+	if !ok {
+		return
+	}
+	repositoryID, ok := repositoryIDFromRequest(w, r)
+	if !ok {
+		return
+	}
+	repository, err := h.svc.RefreshRepository(r.Context(), sealID, repositoryID)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusNotFound)
+		return
+	}
+	json.NewEncoder(w).Encode(repository)
+}
+
+func (h *SealHandler) DeleteRepository(w http.ResponseWriter, r *http.Request) {
+	sealID, ok := sealIDFromRequest(w, r)
+	if !ok {
+		return
+	}
+	repositoryID, ok := repositoryIDFromRequest(w, r)
+	if !ok {
+		return
+	}
+	if err := h.svc.DeleteRepository(r.Context(), sealID, repositoryID); err != nil {
+		http.Error(w, err.Error(), http.StatusNotFound)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (h *SealHandler) ListServices(w http.ResponseWriter, r *http.Request) {
+	sealID, ok := sealIDFromRequest(w, r)
+	if !ok {
+		return
+	}
+	services, err := h.svc.ListServices(r.Context(), sealID)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusNotFound)
+		return
+	}
+	json.NewEncoder(w).Encode(services)
+}
+
+func (h *SealHandler) CreateService(w http.ResponseWriter, r *http.Request) {
+	sealID, ok := sealIDFromRequest(w, r)
+	if !ok {
+		return
+	}
+	var req service.CreateSealServiceRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "invalid request body", http.StatusBadRequest)
+		return
+	}
+	created, err := h.svc.CreateService(r.Context(), sealID, req)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	w.WriteHeader(http.StatusCreated)
+	json.NewEncoder(w).Encode(created)
+}
+
+func (h *SealHandler) Configuration(w http.ResponseWriter, r *http.Request) {
+	sealID, ok := sealIDFromRequest(w, r)
+	if !ok {
+		return
+	}
+	configuration, err := h.svc.Configuration(r.Context(), sealID)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusNotFound)
+		return
+	}
+	json.NewEncoder(w).Encode(configuration)
+}
+
+func (h *SealHandler) SaveConfiguration(w http.ResponseWriter, r *http.Request) {
+	sealID, ok := sealIDFromRequest(w, r)
+	if !ok {
+		return
+	}
+	var req service.SaveSealConfigurationRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "invalid request body", http.StatusBadRequest)
+		return
+	}
+	configuration, err := h.svc.SaveConfiguration(r.Context(), sealID, req)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	json.NewEncoder(w).Encode(configuration)
+}
+
+func sealIDFromRequest(w http.ResponseWriter, r *http.Request) (int64, bool) {
+	id, err := strconv.ParseInt(chi.URLParam(r, "sealID"), 10, 64)
+	if err != nil || id <= 0 {
+		http.Error(w, "invalid seal id", http.StatusBadRequest)
+		return 0, false
+	}
+	return id, true
+}
+
+func repositoryIDFromRequest(w http.ResponseWriter, r *http.Request) (int64, bool) {
+	id, err := strconv.ParseInt(chi.URLParam(r, "repositoryID"), 10, 64)
+	if err != nil || id <= 0 {
+		http.Error(w, "invalid repository id", http.StatusBadRequest)
+		return 0, false
+	}
+	return id, true
 }

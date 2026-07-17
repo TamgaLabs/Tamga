@@ -50,6 +50,14 @@ func New(
 
 			// Seals
 			r.Post("/seals", sealHandler.Create)
+			r.Get("/seals/{sealID}/repositories", sealHandler.ListRepositories)
+			r.Post("/seals/{sealID}/repositories", sealHandler.CreateRepository)
+			r.Post("/seals/{sealID}/repositories/{repositoryID}/refresh", sealHandler.RefreshRepository)
+			r.Delete("/seals/{sealID}/repositories/{repositoryID}", sealHandler.DeleteRepository)
+			r.Get("/seals/{sealID}/services", sealHandler.ListServices)
+			r.Post("/seals/{sealID}/services", sealHandler.CreateService)
+			r.Get("/seals/{sealID}/configuration", sealHandler.Configuration)
+			r.Put("/seals/{sealID}/configuration", sealHandler.SaveConfiguration)
 
 			// System / Docker containers
 			r.Get("/system/containers", containerHandler.List)

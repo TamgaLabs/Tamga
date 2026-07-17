@@ -11,8 +11,6 @@ import (
 	"github.com/TamgaLabs/Tamga/backend/internal/repository/sqlite"
 )
 
-const emptySealComposeYAML = "services: {}\n"
-
 // SealService owns lifecycle operations that are valid before a Seal has any
 // repositories or deployment configuration.
 type SealService struct {
@@ -34,11 +32,12 @@ type CreateSealRequest struct {
 // those begin only after a repository or configuration is explicitly added.
 func (s *SealService) Create(_ context.Context, req CreateSealRequest) (*domain.Seal, error) {
 	seal := &domain.Seal{
-		Name:       req.Name,
-		SourceType: domain.SourceTypeEmpty,
-		Domain:     req.Domain,
-		Status:     domain.ProjectStatusConfiguring,
-		Branch:     "main",
+		Name:            req.Name,
+		SourceType:      domain.SourceTypeEmpty,
+		Domain:          req.Domain,
+		Status:          domain.ProjectStatusConfiguring,
+		Branch:          "main",
+		ConfigAuthority: "generated",
 	}
 	if err := s.db.CreateSeal(seal); err != nil {
 		return nil, fmt.Errorf("create seal: %w", err)
@@ -48,8 +47,8 @@ func (s *SealService) Create(_ context.Context, req CreateSealRequest) (*domain.
 	if err := os.MkdirAll(workspace, 0755); err != nil {
 		return nil, fmt.Errorf("create seal workspace: %w", err)
 	}
-	if err := os.WriteFile(filepath.Join(workspace, "compose.yaml"), []byte(emptySealComposeYAML), 0644); err != nil {
-		return nil, fmt.Errorf("write empty seal compose file: %w", err)
+	if err := s.writeGeneratedCompose(seal.ID, "services: {}\n", false); err != nil {
+		return nil, err
 	}
 	return seal, nil
 }

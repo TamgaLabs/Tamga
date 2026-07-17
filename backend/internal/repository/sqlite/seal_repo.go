@@ -8,8 +8,8 @@ import (
 
 func (db *DB) CreateSeal(seal *domain.Seal) error {
 	result, err := db.Exec(
-		"INSERT INTO seals (name, source_type, repo_url, branch, domain, status, container_id, compose_yaml, exposed_service) VALUES (?, ?, ?, ?, ?, ?, '', ?, ?)",
-		seal.Name, seal.SourceType, seal.RepoURL, seal.Branch, seal.Domain, seal.Status, seal.ComposeYAML, seal.ExposedService,
+		"INSERT INTO seals (name, source_type, repo_url, branch, domain, status, container_id, compose_yaml, config_authority, exposed_service) VALUES (?, ?, ?, ?, ?, ?, '', ?, ?, ?)",
+		seal.Name, seal.SourceType, seal.RepoURL, seal.Branch, seal.Domain, seal.Status, seal.ComposeYAML, seal.ConfigAuthority, seal.ExposedService,
 	)
 	if err != nil {
 		return fmt.Errorf("create seal: %w", err)
@@ -20,8 +20,8 @@ func (db *DB) CreateSeal(seal *domain.Seal) error {
 
 func (db *DB) FindSeal(id int64) (*domain.Seal, error) {
 	seal := &domain.Seal{}
-	err := db.QueryRow("SELECT id, name, source_type, repo_url, branch, domain, status, container_id, COALESCE(compose_yaml, ''), COALESCE(exposed_service, ''), config_revision, build_revision, created_at, updated_at FROM seals WHERE id = ?", id).Scan(
-		&seal.ID, &seal.Name, &seal.SourceType, &seal.RepoURL, &seal.Branch, &seal.Domain, &seal.Status, &seal.ContainerID, &seal.ComposeYAML, &seal.ExposedService, &seal.ConfigRevision, &seal.BuildRevision, &seal.CreatedAt, &seal.UpdatedAt,
+	err := db.QueryRow("SELECT id, name, source_type, repo_url, branch, domain, status, container_id, COALESCE(compose_yaml, ''), config_authority, COALESCE(exposed_service, ''), config_revision, build_revision, created_at, updated_at FROM seals WHERE id = ?", id).Scan(
+		&seal.ID, &seal.Name, &seal.SourceType, &seal.RepoURL, &seal.Branch, &seal.Domain, &seal.Status, &seal.ContainerID, &seal.ComposeYAML, &seal.ConfigAuthority, &seal.ExposedService, &seal.ConfigRevision, &seal.BuildRevision, &seal.CreatedAt, &seal.UpdatedAt,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("find seal: %w", err)
@@ -30,7 +30,7 @@ func (db *DB) FindSeal(id int64) (*domain.Seal, error) {
 }
 
 func (db *DB) ListSeals() ([]*domain.Seal, error) {
-	rows, err := db.Query("SELECT id, name, source_type, repo_url, branch, domain, status, container_id, COALESCE(compose_yaml, ''), COALESCE(exposed_service, ''), config_revision, build_revision, created_at, updated_at FROM seals ORDER BY created_at DESC")
+	rows, err := db.Query("SELECT id, name, source_type, repo_url, branch, domain, status, container_id, COALESCE(compose_yaml, ''), config_authority, COALESCE(exposed_service, ''), config_revision, build_revision, created_at, updated_at FROM seals ORDER BY created_at DESC")
 	if err != nil {
 		return nil, fmt.Errorf("list seals: %w", err)
 	}
@@ -39,7 +39,7 @@ func (db *DB) ListSeals() ([]*domain.Seal, error) {
 	var seals []*domain.Seal
 	for rows.Next() {
 		seal := &domain.Seal{}
-		if err := rows.Scan(&seal.ID, &seal.Name, &seal.SourceType, &seal.RepoURL, &seal.Branch, &seal.Domain, &seal.Status, &seal.ContainerID, &seal.ComposeYAML, &seal.ExposedService, &seal.ConfigRevision, &seal.BuildRevision, &seal.CreatedAt, &seal.UpdatedAt); err != nil {
+		if err := rows.Scan(&seal.ID, &seal.Name, &seal.SourceType, &seal.RepoURL, &seal.Branch, &seal.Domain, &seal.Status, &seal.ContainerID, &seal.ComposeYAML, &seal.ConfigAuthority, &seal.ExposedService, &seal.ConfigRevision, &seal.BuildRevision, &seal.CreatedAt, &seal.UpdatedAt); err != nil {
 			return nil, fmt.Errorf("scan seal: %w", err)
 		}
 		seals = append(seals, seal)
@@ -48,7 +48,7 @@ func (db *DB) ListSeals() ([]*domain.Seal, error) {
 }
 
 func (db *DB) UpdateSeal(seal *domain.Seal) error {
-	_, err := db.Exec("UPDATE seals SET name=?, source_type=?, repo_url=?, branch=?, domain=?, status=?, container_id=?, compose_yaml=?, exposed_service=?, config_revision=?, build_revision=?, updated_at=CURRENT_TIMESTAMP WHERE id=?", seal.Name, seal.SourceType, seal.RepoURL, seal.Branch, seal.Domain, seal.Status, seal.ContainerID, seal.ComposeYAML, seal.ExposedService, seal.ConfigRevision, seal.BuildRevision, seal.ID)
+	_, err := db.Exec("UPDATE seals SET name=?, source_type=?, repo_url=?, branch=?, domain=?, status=?, container_id=?, compose_yaml=?, config_authority=?, exposed_service=?, config_revision=?, build_revision=?, updated_at=CURRENT_TIMESTAMP WHERE id=?", seal.Name, seal.SourceType, seal.RepoURL, seal.Branch, seal.Domain, seal.Status, seal.ContainerID, seal.ComposeYAML, seal.ConfigAuthority, seal.ExposedService, seal.ConfigRevision, seal.BuildRevision, seal.ID)
 	if err != nil {
 		return fmt.Errorf("update seal: %w", err)
 	}
