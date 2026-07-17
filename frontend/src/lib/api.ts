@@ -88,6 +88,35 @@ export type ProjectSource = {
   error_summary?: string;
 };
 
+export type Seal = {
+  id: number;
+  name: string;
+  source_type: "empty" | "local" | "remote" | "compose";
+  repo_url: string;
+  branch: string;
+  domain: string;
+  status: string;
+  container_id?: string;
+  compose_yaml?: string;
+  config_authority: string;
+  exposed_service?: string;
+  config_revision: number;
+  build_revision: number;
+  created_at: string;
+  updated_at: string;
+};
+
+export type SealRepository = {
+  id: number;
+  seal_id: number;
+  display_name: string;
+  remote_url: string;
+  branch: string;
+  workspace_path: string;
+  status: "pending" | "cloning" | "ready" | "clone_failed";
+  error_summary?: string;
+};
+
 export type ProjectConfiguration = {
   sources: ProjectSource[];
   facts: { workspace_path: string; dockerfile: boolean; compose_file?: string; nextjs: boolean }[];
@@ -101,6 +130,31 @@ export type ProjectConfiguration = {
 };
 
 export type ProjectRoute = { id?: number; project_id?: number; service: string; domain: string };
+
+export type SealService = {
+  id: number;
+  seal_id: number;
+  repository_id: number;
+  name: string;
+  build_context: string;
+  internal_port: number;
+  dependencies: string[];
+};
+
+export type SealConfiguration = {
+  authority: "generated" | "direct" | string;
+  services: SealService[];
+  facts: { repository_id: number; detected: boolean; preconfigured: boolean }[];
+  direct_compose?: string;
+  build_permitted: boolean;
+};
+
+export type SealServiceRoute = {
+  id: number;
+  seal_id: number;
+  service_id: number;
+  domain: string;
+};
 export type ServiceEnvVar = EnvVar & { service_name: string };
 
 export type Deployment = {
@@ -151,6 +205,13 @@ export const createProject = (data: {
     method: "POST",
     body: JSON.stringify(data),
   });
+
+export const createSeal = (data: { name: string; domain?: string }) =>
+  api<Seal>("/seals", { method: "POST", body: JSON.stringify(data) });
+export const listSeals = () => api<Seal[]>("/seals");
+export const getSeal = (id: number) => api<Seal>(`/seals/${id}`);
+export const createSealRepository = (sealId: number, data: Pick<SealRepository, "display_name" | "remote_url" | "branch">) =>
+  api<SealRepository>(`/seals/${sealId}/repositories`, { method: "POST", body: JSON.stringify(data) });
 export const deleteProject = (id: number) =>
   api<void>(`/projects/${id}`, { method: "DELETE" });
 export const restartProject = (id: number) =>
@@ -174,6 +235,22 @@ export const deployProject = (projectId: number) => api<void>(`/projects/${proje
 export const listProjectRoutes = (projectId: number) => api<ProjectRoute[]>(`/projects/${projectId}/routes`);
 export const setProjectRoutes = (projectId: number, routes: ProjectRoute[]) =>
   api<ProjectRoute[]>(`/projects/${projectId}/routes`, { method: "PUT", body: JSON.stringify(routes) });
+
+export const listSealRepositories = (sealId: number) => api<SealRepository[]>(`/seals/${sealId}/repositories`);
+export const refreshSealRepository = (sealId: number, repositoryId: number) =>
+  api<SealRepository>(`/seals/${sealId}/repositories/${repositoryId}/refresh`, { method: "POST" });
+export const createSealService = (sealId: number, data: Pick<SealService, "repository_id" | "name" | "build_context" | "internal_port"> & { dependencies?: string[] }) =>
+  api<SealService>(`/seals/${sealId}/services`, { method: "POST", body: JSON.stringify(data) });
+export const getSealConfiguration = (sealId: number) => api<SealConfiguration>(`/seals/${sealId}/configuration`);
+export const saveSealConfiguration = (sealId: number, data: { compose_yaml?: string; apply_nextjs_template?: boolean; service_id?: number; regenerate?: boolean }) =>
+  api<SealConfiguration>(`/seals/${sealId}/configuration`, { method: "PUT", body: JSON.stringify(data) });
+export const deploySeal = (sealId: number) => api<void>(`/seals/${sealId}/deploy`, { method: "POST" });
+export const listSealServiceRoutes = (sealId: number, serviceId: number) =>
+  api<SealServiceRoute[]>(`/seals/${sealId}/services/${serviceId}/routes`);
+export const createSealServiceRoute = (sealId: number, serviceId: number, domain: string) =>
+  api<SealServiceRoute>(`/seals/${sealId}/services/${serviceId}/routes`, { method: "POST", body: JSON.stringify({ domain }) });
+export const deleteSealServiceRoute = (sealId: number, serviceId: number, routeId: number) =>
+  api<void>(`/seals/${sealId}/services/${serviceId}/routes/${routeId}`, { method: "DELETE" });
 
 // Deployments
 export const listDeployments = (projectId: number) =>
