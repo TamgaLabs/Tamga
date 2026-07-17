@@ -44,6 +44,16 @@ type CreateSealRequest struct {
 	Domain string `json:"domain"`
 }
 
+// List returns all persisted Seals for authenticated API consumers.
+func (s *SealService) List(_ context.Context) ([]*domain.Seal, error) {
+	return s.db.ListSeals()
+}
+
+// Find returns one persisted Seal by ID.
+func (s *SealService) Find(_ context.Context, sealID int64) (*domain.Seal, error) {
+	return s.db.FindSeal(sealID)
+}
+
 // Create persists an unconfigured Seal and establishes its owned workspace.
 // It deliberately performs no repository, Docker, or deployment operation:
 // those begin only after a repository or configuration is explicitly added.

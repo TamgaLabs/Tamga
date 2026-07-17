@@ -50,6 +50,8 @@ func New(
 
 			// Seals
 			r.Post("/seals", sealHandler.Create)
+			r.Get("/seals", sealHandler.List)
+			r.Get("/seals/{sealID}", sealHandler.Get)
 			r.Get("/seals/{sealID}/repositories", sealHandler.ListRepositories)
 			r.Post("/seals/{sealID}/repositories", sealHandler.CreateRepository)
 			r.Post("/seals/{sealID}/repositories/{repositoryID}/refresh", sealHandler.RefreshRepository)

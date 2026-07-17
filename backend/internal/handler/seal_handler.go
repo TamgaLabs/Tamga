@@ -22,6 +22,31 @@ func NewSealHandler(svc *service.SealService) *SealHandler {
 	return &SealHandler{svc: svc}
 }
 
+func (h *SealHandler) List(w http.ResponseWriter, r *http.Request) {
+	seals, err := h.svc.List(r.Context())
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	if seals == nil {
+		seals = []*domain.Seal{}
+	}
+	json.NewEncoder(w).Encode(seals)
+}
+
+func (h *SealHandler) Get(w http.ResponseWriter, r *http.Request) {
+	sealID, ok := sealIDFromRequest(w, r)
+	if !ok {
+		return
+	}
+	seal, err := h.svc.Find(r.Context(), sealID)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusNotFound)
+		return
+	}
+	json.NewEncoder(w).Encode(seal)
+}
+
 func (h *SealHandler) Create(w http.ResponseWriter, r *http.Request) {
 	var req service.CreateSealRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {

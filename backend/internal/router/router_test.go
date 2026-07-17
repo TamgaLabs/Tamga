@@ -67,6 +67,71 @@ func TestSealRoutesCreateEmptySealAndExcludeProjectRoutes(t *testing.T) {
 	}
 }
 
+func TestSealReadRoutesListDetailAndIDValidation(t *testing.T) {
+	db, err := sqlite.Open(filepath.Join(t.TempDir(), "tamga.db"))
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	t.Cleanup(func() { db.Close() })
+	if err := db.Migrate(); err != nil {
+		t.Fatalf("migrate db: %v", err)
+	}
+
+	svc := service.NewSealService(db, config.Config{DataDir: t.TempDir()})
+	sealHandler := handler.NewSealHandler(svc)
+	r := New(nil, nil, sealHandler, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, func(next http.Handler) http.Handler {
+		return next
+	})
+
+	empty := httptest.NewRecorder()
+	r.ServeHTTP(empty, httptest.NewRequest(http.MethodGet, "/api/seals", nil))
+	if empty.Code != http.StatusOK || empty.Body.String() != "[]\n" {
+		t.Fatalf("empty seal list status=%d body=%q, want 200 and []", empty.Code, empty.Body.String())
+	}
+
+	seal, err := svc.Create(t.Context(), service.CreateSealRequest{Name: "console", Domain: "console.example.test"})
+	if err != nil {
+		t.Fatalf("create seal: %v", err)
+	}
+
+	list := httptest.NewRecorder()
+	r.ServeHTTP(list, httptest.NewRequest(http.MethodGet, "/api/seals", nil))
+	if list.Code != http.StatusOK {
+		t.Fatalf("seal list status=%d body=%q, want 200", list.Code, list.Body.String())
+	}
+	var seals []domain.Seal
+	if err := json.NewDecoder(list.Body).Decode(&seals); err != nil {
+		t.Fatalf("decode seal list: %v", err)
+	}
+	if len(seals) != 1 || seals[0].ID != seal.ID || seals[0].Name != seal.Name || seals[0].SourceType != seal.SourceType || seals[0].Domain != seal.Domain || seals[0].Status != seal.Status || seals[0].CreatedAt.IsZero() || seals[0].UpdatedAt.IsZero() {
+		t.Fatalf("unexpected seal list: %+v", seals)
+	}
+
+	detail := httptest.NewRecorder()
+	r.ServeHTTP(detail, httptest.NewRequest(http.MethodGet, "/api/seals/"+strconv.FormatInt(seal.ID, 10), nil))
+	if detail.Code != http.StatusOK {
+		t.Fatalf("seal detail status=%d body=%q, want 200", detail.Code, detail.Body.String())
+	}
+	var got domain.Seal
+	if err := json.NewDecoder(detail.Body).Decode(&got); err != nil {
+		t.Fatalf("decode seal detail: %v", err)
+	}
+	if got.ID != seal.ID || got.Name != seal.Name || got.SourceType != seal.SourceType || got.RepoURL != seal.RepoURL || got.Branch != seal.Branch || got.Domain != seal.Domain || got.Status != seal.Status || got.ConfigAuthority != seal.ConfigAuthority || got.ConfigRevision != seal.ConfigRevision || got.BuildRevision != seal.BuildRevision || got.CreatedAt.IsZero() || got.UpdatedAt.IsZero() {
+		t.Fatalf("unexpected seal detail: %+v", got)
+	}
+
+	missing := httptest.NewRecorder()
+	r.ServeHTTP(missing, httptest.NewRequest(http.MethodGet, "/api/seals/999", nil))
+	if missing.Code != http.StatusNotFound {
+		t.Fatalf("missing seal status=%d body=%q, want 404", missing.Code, missing.Body.String())
+	}
+	invalid := httptest.NewRecorder()
+	r.ServeHTTP(invalid, httptest.NewRequest(http.MethodGet, "/api/seals/not-an-id", nil))
+	if invalid.Code != http.StatusBadRequest {
+		t.Fatalf("invalid seal ID status=%d body=%q, want 400", invalid.Code, invalid.Body.String())
+	}
+}
+
 func TestSealRepositoryRoutesLifecycle(t *testing.T) {
 	db, err := sqlite.Open(filepath.Join(t.TempDir(), "tamga.db"))
 	if err != nil {
