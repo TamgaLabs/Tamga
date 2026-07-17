@@ -33,10 +33,23 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { Search, Container as ContainerIcon, Plus, FolderKanban, AlertCircle } from "lucide-react";
+import { Search, Container as ContainerIcon, Plus, FolderKanban, AlertCircle, Settings } from "lucide-react";
 import { toast } from "sonner";
 
 type Group = { projectId: number; name: string; containers: ContainerInfo[] };
+
+const statusVariant: Record<string, "success" | "warning" | "error" | "info" | "default"> = {
+  running: "success",
+  building: "warning",
+  cloning: "info",
+  created: "info",
+  error: "error",
+  clone_failed: "error",
+  build_failed: "error",
+  ready_to_deploy: "info",
+  configuring: "warning",
+  archived: "default",
+};
 
 function GlobalMetricsSummary() {
   const now = Math.floor(Date.now() / 1000);
@@ -240,57 +253,103 @@ export default function GlobalDashboardPage() {
           </EmptyHeader>
           <Button variant="outline" onClick={fetchAll}>Try again</Button>
         </Empty>
-      ) : filtered.length === 0 ? (
-        <Empty className="min-h-56">
-          <EmptyHeader>
-            <EmptyMedia><ContainerIcon className="size-5" /></EmptyMedia>
-            <EmptyTitle>No containers found</EmptyTitle>
-            <EmptyDescription>{search ? "Try a different container name." : "Containers will appear here when they are available."}</EmptyDescription>
-          </EmptyHeader>
-        </Empty>
       ) : (
-        <div className="space-y-8">
-          {groups.map((g) => (
-            <section key={g.projectId}>
-              <Link
-                href={`/projects/${g.projectId}`}
-                className="inline-block text-sm font-semibold text-foreground hover:text-accent transition-colors mb-3"
-              >
-                {g.name}
-              </Link>
-              <div className="space-y-2">
-                {g.containers.map((c) => (
-                  <ContainerRow key={c.id} container={c} onAction={handleAction} onDelete={(container) => { setDeleteError(""); setDeleteTarget(container); }} actionPending={pendingContainerId === c.id || (deleting && deleteTarget?.id === c.id)} />
-                ))}
-              </div>
-            </section>
-          ))}
-          {nonProject.length > 0 && (
+        <>
+          {/* Project cards grid */}
+          {projects.length > 0 && (
             <section>
-              <h2 className="text-sm font-semibold text-foreground mb-3">Non-project</h2>
-              <div className="space-y-2">
-                {nonProject.map((c) => (
-                  <ContainerRow key={c.id} container={c} onAction={handleAction} onDelete={(container) => { setDeleteError(""); setDeleteTarget(container); }} actionPending={pendingContainerId === c.id || (deleting && deleteTarget?.id === c.id)} />
+              <h2 className="text-sm font-semibold text-foreground mb-3">Projects</h2>
+              <div className="grid gap-4 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5">
+                {projects.map((p) => (
+                  <Card key={p.id} className="relative group">
+                    <CardHeader className="pb-2">
+                      <div className="flex items-start justify-between gap-2">
+                        <CardTitle className="text-sm font-medium truncate">{p.name}</CardTitle>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="size-7 p-0 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity relative z-10"
+                          onClick={(e) => { e.preventDefault(); e.stopPropagation(); router.push(`/projects/${p.id}/settings`); }}
+                          aria-label={`Edit ${p.name}`}
+                        >
+                          <Settings className="size-3.5" aria-hidden="true" />
+                        </Button>
+                      </div>
+                    </CardHeader>
+                    <CardContent className="pb-3">
+                      <div className="flex items-center justify-between gap-2">
+                        <Badge variant={statusVariant[p.status] || "default"} className="text-xs">{p.status}</Badge>
+                        <span className="text-xs text-muted-foreground truncate">{p.source_type}</span>
+                      </div>
+                    </CardContent>
+                    <Link
+                      href={`/projects/${p.id}`}
+                      className="absolute inset-0 rounded-xl"
+                      tabIndex={-1}
+                      aria-hidden="true"
+                    />
+                  </Card>
                 ))}
               </div>
             </section>
           )}
-          {systemContainers.length > 0 && (
-            <section>
-              <Link
-                href="/dashboard/system"
-                className="inline-block text-sm font-semibold text-foreground hover:text-accent transition-colors mb-3"
-              >
-                Tamga System
-              </Link>
-              <div className="space-y-2">
-                {systemContainers.map((c) => (
-                  <ContainerRow key={c.id} container={c} onAction={handleAction} onDelete={(container) => { setDeleteError(""); setDeleteTarget(container); }} actionPending={pendingContainerId === c.id || (deleting && deleteTarget?.id === c.id)} />
-                ))}
-              </div>
-            </section>
+
+          {/* Container groups */}
+          {groups.length > 0 && (
+            <div className="space-y-8">
+              {groups.map((g) => (
+                <section key={g.projectId}>
+                  <Link
+                    href={`/projects/${g.projectId}`}
+                    className="inline-block text-sm font-semibold text-foreground hover:text-accent transition-colors mb-3"
+                  >
+                    {g.name}
+                  </Link>
+                  <div className="space-y-2">
+                    {g.containers.map((c) => (
+                      <ContainerRow key={c.id} container={c} onAction={handleAction} onDelete={(container) => { setDeleteError(""); setDeleteTarget(container); }} actionPending={pendingContainerId === c.id || (deleting && deleteTarget?.id === c.id)} />
+                    ))}
+                  </div>
+                </section>
+              ))}
+              {nonProject.length > 0 && (
+                <section>
+                  <h2 className="text-sm font-semibold text-foreground mb-3">Non-project</h2>
+                  <div className="space-y-2">
+                    {nonProject.map((c) => (
+                      <ContainerRow key={c.id} container={c} onAction={handleAction} onDelete={(container) => { setDeleteError(""); setDeleteTarget(container); }} actionPending={pendingContainerId === c.id || (deleting && deleteTarget?.id === c.id)} />
+                    ))}
+                  </div>
+                </section>
+              )}
+              {systemContainers.length > 0 && (
+                <section>
+                  <Link
+                    href="/dashboard/system"
+                    className="inline-block text-sm font-semibold text-foreground hover:text-accent transition-colors mb-3"
+                  >
+                    Tamga System
+                  </Link>
+                  <div className="space-y-2">
+                    {systemContainers.map((c) => (
+                      <ContainerRow key={c.id} container={c} onAction={handleAction} onDelete={(container) => { setDeleteError(""); setDeleteTarget(container); }} actionPending={pendingContainerId === c.id || (deleting && deleteTarget?.id === c.id)} />
+                    ))}
+                  </div>
+                </section>
+              )}
+            </div>
           )}
-        </div>
+
+          {projects.length === 0 && filtered.length === 0 && (
+            <Empty className="min-h-56">
+              <EmptyHeader>
+                <EmptyMedia><ContainerIcon className="size-5" /></EmptyMedia>
+                <EmptyTitle>No projects or containers found</EmptyTitle>
+                <EmptyDescription>{search ? "Try a different container name." : "Create a project to get started."}</EmptyDescription>
+              </EmptyHeader>
+            </Empty>
+          )}
+        </>
       )}
 
       <AlertDialog open={!!deleteTarget} onOpenChange={(open) => { if (!open && !deleting) setDeleteTarget(null); }}>

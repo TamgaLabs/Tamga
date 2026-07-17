@@ -63,7 +63,7 @@ export default function ProjectSettingsPage() {
         <CardHeader>
           <CardTitle className="text-sm">Project Settings</CardTitle>
         </CardHeader>
-        <CardContent className="space-y-5">
+        <CardContent className="space-y-4">
           <FieldGroup>
           <Field>
             <FieldLabel htmlFor="project-name">Name</FieldLabel>

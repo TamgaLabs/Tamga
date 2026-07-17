@@ -2,13 +2,13 @@
 
 import { createContext, useCallback, useContext, useEffect, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
-import { listProjects, type Project } from "@/lib/api";
+import { listSeals, type Seal } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 
-/** Virtual project ID for system containers (tamga-backend, traefik, etc.). */
+/** Virtual Seal ID for system containers (tamga-backend, traefik, etc.). */
 export const TAMGA_SYSTEM_ID = -1;
 
-const TAMGA_SYSTEM_PROJECT: Project = {
+const TAMGA_SYSTEM_SEAL: Seal = {
   id: TAMGA_SYSTEM_ID,
   name: "Tamga System",
   source_type: "local",
@@ -16,29 +16,32 @@ const TAMGA_SYSTEM_PROJECT: Project = {
   branch: "",
   domain: "",
   status: "running",
+  config_authority: "system",
+  config_revision: 0,
+  build_revision: 0,
   created_at: "",
   updated_at: "",
 };
 
-export type WorkspaceView = "all" | "non-project" | number;
+export type WorkspaceView = "all" | "non-seal" | number;
 
 type WorkspaceContextValue = {
   view: WorkspaceView;
   setView: (view: WorkspaceView) => void;
-  projects: Project[];
+  seals: Seal[];
   loading: boolean;
-  selectedProject: Project | null;
-  refetchProjects: () => void;
+  selectedSeal: Seal | null;
+  refetchSeals: () => void;
 };
 
 const WorkspaceContext = createContext<WorkspaceContextValue | null>(null);
 
 function deriveViewFromPath(pathname: string): WorkspaceView {
   if (pathname === "/dashboard") return "all";
-  if (pathname === "/dashboard/non-project") return "non-project";
+  if (pathname === "/dashboard/non-project") return "non-seal";
   if (pathname === "/dashboard/system") return TAMGA_SYSTEM_ID;
-  const projectMatch = pathname.match(/^\/projects\/(-?\d+)/);
-  if (projectMatch) return Number(projectMatch[1]);
+  const sealMatch = pathname.match(/^\/seals\/(-?\d+)/);
+  if (sealMatch) return Number(sealMatch[1]);
   const codeMatch = pathname.match(/^\/code\/(-?\d+)/);
   if (codeMatch) return Number(codeMatch[1]);
   return "all";
@@ -47,12 +50,12 @@ function deriveViewFromPath(pathname: string): WorkspaceView {
 function navigateForView(view: WorkspaceView, router: ReturnType<typeof useRouter>) {
   if (view === "all") {
     router.push("/dashboard");
-  } else if (view === "non-project") {
+  } else if (view === "non-seal") {
     router.push("/dashboard/non-project");
   } else if (view === TAMGA_SYSTEM_ID) {
     router.push("/dashboard/system");
   } else {
-    router.push(`/projects/${view}`);
+    router.push(`/seals/${view}/configure`);
   }
 }
 
@@ -60,22 +63,22 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
   const { user } = useAuth();
   const pathname = usePathname();
   const router = useRouter();
-  const [projects, setProjects] = useState<Project[]>([]);
+  const [seals, setSeals] = useState<Seal[]>([]);
   const [loading, setLoading] = useState(true);
   const [view, setViewState] = useState<WorkspaceView>("all");
 
-  const refetchProjects = useCallback(() => {
+  const refetchSeals = useCallback(() => {
     if (!user) return;
     setLoading(true);
-    listProjects()
-      .then(setProjects)
-      .catch(() => setProjects([]))
+    listSeals()
+      .then(setSeals)
+      .catch(() => setSeals([]))
       .finally(() => setLoading(false));
   }, [user]);
 
   useEffect(() => {
-    refetchProjects();
-  }, [refetchProjects]);
+    refetchSeals();
+  }, [refetchSeals]);
 
   useEffect(() => {
     setViewState(deriveViewFromPath(pathname));
@@ -89,17 +92,17 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
     [router]
   );
 
-  const allProjects = [TAMGA_SYSTEM_PROJECT, ...projects];
+  const allSeals = [TAMGA_SYSTEM_SEAL, ...seals];
 
-  const selectedProject =
+  const selectedSeal =
     typeof view === "number"
       ? view === TAMGA_SYSTEM_ID
-        ? TAMGA_SYSTEM_PROJECT
-        : projects.find((p) => p.id === view) ?? null
+        ? TAMGA_SYSTEM_SEAL
+        : seals.find((seal) => seal.id === view) ?? null
       : null;
 
   return (
-    <WorkspaceContext.Provider value={{ view, setView, projects: allProjects, loading, selectedProject, refetchProjects }}>
+    <WorkspaceContext.Provider value={{ view, setView, seals: allSeals, loading, selectedSeal, refetchSeals }}>
       {children}
     </WorkspaceContext.Provider>
   );

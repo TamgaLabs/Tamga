@@ -2,18 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import {
-  BarChart3,
-  Code2,
-  Wrench,
-  Container,
-  Globe,
-  LayoutDashboard,
-  LogOut,
-  Network,
-  Server,
-  Settings,
-} from "lucide-react";
+import { BarChart3, Wrench, Globe, LayoutDashboard, LogOut, Network, Settings } from "lucide-react";
 
 import { useAuth } from "@/lib/auth";
 import {
@@ -29,7 +18,7 @@ import {
   SidebarRail,
   useSidebar,
 } from "@/components/ui/sidebar";
-import { ProjectSelector } from "@/components/project-selector";
+import { SealSelector } from "@/components/seal-selector";
 import { useWorkspace, TAMGA_SYSTEM_ID } from "@/contexts/workspace-context";
 
 type NavItem = { href: string; label: string; icon: typeof LayoutDashboard };
@@ -40,18 +29,16 @@ const globalNav: NavItem[] = [
   { href: "/infrastructure", label: "Topology", icon: Network },
 ];
 
-const projectNav: NavItem[] = [
-  { href: "/projects/$id", label: "Dashboard", icon: LayoutDashboard },
-  { href: "/projects/$id/configure", label: "Configure", icon: Wrench },
-  { href: "/projects/$id/containers", label: "Containers", icon: Container },
-  { href: "/projects/$id/environment", label: "Environment", icon: Server },
-  { href: "/projects/$id/analytics", label: "Analytics", icon: BarChart3 },
-  { href: "/projects/$id/map", label: "Topology", icon: Network },
-  { href: "/code/$id", label: "Code", icon: Code2 },
+const sealNav: NavItem[] = [
+  { href: "/seals/$id/configure", label: "Configure", icon: Wrench },
 ];
 
-const nonProjectNav: NavItem[] = [
+const nonSealNav: NavItem[] = [
   { href: "/dashboard/non-project", label: "Dashboard", icon: Globe },
+];
+
+const systemNav: NavItem[] = [
+  { href: "/dashboard/system", label: "Dashboard", icon: LayoutDashboard },
 ];
 
 function isCurrentRoute(pathname: string, href: string) {
@@ -62,7 +49,7 @@ export function AppSidebar() {
   const pathname = usePathname();
   const { logout } = useAuth();
   const { isMobile, setOpenMobile, state } = useSidebar();
-  const { view, selectedProject } = useWorkspace();
+  const { view, selectedSeal } = useWorkspace();
   const showLabels = isMobile || state === "expanded";
   const closeMobileNavigation = () => {
     if (isMobile) setOpenMobile(false);
@@ -70,8 +57,9 @@ export function AppSidebar() {
 
   const navItems: NavItem[] = (() => {
     if (view === "all") return globalNav;
-    if (view === "non-project") return nonProjectNav;
-    return projectNav;
+    if (view === "non-seal") return nonSealNav;
+    if (view === TAMGA_SYSTEM_ID) return systemNav;
+    return sealNav;
   })();
 
   const resolveHref = (href: string) => {
@@ -98,14 +86,14 @@ export function AppSidebar() {
         </Link>
         {showLabels && (
           <div className="mt-2">
-            <ProjectSelector />
+            <SealSelector />
           </div>
         )}
       </SidebarHeader>
 
       <SidebarContent>
         <SidebarGroup>
-          {showLabels && <SidebarGroupLabel>{selectedProject?.name ?? "Workspace"}</SidebarGroupLabel>}
+          {showLabels && <SidebarGroupLabel>{selectedSeal?.name ?? "Workspace"}</SidebarGroupLabel>}
           <SidebarMenu>
             {navItems.map(({ href, label, icon: Icon }) => {
               const resolvedHref = resolveHref(href);

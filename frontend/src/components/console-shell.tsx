@@ -30,8 +30,8 @@ const routeLabels: Record<string, string> = {
   logs: "Logs",
   map: "Topology",
   network: "Network",
-  new: "New project",
-  projects: "Projects",
+  new: "New Seal",
+  seals: "Seals",
   resources: "Resources",
   sandbox: "Sandbox",
   settings: "Settings",
@@ -41,7 +41,7 @@ const routeLabels: Record<string, string> = {
 };
 
 function pageContext(pathname: string) {
-  if (pathname === "/dashboard/non-project") return "Non-project";
+  if (pathname === "/dashboard/non-project") return "Non-Seal";
   const segments = pathname.split("/").filter(Boolean);
   const last = segments.at(-1);
   if (!last) return "Dashboard";
@@ -51,7 +51,7 @@ function pageContext(pathname: string) {
 function ShellContent({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const { state } = useSidebar();
-  const { selectedProject } = useWorkspace();
+  const { selectedSeal } = useWorkspace();
   const context = pageContext(pathname);
 
   return (
@@ -66,10 +66,10 @@ function ShellContent({ children }: { children: React.ReactNode }) {
         <div className="h-5 w-px bg-border" aria-hidden="true" />
         <Breadcrumb className="min-w-0">
           <BreadcrumbList className="flex-nowrap overflow-hidden">
-            {selectedProject && (
+            {selectedSeal && (
               <>
                 <BreadcrumbItem className="shrink-0">
-                  <BreadcrumbPage className="text-xs text-muted-foreground">{selectedProject.name}</BreadcrumbPage>
+                  <BreadcrumbPage className="text-xs text-muted-foreground">{selectedSeal.name}</BreadcrumbPage>
                 </BreadcrumbItem>
                 <BreadcrumbItem className="shrink-0 text-muted-foreground">/</BreadcrumbItem>
               </>

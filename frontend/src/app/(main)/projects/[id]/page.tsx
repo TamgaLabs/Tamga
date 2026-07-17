@@ -55,6 +55,7 @@ const statusVariant: Record<string, "success" | "warning" | "error" | "info" | "
   build_failed: "error",
   ready_to_deploy: "info",
   configuring: "warning",
+  archived: "default",
 };
 
 function MetricsSummary({ projectId }: { projectId: number }) {

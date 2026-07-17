@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { api } from "./api";
+import { api, listSeals } from "./api";
 
 describe("api", () => {
   afterEach(() => {
@@ -13,8 +13,8 @@ describe("api", () => {
     );
     vi.stubGlobal("fetch", fetchMock);
 
-    await expect(api("/projects")).rejects.toThrow("Permission denied");
-    expect(fetchMock).toHaveBeenCalledWith("/api/projects", {
+    await expect(api("/seals")).rejects.toThrow("Permission denied");
+    expect(fetchMock).toHaveBeenCalledWith("/api/seals", {
       headers: {
         "Content-Type": "application/json",
         Authorization: "Bearer test-token",
@@ -25,6 +25,18 @@ describe("api", () => {
   it("returns undefined for successful empty responses", async () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(null, { status: 204 })));
 
-    await expect(api<void>("/projects/1", { method: "DELETE" })).resolves.toBeUndefined();
+    await expect(api<void>("/seals/1", { method: "DELETE" })).resolves.toBeUndefined();
+  });
+
+  it("lists Seals from the Seal API", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify([{ id: 1, name: "web" }]), { status: 200 })
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(listSeals()).resolves.toEqual([{ id: 1, name: "web" }]);
+    expect(fetchMock).toHaveBeenCalledWith("/api/seals", {
+      headers: { "Content-Type": "application/json" },
+    });
   });
 });
