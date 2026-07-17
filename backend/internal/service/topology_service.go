@@ -12,15 +12,15 @@ import (
 
 // TopologyNode represents a container in the infrastructure graph.
 type TopologyNode struct {
-	ID        string `json:"id"`         // container ID
-	Name      string `json:"name"`       // container name
-	Image     string `json:"image"`      // container image
-	Type      string `json:"type"`       // classified type (redis/postgres/mysql/mongo/proxy/web/generic)
-	ProjectID int64  `json:"project_id"` // project ID (0 if system container)
-	SystemType string `json:"system_type"`   // system type (e.g., "tamga-backend-1", "agent-system")
-	State     string `json:"state"`      // container state (running/exited/etc.)
-	Status    string `json:"status"`     // human-readable status (e.g., "Up 3 hours")
-	StatsRef  string `json:"stats_ref"`  // ref to per-container stats endpoint
+	ID         string `json:"id"`                    // container ID
+	Name       string `json:"name"`                  // container name
+	Image      string `json:"image"`                 // container image
+	Type       string `json:"type"`                  // classified type (redis/postgres/mysql/mongo/proxy/web/generic)
+	ProjectID  int64  `json:"project_id"`            // project ID (0 if system container)
+	SystemType string `json:"system_type"`           // system type (e.g., "tamga-backend-1", "agent-system")
+	State      string `json:"state"`                 // container state (running/exited/etc.)
+	Status     string `json:"status"`                // human-readable status (e.g., "Up 3 hours")
+	StatsRef   string `json:"stats_ref"`             // ref to per-container stats endpoint
 	TrafficRef string `json:"traffic_ref,omitempty"` // ref for metrics (project-<id>), only for project nodes
 }
 
@@ -146,7 +146,7 @@ func (s *TopologyService) GetProjectTopology(ctx context.Context, projectID int6
 	var projectContainers []dockerclient.ContainerInfo
 	for _, c := range allContainers {
 		// Include containers that belong to this project or are agents for this project
-		if c.ProjectID == projectID {
+		if c.SealID == projectID {
 			projectContainers = append(projectContainers, c)
 		}
 	}
@@ -169,7 +169,7 @@ func (s *TopologyService) GetProjectTopology(ctx context.Context, projectID int6
 	nodes := s.buildNodes(projectContainers)
 
 	// Find the project's network (project-net-<id>)
-	projectNetName := fmt.Sprintf("project-net-%d", projectID)
+	projectNetName := fmt.Sprintf("seal-net-%d", projectID)
 	var projectNetContainers map[string]string // container ID -> name
 	for _, net := range networks {
 		if net.Name == projectNetName {
@@ -217,20 +217,20 @@ func (s *TopologyService) buildNodes(containers []dockerclient.ContainerInfo) []
 // containerToNode converts a single container to a topology node.
 func (s *TopologyService) containerToNode(c dockerclient.ContainerInfo) *TopologyNode {
 	node := &TopologyNode{
-		ID:        c.ID,
-		Name:      c.Name,
-		Image:     c.Image,
-		Type:      ClassifyImage(c.Image),
-		ProjectID: c.ProjectID,
+		ID:         c.ID,
+		Name:       c.Name,
+		Image:      c.Image,
+		Type:       ClassifyImage(c.Image),
+		ProjectID:  c.SealID,
 		SystemType: c.SystemType,
-		State:     c.State,
-		Status:    c.Status,
-		StatsRef:  fmt.Sprintf("/api/system/containers/%s/stats", c.ID),
+		State:      c.State,
+		Status:     c.Status,
+		StatsRef:   fmt.Sprintf("/api/system/containers/%s/stats", c.ID),
 	}
 
 	// Add traffic_ref for project containers (nodes with non-zero project_id)
-	if c.ProjectID > 0 {
-		node.TrafficRef = fmt.Sprintf("project-%d", c.ProjectID)
+	if c.SealID > 0 {
+		node.TrafficRef = fmt.Sprintf("seal-%d", c.SealID)
 	}
 
 	return node

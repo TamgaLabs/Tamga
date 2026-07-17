@@ -22,7 +22,7 @@ func TestProjectConfigurationApprovalAndSafePaths(t *testing.T) {
 	if err := svc.db.CreateProjectSource(source); err != nil {
 		t.Fatal(err)
 	}
-	workspace := filepath.Join(cfg.DataDir, "projects", fmt.Sprintf("%d", project.ID))
+	workspace := filepath.Join(cfg.DataDir, "seals", fmt.Sprintf("%d", project.ID))
 	if err := os.MkdirAll(workspace, 0755); err != nil {
 		t.Fatal(err)
 	}
@@ -74,7 +74,7 @@ func TestProjectConfigurationDetectedComposeAndMultiSourceNoTemplate(t *testing.
 			t.Fatal(err)
 		}
 	}
-	workspace := filepath.Join(cfg.DataDir, "projects", fmt.Sprintf("%d", project.ID))
+	workspace := filepath.Join(cfg.DataDir, "seals", fmt.Sprintf("%d", project.ID))
 	if err := os.MkdirAll(filepath.Join(workspace, "sources", "worker"), 0755); err != nil {
 		t.Fatal(err)
 	}
@@ -124,7 +124,7 @@ func TestBuildPermittedIgnoresMalformedPendingComposeWhenAcceptedComposeIsValid(
 	if err := svc.db.CreateProjectSource(&domain.ProjectSource{ProjectID: project.ID, DisplayName: "web", RemoteURL: "https://example.test/web.git", Branch: "main", WorkspacePath: ".", Status: domain.ProjectSourceStatusReady}); err != nil {
 		t.Fatal(err)
 	}
-	workspace := filepath.Join(cfg.DataDir, "projects", fmt.Sprintf("%d", project.ID))
+	workspace := filepath.Join(cfg.DataDir, "seals", fmt.Sprintf("%d", project.ID))
 	if err := os.MkdirAll(workspace, 0755); err != nil {
 		t.Fatal(err)
 	}
@@ -160,7 +160,7 @@ func TestBuildDoesNotRestoreConfigurationChangedDuringBuild(t *testing.T) {
 	if err := svc.db.CreateProjectSource(&domain.ProjectSource{ProjectID: project.ID, DisplayName: "web", RemoteURL: "https://example.test/web.git", Branch: "main", WorkspacePath: ".", Status: domain.ProjectSourceStatusReady}); err != nil {
 		t.Fatal(err)
 	}
-	workspace := filepath.Join(cfg.DataDir, "projects", fmt.Sprintf("%d", project.ID))
+	workspace := filepath.Join(cfg.DataDir, "seals", fmt.Sprintf("%d", project.ID))
 	if err := os.MkdirAll(workspace, 0755); err != nil {
 		t.Fatal(err)
 	}

@@ -37,7 +37,7 @@ type parsedDynamicConfig struct {
 // contain a split plain-HTTP + TLS router pair (FEAT-023's
 // Implementation Notes found a single dual-entrypoint `tls: {}` router
 // silently doesn't serve plain HTTP), both pointing at one service named
-// exactly "project-<id>" (not the domain) so Traefik's per-router/service
+// exactly "seal-<id>" (not the domain) so Traefik's per-router/service
 // Prometheus metrics stay attributable back to the project (TEST-010 §4).
 func TestTraefikClientAddRouteWritesSplitRouters(t *testing.T) {
 	dir := t.TempDir()
@@ -47,7 +47,7 @@ func TestTraefikClientAddRouteWritesSplitRouters(t *testing.T) {
 		t.Fatalf("AddRoute: %v", err)
 	}
 
-	path := filepath.Join(dir, "project-42.yml")
+	path := filepath.Join(dir, "seal-42.yml")
 	raw, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatalf("read generated file: %v", err)
@@ -58,13 +58,13 @@ func TestTraefikClientAddRouteWritesSplitRouters(t *testing.T) {
 		t.Fatalf("generated file is not valid YAML: %v\ncontent:\n%s", err, raw)
 	}
 
-	// Two routers: plain + "-secure", both service "project-42".
-	plain, ok := cfg.HTTP.Routers["project-42"]
+	// Two routers: plain + "-secure", both service "seal-42".
+	plain, ok := cfg.HTTP.Routers["seal-42"]
 	if !ok {
-		t.Fatalf("expected router %q, got routers: %+v", "project-42", cfg.HTTP.Routers)
+		t.Fatalf("expected router %q, got routers: %+v", "seal-42", cfg.HTTP.Routers)
 	}
-	if plain.Service != "project-42" {
-		t.Errorf("plain router service = %q, want %q", plain.Service, "project-42")
+	if plain.Service != "seal-42" {
+		t.Errorf("plain router service = %q, want %q", plain.Service, "seal-42")
 	}
 	if plain.Rule != "Host(`myapp.example.com`)" {
 		t.Errorf("plain router rule = %q, want Host(`myapp.example.com`)", plain.Rule)
@@ -76,12 +76,12 @@ func TestTraefikClientAddRouteWritesSplitRouters(t *testing.T) {
 		t.Errorf("plain router has a tls key set; the plain router must have none (FEAT-023's split-router fix - a tls-having router doesn't serve plain HTTP)")
 	}
 
-	secure, ok := cfg.HTTP.Routers["project-42-secure"]
+	secure, ok := cfg.HTTP.Routers["seal-42-secure"]
 	if !ok {
-		t.Fatalf("expected router %q, got routers: %+v", "project-42-secure", cfg.HTTP.Routers)
+		t.Fatalf("expected router %q, got routers: %+v", "seal-42-secure", cfg.HTTP.Routers)
 	}
-	if secure.Service != "project-42" {
-		t.Errorf("secure router service = %q, want %q", secure.Service, "project-42")
+	if secure.Service != "seal-42" {
+		t.Errorf("secure router service = %q, want %q", secure.Service, "seal-42")
 	}
 	if secure.Rule != "Host(`myapp.example.com`)" {
 		t.Errorf("secure router rule = %q, want Host(`myapp.example.com`)", secure.Rule)
@@ -93,13 +93,13 @@ func TestTraefikClientAddRouteWritesSplitRouters(t *testing.T) {
 		t.Errorf("secure router has no tls key; expected `tls: {}` so it attaches to websecure")
 	}
 
-	// One service, named "project-42", pointing at the upstream.
+	// One service, named "seal-42", pointing at the upstream.
 	if len(cfg.HTTP.Services) != 1 {
 		t.Fatalf("expected exactly 1 service, got %d: %+v", len(cfg.HTTP.Services), cfg.HTTP.Services)
 	}
-	svc, ok := cfg.HTTP.Services["project-42"]
+	svc, ok := cfg.HTTP.Services["seal-42"]
 	if !ok {
-		t.Fatalf("expected service %q, got services: %+v", "project-42", cfg.HTTP.Services)
+		t.Fatalf("expected service %q, got services: %+v", "seal-42", cfg.HTTP.Services)
 	}
 	if len(svc.LoadBalancer.Servers) != 1 || svc.LoadBalancer.Servers[0].URL != "http://project-42:3000" {
 		t.Errorf("service loadBalancer servers = %+v, want one server with url http://project-42:3000", svc.LoadBalancer.Servers)
@@ -129,7 +129,7 @@ func TestTraefikClientAddRouteOverwritesOnDomainChange(t *testing.T) {
 		t.Fatalf("AddRoute (domain change): %v", err)
 	}
 
-	raw, err := os.ReadFile(filepath.Join(dir, "project-7.yml"))
+	raw, err := os.ReadFile(filepath.Join(dir, "seal-7.yml"))
 	if err != nil {
 		t.Fatalf("read generated file: %v", err)
 	}
@@ -156,7 +156,7 @@ func TestTraefikClientReplaceRoutesFailurePreservesPreviousCompleteConfig(t *tes
 	if err := client.ReplaceRoutes(11, []traefik.Route{{Service: "web", Domain: "stable.example.com", Upstream: "project-11-web:80"}}); err != nil {
 		t.Fatalf("seed routes: %v", err)
 	}
-	path := filepath.Join(dir, "project-11.yml")
+	path := filepath.Join(dir, "seal-11.yml")
 	before, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatalf("read seeded config: %v", err)
@@ -183,7 +183,7 @@ func TestTraefikClientRemoveRoute(t *testing.T) {
 	if err := client.AddRoute(9, "gone.example.com", "project-9:80"); err != nil {
 		t.Fatalf("AddRoute: %v", err)
 	}
-	path := filepath.Join(dir, "project-9.yml")
+	path := filepath.Join(dir, "seal-9.yml")
 	if _, err := os.Stat(path); err != nil {
 		t.Fatalf("expected route file to exist before removal: %v", err)
 	}

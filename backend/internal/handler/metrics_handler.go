@@ -7,8 +7,6 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/go-chi/chi/v5"
-
 	"github.com/TamgaLabs/Tamga/backend/internal/domain"
 	"github.com/TamgaLabs/Tamga/backend/internal/service"
 )
@@ -24,16 +22,6 @@ type MetricsHandler struct {
 
 func NewMetricsHandler(svc *service.MetricsQueryService) *MetricsHandler {
 	return &MetricsHandler{svc: svc}
-}
-
-// Project handles GET /api/projects/{id}/metrics.
-func (h *MetricsHandler) Project(w http.ResponseWriter, r *http.Request) {
-	id, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
-	if err != nil {
-		http.Error(w, "invalid id", http.StatusBadRequest)
-		return
-	}
-	h.respond(w, r, id)
 }
 
 // System handles GET /api/system/metrics - the global/core scope

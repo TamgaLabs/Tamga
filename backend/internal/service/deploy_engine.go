@@ -20,13 +20,13 @@ import (
 // for these projects - it just needs to be stable and non-empty.
 const gitBuildServiceName = "app"
 
-// projectNetworkName returns the per-project Docker network name a
-// project's whole compose stack joins (closes BUG-029 - see
+// sealNetworkName returns the per-Seal Docker network name a Seal's whole
+// compose stack joins (closes BUG-029 - see
 // project_service.go's deployStack doc comment for the full design).
 // Mirrors agent_service.go's agentNetworkName(id) ("agent-net-<id>")
 // one-for-one, just for project stacks instead of agent sandboxes.
-func projectNetworkName(projectID int64) string {
-	return fmt.Sprintf("project-net-%d", projectID)
+func sealNetworkName(sealID int64) string {
+	return fmt.Sprintf("seal-net-%d", sealID)
 }
 
 // serviceContainerName returns the container name FEAT-028's deploy engine
@@ -37,8 +37,8 @@ func projectNetworkName(projectID int64) string {
 // (repository/traefik.Client.AddRoute always names its router/service
 // "project-<id>" regardless of what upstream host:port it's given), so
 // there is no need to special-case the exposed container's own name.
-func serviceContainerName(projectID int64, serviceName string) string {
-	return fmt.Sprintf("project-%d-%s", projectID, serviceName)
+func serviceContainerName(sealID int64, serviceName string) string {
+	return fmt.Sprintf("seal-%d-%s", sealID, serviceName)
 }
 
 // synthesizeGitBuildService folds a legacy git-build project's

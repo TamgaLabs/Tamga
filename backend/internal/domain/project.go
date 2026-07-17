@@ -19,6 +19,10 @@ const (
 type SourceType string
 
 const (
+	// SourceTypeEmpty marks a Seal with no repository or compose source yet.
+	// It is persisted so an empty Seal never masquerades as a cloneable remote
+	// project while it is being configured.
+	SourceTypeEmpty  SourceType = "empty"
 	SourceTypeLocal  SourceType = "local"
 	SourceTypeRemote SourceType = "remote"
 	// SourceTypeCompose marks a project created directly from a pasted

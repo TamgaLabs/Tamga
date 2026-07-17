@@ -341,7 +341,7 @@ func (s *AgentService) ensureSandbox(ctx context.Context, projectID int64) (cont
 		return "", "", fmt.Errorf("HOST_DATA_DIR must be set to an absolute host path (got: %q); see .env.example or set HOST_DATA_DIR explicitly", s.cfg.HostDataDir)
 	}
 
-	mounts := []string{fmt.Sprintf("%s/projects/%d:/workspace/%d", s.cfg.HostDataDir, projectID, projectID)}
+	mounts := []string{fmt.Sprintf("%s/seals/%d:/workspace/%d", s.cfg.HostDataDir, projectID, projectID)}
 	network := agentNetworkName(projectID)
 
 	// FEAT-006: this project's sandbox gets its own internal network,

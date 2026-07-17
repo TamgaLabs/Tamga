@@ -101,7 +101,7 @@ func (s *ProjectService) Configuration(ctx context.Context, projectID int64) (*P
 }
 
 func (s *ProjectService) configurationFacts(projectID int64, source *domain.ProjectSource) (SourceConfigurationFact, string) {
-	base := filepath.Join(s.cfg.DataDir, "projects", fmt.Sprintf("%d", projectID), filepath.FromSlash(source.WorkspacePath))
+	base := filepath.Join(s.cfg.DataDir, "seals", fmt.Sprintf("%d", projectID), filepath.FromSlash(source.WorkspacePath))
 	fact := SourceConfigurationFact{WorkspacePath: source.WorkspacePath}
 	if _, err := os.Stat(filepath.Join(base, "Dockerfile")); err == nil {
 		fact.Dockerfile = true
@@ -161,7 +161,7 @@ func (s *ProjectService) SaveConfiguration(ctx context.Context, projectID int64,
 			return nil, fmt.Errorf("Next.js template is only available for one source without detected configuration")
 		}
 		compose = nextJSComposeTemplate
-		base := filepath.Join(s.cfg.DataDir, "projects", fmt.Sprintf("%d", project.ID))
+		base := filepath.Join(s.cfg.DataDir, "seals", fmt.Sprintf("%d", project.ID))
 		if err := os.WriteFile(filepath.Join(base, "Dockerfile"), []byte(nextJSDockerfile), 0644); err != nil {
 			return nil, fmt.Errorf("write Next.js Dockerfile: %w", err)
 		}

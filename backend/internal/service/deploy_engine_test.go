@@ -159,12 +159,12 @@ func TestComposeVolumesToMounts(t *testing.T) {
 	}
 }
 
-func TestServiceContainerNameAndProjectNetworkName(t *testing.T) {
-	if got := serviceContainerName(5, "web"); got != "project-5-web" {
-		t.Fatalf("expected 'project-5-web', got %q", got)
+func TestServiceContainerNameAndSealNetworkName(t *testing.T) {
+	if got := serviceContainerName(5, "web"); got != "seal-5-web" {
+		t.Fatalf("expected 'seal-5-web', got %q", got)
 	}
-	if got := projectNetworkName(5); got != "project-net-5" {
-		t.Fatalf("expected 'project-net-5', got %q", got)
+	if got := sealNetworkName(5); got != "seal-net-5" {
+		t.Fatalf("expected 'seal-net-5', got %q", got)
 	}
 }
 

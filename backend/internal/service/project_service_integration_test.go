@@ -37,7 +37,7 @@ func TestProjectServiceDeployStackServiceNameAlias(t *testing.T) {
 	}
 	t.Cleanup(func() {
 		cleanupCtx := context.Background()
-		netName := projectNetworkName(project.ID)
+		netName := sealNetworkName(project.ID)
 		for _, service := range []string{"web", "redis"} {
 			name := serviceContainerName(project.ID, service)
 			docker.StopContainer(cleanupCtx, name)

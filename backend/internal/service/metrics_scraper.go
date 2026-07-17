@@ -204,7 +204,7 @@ var promLabelRe = regexp.MustCompile(`(\w+)="((?:[^"\\]|\\.)*)"`)
 // it - see FEAT-031's Proposed Solution for the full justification.
 //
 // Router/service names carry Traefik's `@file`/`@docker` provider suffix
-// (e.g. "project-42@file") - stripped via stripProviderSuffix before
+// (e.g. "seal-42@file") - stripped via stripProviderSuffix before
 // mapping to a project ID via resolveProjectID. Unparseable lines (labels
 // that don't match, non-numeric values) are skipped, not fatal - one
 // malformed line must not lose the whole scrape.
@@ -271,7 +271,7 @@ func parsePromLabels(s string) map[string]string {
 }
 
 // stripProviderSuffix removes Traefik's file/docker provider suffix
-// (e.g. "project-42@file" -> "project-42", "tamga-ui@file" -> "tamga-ui")
+// (e.g. "seal-42@file" -> "seal-42", "tamga-ui@file" -> "tamga-ui")
 // per TEST-010 §4.
 func stripProviderSuffix(name string) string {
 	if idx := strings.IndexByte(name, '@'); idx >= 0 {
@@ -281,7 +281,7 @@ func stripProviderSuffix(name string) string {
 }
 
 // resolveProjectID maps a bare (provider-suffix-stripped) router name to
-// the project_id its samples belong to: "project-<id>" routers map to
+// the project_id its samples belong to: "seal-<id>" routers map to
 // that project (fmt.Sscanf's "%d" verb stops at the first non-digit,
 // mirroring backend/internal/repository/docker/client.go's
 // containerProjectInfo); every other router - the tamga.yml core UI/API
@@ -289,9 +289,9 @@ func stripProviderSuffix(name string) string {
 // future non-project router - is Tamga's own core/global traffic scope
 // (domain.GlobalProjectID).
 func resolveProjectID(bareRouterName string) int64 {
-	if strings.HasPrefix(bareRouterName, "project-") {
+	if strings.HasPrefix(bareRouterName, "seal-") {
 		var id int64
-		fmt.Sscanf(bareRouterName, "project-%d", &id)
+		fmt.Sscanf(bareRouterName, "seal-%d", &id)
 		return id
 	}
 	return domain.GlobalProjectID

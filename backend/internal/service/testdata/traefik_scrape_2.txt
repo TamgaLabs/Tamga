@@ -7,7 +7,7 @@
 # request_duration_seconds_bucket, requests_bytes_total,
 # responses_bytes_total, HELP/TYPE headers) are copied verbatim from that
 # real capture. No project was deployed live at capture time, so the
-# `project-42@file` router block below is hand-authored in the identical
+# `seal-42@file` router block below is hand-authored in the identical
 # real format (same metric names/label set/`@file` suffix convention) to
 # cover per-project attribution - see metrics_scraper_test.go's comments
 # for how this fixture's numbers were derived and cross-checked.
@@ -58,21 +58,21 @@ traefik_router_request_duration_seconds_bucket{code="499",method="DELETE",protoc
 traefik_router_request_duration_seconds_bucket{code="499",method="DELETE",protocol="http",router="tamga-api-secure@file",service="tamga-backend@file",le="1.2"} 5
 traefik_router_request_duration_seconds_bucket{code="499",method="DELETE",protocol="http",router="tamga-api-secure@file",service="tamga-backend@file",le="5"} 5
 traefik_router_request_duration_seconds_bucket{code="499",method="DELETE",protocol="http",router="tamga-api-secure@file",service="tamga-backend@file",le="+Inf"} 5
-traefik_router_request_duration_seconds_bucket{code="200",method="GET",protocol="http",router="project-42@file",service="project-42@file",le="0.1"} 130
-traefik_router_request_duration_seconds_bucket{code="200",method="GET",protocol="http",router="project-42@file",service="project-42@file",le="0.3"} 145
-traefik_router_request_duration_seconds_bucket{code="200",method="GET",protocol="http",router="project-42@file",service="project-42@file",le="1.2"} 150
-traefik_router_request_duration_seconds_bucket{code="200",method="GET",protocol="http",router="project-42@file",service="project-42@file",le="5"} 155
-traefik_router_request_duration_seconds_bucket{code="200",method="GET",protocol="http",router="project-42@file",service="project-42@file",le="+Inf"} 157
-traefik_router_request_duration_seconds_bucket{code="404",method="GET",protocol="http",router="project-42@file",service="project-42@file",le="0.1"} 8
-traefik_router_request_duration_seconds_bucket{code="404",method="GET",protocol="http",router="project-42@file",service="project-42@file",le="0.3"} 8
-traefik_router_request_duration_seconds_bucket{code="404",method="GET",protocol="http",router="project-42@file",service="project-42@file",le="1.2"} 8
-traefik_router_request_duration_seconds_bucket{code="404",method="GET",protocol="http",router="project-42@file",service="project-42@file",le="5"} 8
-traefik_router_request_duration_seconds_bucket{code="404",method="GET",protocol="http",router="project-42@file",service="project-42@file",le="+Inf"} 8
-traefik_router_request_duration_seconds_bucket{code="500",method="GET",protocol="http",router="project-42@file",service="project-42@file",le="0.1"} 2
-traefik_router_request_duration_seconds_bucket{code="500",method="GET",protocol="http",router="project-42@file",service="project-42@file",le="0.3"} 2
-traefik_router_request_duration_seconds_bucket{code="500",method="GET",protocol="http",router="project-42@file",service="project-42@file",le="1.2"} 2
-traefik_router_request_duration_seconds_bucket{code="500",method="GET",protocol="http",router="project-42@file",service="project-42@file",le="5"} 2
-traefik_router_request_duration_seconds_bucket{code="500",method="GET",protocol="http",router="project-42@file",service="project-42@file",le="+Inf"} 2
+traefik_router_request_duration_seconds_bucket{code="200",method="GET",protocol="http",router="seal-42@file",service="seal-42@file",le="0.1"} 130
+traefik_router_request_duration_seconds_bucket{code="200",method="GET",protocol="http",router="seal-42@file",service="seal-42@file",le="0.3"} 145
+traefik_router_request_duration_seconds_bucket{code="200",method="GET",protocol="http",router="seal-42@file",service="seal-42@file",le="1.2"} 150
+traefik_router_request_duration_seconds_bucket{code="200",method="GET",protocol="http",router="seal-42@file",service="seal-42@file",le="5"} 155
+traefik_router_request_duration_seconds_bucket{code="200",method="GET",protocol="http",router="seal-42@file",service="seal-42@file",le="+Inf"} 157
+traefik_router_request_duration_seconds_bucket{code="404",method="GET",protocol="http",router="seal-42@file",service="seal-42@file",le="0.1"} 8
+traefik_router_request_duration_seconds_bucket{code="404",method="GET",protocol="http",router="seal-42@file",service="seal-42@file",le="0.3"} 8
+traefik_router_request_duration_seconds_bucket{code="404",method="GET",protocol="http",router="seal-42@file",service="seal-42@file",le="1.2"} 8
+traefik_router_request_duration_seconds_bucket{code="404",method="GET",protocol="http",router="seal-42@file",service="seal-42@file",le="5"} 8
+traefik_router_request_duration_seconds_bucket{code="404",method="GET",protocol="http",router="seal-42@file",service="seal-42@file",le="+Inf"} 8
+traefik_router_request_duration_seconds_bucket{code="500",method="GET",protocol="http",router="seal-42@file",service="seal-42@file",le="0.1"} 2
+traefik_router_request_duration_seconds_bucket{code="500",method="GET",protocol="http",router="seal-42@file",service="seal-42@file",le="0.3"} 2
+traefik_router_request_duration_seconds_bucket{code="500",method="GET",protocol="http",router="seal-42@file",service="seal-42@file",le="1.2"} 2
+traefik_router_request_duration_seconds_bucket{code="500",method="GET",protocol="http",router="seal-42@file",service="seal-42@file",le="5"} 2
+traefik_router_request_duration_seconds_bucket{code="500",method="GET",protocol="http",router="seal-42@file",service="seal-42@file",le="+Inf"} 2
 # HELP traefik_router_requests_bytes_total The total size of requests in bytes handled by a router, partitioned by service, status code, protocol, and method.
 # TYPE traefik_router_requests_bytes_total counter
 traefik_router_requests_bytes_total{code="200",method="GET",protocol="http",router="tamga-api-secure@file",service="tamga-backend@file"} 0
@@ -83,9 +83,9 @@ traefik_router_requests_bytes_total{code="201",method="POST",protocol="http",rou
 traefik_router_requests_bytes_total{code="404",method="DELETE",protocol="http",router="tamga-api-secure@file",service="tamga-backend@file"} 0
 traefik_router_requests_bytes_total{code="404",method="GET",protocol="http",router="tamga-api-secure@file",service="tamga-backend@file"} 0
 traefik_router_requests_bytes_total{code="499",method="DELETE",protocol="http",router="tamga-api-secure@file",service="tamga-backend@file"} 0
-traefik_router_requests_bytes_total{code="200",method="GET",protocol="http",router="project-42@file",service="project-42@file"} 1500
-traefik_router_requests_bytes_total{code="404",method="GET",protocol="http",router="project-42@file",service="project-42@file"} 50
-traefik_router_requests_bytes_total{code="500",method="GET",protocol="http",router="project-42@file",service="project-42@file"} 20
+traefik_router_requests_bytes_total{code="200",method="GET",protocol="http",router="seal-42@file",service="seal-42@file"} 1500
+traefik_router_requests_bytes_total{code="404",method="GET",protocol="http",router="seal-42@file",service="seal-42@file"} 50
+traefik_router_requests_bytes_total{code="500",method="GET",protocol="http",router="seal-42@file",service="seal-42@file"} 20
 # HELP traefik_router_requests_total How many HTTP requests are processed on a router, partitioned by service, status code, protocol, and method.
 # TYPE traefik_router_requests_total counter
 traefik_router_requests_total{code="200",method="GET",protocol="http",router="tamga-api-secure@file",service="tamga-backend@file"} 21
@@ -96,9 +96,9 @@ traefik_router_requests_total{code="201",method="POST",protocol="http",router="t
 traefik_router_requests_total{code="404",method="DELETE",protocol="http",router="tamga-api-secure@file",service="tamga-backend@file"} 1
 traefik_router_requests_total{code="404",method="GET",protocol="http",router="tamga-api-secure@file",service="tamga-backend@file"} 44
 traefik_router_requests_total{code="499",method="DELETE",protocol="http",router="tamga-api-secure@file",service="tamga-backend@file"} 5
-traefik_router_requests_total{code="200",method="GET",protocol="http",router="project-42@file",service="project-42@file"} 150
-traefik_router_requests_total{code="404",method="GET",protocol="http",router="project-42@file",service="project-42@file"} 8
-traefik_router_requests_total{code="500",method="GET",protocol="http",router="project-42@file",service="project-42@file"} 2
+traefik_router_requests_total{code="200",method="GET",protocol="http",router="seal-42@file",service="seal-42@file"} 150
+traefik_router_requests_total{code="404",method="GET",protocol="http",router="seal-42@file",service="seal-42@file"} 8
+traefik_router_requests_total{code="500",method="GET",protocol="http",router="seal-42@file",service="seal-42@file"} 2
 # HELP traefik_router_responses_bytes_total The total size of responses in bytes handled by a router, partitioned by service, status code, protocol, and method.
 # TYPE traefik_router_responses_bytes_total counter
 traefik_router_responses_bytes_total{code="200",method="GET",protocol="http",router="tamga-api-secure@file",service="tamga-backend@file"} 7890
@@ -109,6 +109,6 @@ traefik_router_responses_bytes_total{code="201",method="POST",protocol="http",ro
 traefik_router_responses_bytes_total{code="404",method="DELETE",protocol="http",router="tamga-api-secure@file",service="tamga-backend@file"} 10
 traefik_router_responses_bytes_total{code="404",method="GET",protocol="http",router="tamga-api-secure@file",service="tamga-backend@file"} 619
 traefik_router_responses_bytes_total{code="499",method="DELETE",protocol="http",router="tamga-api-secure@file",service="tamga-backend@file"} 105
-traefik_router_responses_bytes_total{code="200",method="GET",protocol="http",router="project-42@file",service="project-42@file"} 75000
-traefik_router_responses_bytes_total{code="404",method="GET",protocol="http",router="project-42@file",service="project-42@file"} 300
-traefik_router_responses_bytes_total{code="500",method="GET",protocol="http",router="project-42@file",service="project-42@file"} 150
+traefik_router_responses_bytes_total{code="200",method="GET",protocol="http",router="seal-42@file",service="seal-42@file"} 75000
+traefik_router_responses_bytes_total{code="404",method="GET",protocol="http",router="seal-42@file",service="seal-42@file"} 300
+traefik_router_responses_bytes_total{code="500",method="GET",protocol="http",router="seal-42@file",service="seal-42@file"} 150

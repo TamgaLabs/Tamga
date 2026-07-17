@@ -41,7 +41,7 @@ func (h *CodeHandler) ListCodebases(w http.ResponseWriter, r *http.Request) {
 				ID:        p.ID,
 				Name:      p.Name,
 				Type:      "project",
-				Path:      filepath.Join(h.cfg.DataDir, "projects", fmt.Sprintf("%d", p.ID)),
+				Path:      filepath.Join(h.cfg.DataDir, "seals", fmt.Sprintf("%d", p.ID)),
 				ProjectID: p.ID,
 			})
 		}
@@ -74,7 +74,7 @@ func (h *CodeHandler) getProjectDir(projectID int64) string {
 	if projectID == 0 || projectID == -1 {
 		return h.cfg.SystemCodeDir
 	}
-	return filepath.Join(h.cfg.DataDir, "projects", fmt.Sprintf("%d", projectID))
+	return filepath.Join(h.cfg.DataDir, "seals", fmt.Sprintf("%d", projectID))
 }
 
 func (h *CodeHandler) FileTree(w http.ResponseWriter, r *http.Request) {

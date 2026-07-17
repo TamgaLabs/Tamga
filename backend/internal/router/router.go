@@ -13,7 +13,7 @@ import (
 func New(
 	authHandler *handler.AuthHandler,
 	systemHandler *handler.SystemHandler,
-	projectHandler *handler.ProjectHandler,
+	sealHandler *handler.SealHandler,
 	terminalHandler *handler.TerminalHandler,
 	containerHandler *handler.ContainerHandler,
 	codeHandler *handler.CodeHandler,
@@ -48,38 +48,8 @@ func New(
 			r.Use(authMiddleware)
 			r.Get("/auth/me", authHandler.Me)
 
-			// Projects
-			r.Get("/projects", projectHandler.List)
-			r.Post("/projects", projectHandler.Create)
-			r.Get("/projects/{id}", projectHandler.Get)
-			r.Put("/projects/{id}", projectHandler.Update)
-			r.Delete("/projects/{id}", projectHandler.Delete)
-			r.Get("/projects/{id}/sources", projectHandler.ListSources)
-			r.Post("/projects/{id}/sources", projectHandler.CreateSource)
-			r.Put("/projects/{id}/sources/{sourceId}", projectHandler.UpdateSource)
-			r.Delete("/projects/{id}/sources/{sourceId}", projectHandler.DeleteSource)
-			r.Post("/projects/{id}/sources/{sourceId}/refresh", projectHandler.RefreshSource)
-			r.Post("/projects/{id}/sources/refresh", projectHandler.RefreshAllSources)
-			r.Get("/projects/{id}/configuration", projectHandler.Configuration)
-			r.Put("/projects/{id}/configuration", projectHandler.SaveConfiguration)
-			r.Post("/projects/{id}/build", projectHandler.Build)
-			r.Post("/projects/{id}/deploy", projectHandler.Deploy)
-			r.Get("/projects/{id}/routes", projectHandler.Routes)
-			r.Put("/projects/{id}/routes", projectHandler.SetRoutes)
-			r.Post("/projects/{id}/restart", projectHandler.Restart)
-			r.Get("/projects/{id}/logs", projectHandler.Logs)
-			r.Get("/projects/{id}/deployments", projectHandler.ListDeployments)
-			r.Get("/projects/{id}/env-vars", projectHandler.ListEnvVars)
-			r.Post("/projects/{id}/env-vars", projectHandler.CreateEnvVar)
-			r.Delete("/projects/{id}/env-vars/{envVarId}", projectHandler.DeleteEnvVar)
-			r.Get("/projects/{id}/services/{service}/env-vars", projectHandler.ListServiceEnvVars)
-			r.Put("/projects/{id}/services/{service}/env-vars", projectHandler.UpsertServiceEnvVar)
-			r.Delete("/projects/{id}/services/{service}/env-vars/{envVarId}", projectHandler.DeleteServiceEnvVar)
-			r.Get("/projects/{id}/agent/terminal", terminalHandler.Serve)
-			r.Get("/projects/{id}/agent/sessions", terminalHandler.ListSessions)
-			r.Delete("/projects/{id}/agent/sessions/{sessionId}", terminalHandler.TerminateSession)
-			r.Get("/projects/{id}/metrics", metricsHandler.Project)
-			r.Get("/projects/{id}/topology", topologyHandler.Project)
+			// Seals
+			r.Post("/seals", sealHandler.Create)
 
 			// System / Docker containers
 			r.Get("/system/containers", containerHandler.List)

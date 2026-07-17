@@ -24,7 +24,7 @@ func TestCloneSourcesReplacesOwnedDirectoryAndRedactsFailure(t *testing.T) {
 	if err := svc.db.CreateProjectSource(source); err != nil {
 		t.Fatalf("create source: %v", err)
 	}
-	workDir := filepath.Join(cfg.DataDir, "projects", fmt.Sprintf("%d", project.ID), "sources", "worker")
+	workDir := filepath.Join(cfg.DataDir, "seals", fmt.Sprintf("%d", project.ID), "sources", "worker")
 	if err := os.MkdirAll(workDir, 0755); err != nil {
 		t.Fatalf("seed old checkout: %v", err)
 	}

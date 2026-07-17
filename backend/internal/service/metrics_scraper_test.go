@@ -24,7 +24,7 @@ import (
 // scrape_1/scrape_2's tamga-* core-router lines are copied verbatim from a
 // real live Traefik 3.4.5 capture (tamga-traefik-1, via `docker exec
 // tamga-backend-1 wget -qO- http://traefik:8080/metrics`) taken during this
-// task's development - see scrape_1's header comment. The project-42@file
+// task's development - see scrape_1's header comment. The seal-42@file
 // router block and scrape_3 (simulating a Traefik restart) are hand-authored
 // in the identical real format, since no project was deployed live to
 // generate real per-project/reset samples from. Every expected number below
@@ -43,7 +43,7 @@ func readFixture(t *testing.T, name string) []byte {
 
 func TestStripProviderSuffix(t *testing.T) {
 	cases := map[string]string{
-		"project-42@file":      "project-42",
+		"seal-42@file":         "seal-42",
 		"tamga-ui@file":        "tamga-ui",
 		"tamga-ui-secure@file": "tamga-ui-secure",
 		"no-suffix":            "no-suffix",
@@ -60,8 +60,8 @@ func TestResolveProjectID(t *testing.T) {
 		bare string
 		want int64
 	}{
-		{"project-42", 42},
-		{"project-7", 7},
+		{"seal-42", 42},
+		{"seal-7", 7},
 		{"tamga-ui", domain.GlobalProjectID},
 		{"tamga-ui-secure", domain.GlobalProjectID},
 		{"tamga-api", domain.GlobalProjectID},
@@ -120,7 +120,7 @@ func TestDiffCounter(t *testing.T) {
 
 // TestParseTraefikMetricsScrape1 checks the baseline scrape's parsed
 // cumulative values against the real captured numbers (for the tamga-*
-// core routers, folded into project 0) and the hand-authored project-42
+// core routers, folded into project 0) and the hand-authored seal-42
 // numbers.
 func TestParseTraefikMetricsScrape1(t *testing.T) {
 	state := parseTraefikMetrics(readFixture(t, "traefik_scrape_1.txt"))
@@ -191,7 +191,7 @@ func TestIngestSecondTickComputesIncrements(t *testing.T) {
 
 	p42 := sampleByProject[42]
 	if p42 == nil {
-		t.Fatal("expected a project-42 sample")
+		t.Fatal("expected a seal-42 sample")
 	}
 	assertSample(t, "project 42", p42, bucketStart, 50, 0, 3, 0, 500, 25000)
 
@@ -251,7 +251,7 @@ func TestIngestThirdTickHandlesReset(t *testing.T) {
 
 	p42 := sampleByProject[42]
 	if p42 == nil {
-		t.Fatal("expected a project-42 sample")
+		t.Fatal("expected a seal-42 sample")
 	}
 	// current 2xx=10 < prev 150 -> reset -> increment = current (10).
 	// 4xx/5xx absent in scrape_3 (current=0) < prev (8/2) -> reset -> 0.

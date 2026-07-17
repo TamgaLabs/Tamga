@@ -3,7 +3,7 @@
 // see traefik/traefik.yml). This replaces repository/caddy's admin-API
 // client: instead of POSTing route mutations to a running Caddy instance,
 // the backend writes/removes one YAML file per project
-// (project-<id>.yml) and Traefik's own file watcher (providers.file.watch)
+// (seal-<id>.yml) and Traefik's own file watcher (providers.file.watch)
 // hot-reloads on change. There is no shared config to reconcile after a
 // backend restart the way Caddy's LoadConfig required (see TEST-010 §2) -
 // each project's file is independent.
@@ -70,9 +70,9 @@ type serverConfig struct {
 // AddRoute writes (or overwrites) projectID's dynamic-config file, routing
 // domain to upstream (a "host:port" string, e.g. "project-5:8080" - the
 // same shape repository/caddy's AddRoute took). The router AND service are
-// both named exactly "project-<id>" (not the domain) so Traefik's
+// both named exactly "seal-<id>" (not the domain) so Traefik's
 // per-router/service Prometheus metrics
-// (traefik_router_requests_total{router="project-<id>@file",...}) are
+// (traefik_router_requests_total{router="seal-<id>@file",...}) are
 // directly attributable back to this project without a domain lookup
 // (TEST-010 §4).
 func (c *Client) AddRoute(projectID int64, domain, upstream string) error {
@@ -88,9 +88,9 @@ func (c *Client) ReplaceRoutes(projectID int64, routes []Route) error {
 		if route.Domain == "" || route.Upstream == "" {
 			return fmt.Errorf("route domain and upstream are required")
 		}
-		name := fmt.Sprintf("project-%d-%d", projectID, i)
+		name := fmt.Sprintf("seal-%d-%d", projectID, i)
 		if len(routes) == 1 {
-			name = fmt.Sprintf("project-%d", projectID)
+			name = fmt.Sprintf("seal-%d", projectID)
 		}
 		rule := fmt.Sprintf("Host(`%s`)", route.Domain)
 		cfg.HTTP.Routers[name] = routerConfig{Rule: rule, Service: name, EntryPoints: []string{"web"}}
@@ -103,15 +103,15 @@ func (c *Client) ReplaceRoutes(projectID int64, routes []Route) error {
 		return fmt.Errorf("marshal route config: %w", err)
 	}
 
-	header := fmt.Sprintf("# Managed by Tamga - do not edit by hand.\n# Regenerated atomically for project %d.\n", projectID)
-	return c.writeFile(fmt.Sprintf("project-%d", projectID), append([]byte(header), body...))
+	header := fmt.Sprintf("# Managed by Tamga - do not edit by hand.\n# Regenerated atomically for seal %d.\n", projectID)
+	return c.writeFile(fmt.Sprintf("seal-%d", projectID), append([]byte(header), body...))
 }
 
 // RemoveRoute deletes projectID's dynamic-config file. A file that doesn't
 // exist is not an error - matches callers that remove a route for a
 // project which was never successfully deployed.
 func (c *Client) RemoveRoute(projectID int64) error {
-	name := fmt.Sprintf("project-%d", projectID)
+	name := fmt.Sprintf("seal-%d", projectID)
 	if err := os.Remove(c.filePath(name)); err != nil && !os.IsNotExist(err) {
 		return fmt.Errorf("remove route file: %w", err)
 	}

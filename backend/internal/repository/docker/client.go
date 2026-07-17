@@ -213,11 +213,11 @@ type ContainerInfo struct {
 	Ports      []string          `json:"ports"`
 	Created    time.Time         `json:"created"`
 	Labels     map[string]string `json:"labels"`
-	ProjectID  int64             `json:"project_id,omitempty"`
+	SealID     int64             `json:"seal_id,omitempty"`
 	SystemType string            `json:"system_type,omitempty"`
 }
 
-// containerProjectInfo derives ListContainers' project_id/system_type
+// containerSealInfo derives ListContainers' seal_id/system_type
 // attribution from a container's name, matching Tamga's naming
 // conventions: a project's service containers are named
 // "project-<id>-<service>" (FEAT-028's deploy_engine.go
@@ -229,18 +229,18 @@ type ContainerInfo struct {
 // "agent-system") and Tamga's own system containers ("caddy", "tamga-*")
 // are the other two naming families ListContainers has always
 // recognized.
-func containerProjectInfo(name string) (projectID int64, systemType string) {
+func containerSealInfo(name string) (sealID int64, systemType string) {
 	switch {
-	case strings.HasPrefix(name, "project-"):
-		fmt.Sscanf(name, "project-%d", &projectID)
+	case strings.HasPrefix(name, "seal-"):
+		fmt.Sscanf(name, "seal-%d", &sealID)
 	case name == "agent-system":
 		systemType = "agent-system"
 	case strings.HasPrefix(name, "agent-"):
-		fmt.Sscanf(name, "agent-%d", &projectID)
+		fmt.Sscanf(name, "agent-%d", &sealID)
 	case name == "caddy" || strings.HasPrefix(name, "tamga-"):
 		systemType = name
 	}
-	return projectID, systemType
+	return sealID, systemType
 }
 
 func (c *Client) ListContainers(ctx context.Context) ([]ContainerInfo, error) {
@@ -263,7 +263,7 @@ func (c *Client) ListContainers(ctx context.Context) ([]ContainerInfo, error) {
 			}
 		}
 
-		projectID, systemType := containerProjectInfo(name)
+		sealID, systemType := containerSealInfo(name)
 
 		result = append(result, ContainerInfo{
 			ID:         ct.ID,
@@ -274,7 +274,7 @@ func (c *Client) ListContainers(ctx context.Context) ([]ContainerInfo, error) {
 			Ports:      ports,
 			Created:    time.Unix(ct.Created, 0),
 			Labels:     ct.Labels,
-			ProjectID:  projectID,
+			SealID:     sealID,
 			SystemType: systemType,
 		})
 	}

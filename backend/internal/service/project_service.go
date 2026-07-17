@@ -263,7 +263,7 @@ func (s *ProjectService) cloneSources(ctx context.Context, projectID int64, only
 			slog.Error("set source cloning", "project_id", projectID, "source_id", source.ID, "error", err)
 			return
 		}
-		workDir := filepath.Join(s.cfg.DataDir, "projects", fmt.Sprintf("%d", projectID), filepath.FromSlash(source.WorkspacePath))
+		workDir := filepath.Join(s.cfg.DataDir, "seals", fmt.Sprintf("%d", projectID), filepath.FromSlash(source.WorkspacePath))
 		if err := s.cloneRepo(ctx, source.RemoteURL, source.Branch, workDir); err != nil {
 			source.Status = domain.ProjectSourceStatusCloneFailed
 			source.ErrorSummary = "unable to clone source"
@@ -396,7 +396,7 @@ func (s *ProjectService) DeleteSource(ctx context.Context, projectID, sourceID i
 	if err := s.db.UpdateProject(project); err != nil {
 		return err
 	}
-	return os.RemoveAll(filepath.Join(s.cfg.DataDir, "projects", fmt.Sprintf("%d", projectID), filepath.FromSlash(source.WorkspacePath)))
+	return os.RemoveAll(filepath.Join(s.cfg.DataDir, "seals", fmt.Sprintf("%d", projectID), filepath.FromSlash(source.WorkspacePath)))
 }
 
 func (s *ProjectService) RefreshSource(ctx context.Context, projectID, sourceID int64) error {
@@ -467,7 +467,7 @@ func (s *ProjectService) deploy(ctx context.Context, project *domain.Project) er
 		// already built them locally.
 		pullImages = true
 	} else {
-		workDir := filepath.Join(s.cfg.DataDir, "projects", fmt.Sprintf("%d", project.ID))
+		workDir := filepath.Join(s.cfg.DataDir, "seals", fmt.Sprintf("%d", project.ID))
 
 		// 1. Prepare source
 		project.Status = domain.ProjectStatusCloning
@@ -557,7 +557,7 @@ func (s *ProjectService) Build(ctx context.Context, id int64) error {
 		return fmt.Errorf("configuration changed before build started")
 	}
 	for _, build := range config.Services {
-		contextDir := filepath.Join(s.cfg.DataDir, "projects", fmt.Sprintf("%d", id), filepath.FromSlash(build.Context))
+		contextDir := filepath.Join(s.cfg.DataDir, "seals", fmt.Sprintf("%d", id), filepath.FromSlash(build.Context))
 		if err := s.buildImageAt(ctx, buildImageTag(project.ID, capturedRevision, build.Name), contextDir, build.Dockerfile); err != nil {
 			_, _ = s.db.SetBuildStateIfRevision(project.ID, capturedRevision, 0, domain.ProjectStatusBuildFailed)
 			return fmt.Errorf("build service %q: %w", build.Name, err)
@@ -706,7 +706,7 @@ func (s *ProjectService) writeProjectRoutes(ctx context.Context, project *domain
 		}
 		output = append(output, traefik.Route{Service: route.Service, Domain: route.Domain, Upstream: fmt.Sprintf("%s:%s", c.ContainerName, port)})
 	}
-	s.connectTraefikToNetwork(ctx, projectNetworkName(project.ID))
+	s.connectTraefikToNetwork(ctx, sealNetworkName(project.ID))
 	return s.traefik.ReplaceRoutes(project.ID, output)
 }
 
@@ -756,7 +756,7 @@ func (s *ProjectService) writeProjectRoutes(ctx context.Context, project *domain
 // (verified live in TEST-014). The selected-route publisher attaches
 // Traefik only when at least one persisted project_route is present.
 func (s *ProjectService) deployStack(ctx context.Context, project *domain.Project, services []domain.ComposeService, pullImages bool) error {
-	netName := projectNetworkName(project.ID)
+	netName := sealNetworkName(project.ID)
 	if err := s.docker.EnsureNetwork(ctx, netName, false); err != nil {
 		return fmt.Errorf("ensure project network: %w", err)
 	}
@@ -1226,7 +1226,7 @@ func (s *ProjectService) Delete(ctx context.Context, id int64) error {
 		return fmt.Errorf("delete project: %w", err)
 	}
 
-	workDir := filepath.Join(s.cfg.DataDir, "projects", fmt.Sprintf("%d", id))
+	workDir := filepath.Join(s.cfg.DataDir, "seals", fmt.Sprintf("%d", id))
 	os.RemoveAll(workDir)
 
 	if s.docker != nil {
@@ -1275,7 +1275,7 @@ func (s *ProjectService) teardownDockerResources(id int64, legacyContainerID str
 	// network with any endpoint (running OR stopping/mid-teardown) still
 	// attached, so the stop+remove sweep above has to settle first, all on
 	// the same detached cleanupCtx.
-	netName := projectNetworkName(id)
+	netName := sealNetworkName(id)
 	s.disconnectTraefikFromNetwork(cleanupCtx, netName)
 	if err := s.docker.NetworkRemove(cleanupCtx, netName); err != nil {
 		slog.Warn("remove project network error", "project_id", id, "network", netName, "error", err)

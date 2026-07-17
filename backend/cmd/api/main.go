@@ -60,6 +60,7 @@ func main() {
 	idleTimeoutService := service.NewIdleTimeoutService(db)
 	gitCredentialService := service.NewGitCredentialService(db, cfg.JWTSecret)
 	projectService := service.NewProjectService(db, dockerClient, traefikClient, cfg, gitCredentialService)
+	sealService := service.NewSealService(db, cfg)
 	agentService := service.NewAgentService(db, dockerClient, cfg, whitelistService, egressService, resourceLimitService, gitCredentialService, idleTimeoutService)
 	// Starts its own background scrape loop (FEAT-031).
 	service.NewMetricsScraperService(db, cfg.TraefikMetricsURL, cfg.TraefikMetricsPeriod)
@@ -86,7 +87,7 @@ func main() {
 
 	systemHandler := handler.NewSystemHandler()
 	authHandler := handler.NewAuthHandler(authService)
-	projectHandler := handler.NewProjectHandler(projectService)
+	sealHandler := handler.NewSealHandler(sealService)
 	terminalHandler := handler.NewTerminalHandler(agentService)
 	codeHandler := handler.NewCodeHandler(projectService, cfg)
 	whitelistHandler := handler.NewWhitelistHandler(whitelistService)
@@ -105,7 +106,7 @@ func main() {
 		containerHandler = handler.NewContainerHandler(nil)
 	}
 
-	r := router.New(authHandler, systemHandler, projectHandler, terminalHandler, containerHandler, codeHandler, whitelistHandler, egressHandler, resourceLimitHandler, idleTimeoutHandler, gitCredentialHandler, metricsHandler, topologyHandler, authMiddleware)
+	r := router.New(authHandler, systemHandler, sealHandler, terminalHandler, containerHandler, codeHandler, whitelistHandler, egressHandler, resourceLimitHandler, idleTimeoutHandler, gitCredentialHandler, metricsHandler, topologyHandler, authMiddleware)
 
 	srv := &http.Server{
 		Addr:         fmt.Sprintf(":%d", cfg.Port),
