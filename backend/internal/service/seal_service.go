@@ -8,18 +8,27 @@ import (
 
 	"github.com/TamgaLabs/Tamga/backend/internal/config"
 	"github.com/TamgaLabs/Tamga/backend/internal/domain"
+	dockerclient "github.com/TamgaLabs/Tamga/backend/internal/repository/docker"
 	"github.com/TamgaLabs/Tamga/backend/internal/repository/sqlite"
 )
 
 // SealService owns lifecycle operations that are valid before a Seal has any
 // repositories or deployment configuration.
 type SealService struct {
-	db  *sqlite.DB
-	cfg config.Config
+	db      *sqlite.DB
+	cfg     config.Config
+	runtime sealRuntime
 }
 
-func NewSealService(db *sqlite.DB, cfg config.Config) *SealService {
-	return &SealService{db: db, cfg: cfg}
+// NewSealService accepts an optional Docker client so configuration-only
+// callers remain usable when Docker is unavailable. Runtime operations fail
+// closed until the API bootstrap supplies that client.
+func NewSealService(db *sqlite.DB, cfg config.Config, docker ...*dockerclient.Client) *SealService {
+	svc := &SealService{db: db, cfg: cfg}
+	if len(docker) > 0 && docker[0] != nil {
+		svc.runtime = dockerSealRuntime{client: docker[0]}
+	}
+	return svc
 }
 
 type CreateSealRequest struct {

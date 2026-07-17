@@ -61,6 +61,7 @@ func New(
 			r.Delete("/seals/{sealID}/services/{serviceID}/routes/{routeID}", sealHandler.DeleteServiceRoute)
 			r.Get("/seals/{sealID}/configuration", sealHandler.Configuration)
 			r.Put("/seals/{sealID}/configuration", sealHandler.SaveConfiguration)
+			r.Post("/seals/{sealID}/deploy", sealHandler.Deploy)
 
 			// System / Docker containers
 			r.Get("/system/containers", containerHandler.List)

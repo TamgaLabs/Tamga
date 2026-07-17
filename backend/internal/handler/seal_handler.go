@@ -229,6 +229,21 @@ func (h *SealHandler) SaveConfiguration(w http.ResponseWriter, r *http.Request) 
 	json.NewEncoder(w).Encode(configuration)
 }
 
+// Deploy starts a validated direct Seal configuration. Generated
+// configurations remain fail-closed until their Seal-native build lifecycle
+// has produced images; no legacy ProjectService deployment path is used.
+func (h *SealHandler) Deploy(w http.ResponseWriter, r *http.Request) {
+	sealID, ok := sealIDFromRequest(w, r)
+	if !ok {
+		return
+	}
+	if err := h.svc.Deploy(r.Context(), sealID); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
 func sealIDFromRequest(w http.ResponseWriter, r *http.Request) (int64, bool) {
 	id, err := strconv.ParseInt(chi.URLParam(r, "sealID"), 10, 64)
 	if err != nil || id <= 0 {
