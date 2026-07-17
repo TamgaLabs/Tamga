@@ -56,6 +56,9 @@ func New(
 			r.Delete("/seals/{sealID}/repositories/{repositoryID}", sealHandler.DeleteRepository)
 			r.Get("/seals/{sealID}/services", sealHandler.ListServices)
 			r.Post("/seals/{sealID}/services", sealHandler.CreateService)
+			r.Get("/seals/{sealID}/services/{serviceID}/routes", sealHandler.ListServiceRoutes)
+			r.Post("/seals/{sealID}/services/{serviceID}/routes", sealHandler.CreateServiceRoute)
+			r.Delete("/seals/{sealID}/services/{serviceID}/routes/{routeID}", sealHandler.DeleteServiceRoute)
 			r.Get("/seals/{sealID}/configuration", sealHandler.Configuration)
 			r.Put("/seals/{sealID}/configuration", sealHandler.SaveConfiguration)
 

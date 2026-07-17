@@ -2,11 +2,13 @@ package handler
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"strconv"
 
 	"github.com/go-chi/chi/v5"
 
+	"github.com/TamgaLabs/Tamga/backend/internal/domain"
 	"github.com/TamgaLabs/Tamga/backend/internal/service"
 )
 
@@ -137,6 +139,65 @@ func (h *SealHandler) CreateService(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(created)
 }
 
+func (h *SealHandler) ListServiceRoutes(w http.ResponseWriter, r *http.Request) {
+	sealID, serviceID, ok := sealServiceIDsFromRequest(w, r)
+	if !ok {
+		return
+	}
+	routes, err := h.svc.ListServiceRoutes(r.Context(), sealID, serviceID)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusNotFound)
+		return
+	}
+	if routes == nil {
+		routes = []*domain.SealServiceRoute{}
+	}
+	json.NewEncoder(w).Encode(routes)
+}
+
+func (h *SealHandler) CreateServiceRoute(w http.ResponseWriter, r *http.Request) {
+	sealID, serviceID, ok := sealServiceIDsFromRequest(w, r)
+	if !ok {
+		return
+	}
+	var req service.CreateSealServiceRouteRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "invalid request body", http.StatusBadRequest)
+		return
+	}
+	route, err := h.svc.AddServiceRoute(r.Context(), sealID, serviceID, req)
+	if err != nil {
+		switch {
+		case errors.Is(err, service.ErrInvalidSealServiceRoute):
+			http.Error(w, err.Error(), http.StatusBadRequest)
+		case errors.Is(err, service.ErrSealServiceRouteConflict):
+			http.Error(w, err.Error(), http.StatusConflict)
+		default:
+			http.Error(w, err.Error(), http.StatusNotFound)
+		}
+		return
+	}
+	w.WriteHeader(http.StatusCreated)
+	json.NewEncoder(w).Encode(route)
+}
+
+func (h *SealHandler) DeleteServiceRoute(w http.ResponseWriter, r *http.Request) {
+	sealID, serviceID, ok := sealServiceIDsFromRequest(w, r)
+	if !ok {
+		return
+	}
+	routeID, err := strconv.ParseInt(chi.URLParam(r, "routeID"), 10, 64)
+	if err != nil || routeID <= 0 {
+		http.Error(w, "invalid route id", http.StatusBadRequest)
+		return
+	}
+	if err := h.svc.DeleteServiceRoute(r.Context(), sealID, serviceID, routeID); err != nil {
+		http.Error(w, err.Error(), http.StatusNotFound)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
 func (h *SealHandler) Configuration(w http.ResponseWriter, r *http.Request) {
 	sealID, ok := sealIDFromRequest(w, r)
 	if !ok {
@@ -184,4 +245,17 @@ func repositoryIDFromRequest(w http.ResponseWriter, r *http.Request) (int64, boo
 		return 0, false
 	}
 	return id, true
+}
+
+func sealServiceIDsFromRequest(w http.ResponseWriter, r *http.Request) (int64, int64, bool) {
+	sealID, ok := sealIDFromRequest(w, r)
+	if !ok {
+		return 0, 0, false
+	}
+	serviceID, err := strconv.ParseInt(chi.URLParam(r, "serviceID"), 10, 64)
+	if err != nil || serviceID <= 0 {
+		http.Error(w, "invalid service id", http.StatusBadRequest)
+		return 0, 0, false
+	}
+	return sealID, serviceID, true
 }

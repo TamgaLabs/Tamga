@@ -151,3 +151,89 @@ func routerGit(t *testing.T, directory string, args ...string) {
 		t.Fatalf("git %v: %v: %s", args, err, output)
 	}
 }
+
+func TestSealServiceRoutesAPI(t *testing.T) {
+	db, err := sqlite.Open(filepath.Join(t.TempDir(), "tamga.db"))
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	t.Cleanup(func() { db.Close() })
+	if err := db.Migrate(); err != nil {
+		t.Fatalf("migrate db: %v", err)
+	}
+
+	svc := service.NewSealService(db, config.Config{DataDir: t.TempDir()})
+	seal, err := svc.Create(t.Context(), service.CreateSealRequest{Name: "routes"})
+	if err != nil {
+		t.Fatalf("create seal: %v", err)
+	}
+	repository := &domain.SealRepository{SealID: seal.ID, DisplayName: "app", RemoteURL: "https://example.test/app.git", Branch: "main", WorkspacePath: "repositories/app", Status: domain.ProjectSourceStatusReady}
+	if err := db.CreateSealRepository(repository); err != nil {
+		t.Fatalf("create repository: %v", err)
+	}
+	web := &domain.SealService{SealID: seal.ID, RepositoryID: repository.ID, Name: "web", BuildContext: ".", InternalPort: 3000}
+	api := &domain.SealService{SealID: seal.ID, RepositoryID: repository.ID, Name: "api", BuildContext: ".", InternalPort: 8080}
+	if err := db.CreateSealService(web); err != nil {
+		t.Fatalf("create web service: %v", err)
+	}
+	if err := db.CreateSealService(api); err != nil {
+		t.Fatalf("create api service: %v", err)
+	}
+
+	sealHandler := handler.NewSealHandler(svc)
+	r := New(nil, nil, sealHandler, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, func(next http.Handler) http.Handler { return next })
+	path := "/api/seals/" + strconv.FormatInt(seal.ID, 10) + "/services/" + strconv.FormatInt(web.ID, 10) + "/routes"
+	post := func(target, body string) *httptest.ResponseRecorder {
+		request := httptest.NewRequest(http.MethodPost, target, bytes.NewBufferString(body))
+		request.Header.Set("Content-Type", "application/json")
+		response := httptest.NewRecorder()
+		r.ServeHTTP(response, request)
+		return response
+	}
+
+	first := post(path, `{"domain":" App.Example.Test "}`)
+	if first.Code != http.StatusCreated {
+		t.Fatalf("create normalized route status = %d, body=%s", first.Code, first.Body.String())
+	}
+	var route domain.SealServiceRoute
+	if err := json.NewDecoder(first.Body).Decode(&route); err != nil || route.Domain != "app.example.test" || route.ServiceID != web.ID {
+		t.Fatalf("normalized route = %+v, err=%v", route, err)
+	}
+	second := post(path, `{"domain":"www.example.test"}`)
+	if second.Code != http.StatusCreated {
+		t.Fatalf("create second route status = %d, body=%s", second.Code, second.Body.String())
+	}
+
+	conflictPath := "/api/seals/" + strconv.FormatInt(seal.ID, 10) + "/services/" + strconv.FormatInt(api.ID, 10) + "/routes"
+	conflict := post(conflictPath, `{"domain":"APP.EXAMPLE.TEST"}`)
+	if conflict.Code != http.StatusConflict {
+		t.Fatalf("case-insensitive conflict status = %d, body=%s", conflict.Code, conflict.Body.String())
+	}
+	invalid := post(path, `{"domain":"app.example.test/admin"}`)
+	if invalid.Code != http.StatusBadRequest {
+		t.Fatalf("path route status = %d, body=%s", invalid.Code, invalid.Body.String())
+	}
+
+	listed := httptest.NewRecorder()
+	r.ServeHTTP(listed, httptest.NewRequest(http.MethodGet, path, nil))
+	if listed.Code != http.StatusOK {
+		t.Fatalf("list routes status = %d, body=%s", listed.Code, listed.Body.String())
+	}
+	var routes []domain.SealServiceRoute
+	if err := json.NewDecoder(listed.Body).Decode(&routes); err != nil || len(routes) != 2 {
+		t.Fatalf("routes after failed additions = %+v, err=%v", routes, err)
+	}
+
+	for _, persisted := range routes {
+		removed := httptest.NewRecorder()
+		r.ServeHTTP(removed, httptest.NewRequest(http.MethodDelete, path+"/"+strconv.FormatInt(persisted.ID, 10), nil))
+		if removed.Code != http.StatusNoContent {
+			t.Fatalf("delete route %d status = %d, body=%s", persisted.ID, removed.Code, removed.Body.String())
+		}
+	}
+	empty := httptest.NewRecorder()
+	r.ServeHTTP(empty, httptest.NewRequest(http.MethodGet, path, nil))
+	if empty.Code != http.StatusOK || empty.Body.String() != "[]\n" {
+		t.Fatalf("empty route set status=%d body=%q", empty.Code, empty.Body.String())
+	}
+}
