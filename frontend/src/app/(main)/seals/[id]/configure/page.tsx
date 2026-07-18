@@ -23,6 +23,18 @@ function errorMessage(error: unknown, fallback: string) {
   return error instanceof Error ? error.message : fallback;
 }
 
+function optionalCollection<T>(value: T[] | null | undefined): T[] {
+  return value ?? [];
+}
+
+function normalizeConfiguration(configuration: SealConfiguration): SealConfiguration {
+  return {
+    ...configuration,
+    services: optionalCollection(configuration.services),
+    facts: optionalCollection(configuration.facts),
+  };
+}
+
 export default function SealConfigurePage() {
   const params = useParams();
   const sealId = Number(params.id);
@@ -50,19 +62,23 @@ export default function SealConfigurePage() {
     setLoading(true);
     setError("");
     try {
-      const [nextConfiguration, nextRepositories] = await Promise.all([
+      const [configurationResponse, repositoriesResponse] = await Promise.all([
         getSealConfiguration(sealId), listSealRepositories(sealId),
       ]);
+      const nextConfiguration = normalizeConfiguration(configurationResponse);
+      const nextRepositories = optionalCollection(repositoriesResponse);
       const entries = await Promise.all(nextConfiguration.services.map(async (service) => [
-        service.id, await listSealServiceRoutes(sealId, service.id),
+        service.id, optionalCollection(await listSealServiceRoutes(sealId, service.id)),
       ] as const));
       setConfiguration(nextConfiguration);
       setRepositories(nextRepositories);
       setRoutes(Object.fromEntries(entries));
       setCompose(nextConfiguration.direct_compose || "");
       setAdvanced(nextConfiguration.authority === "direct");
-      setSelectedService((current) => nextConfiguration.services.some((service) => String(service.id) === current)
-        ? current : String(nextConfiguration.services[0]?.id || ""));
+      const preconfiguredServices = nextConfiguration.services.filter((service) =>
+        nextConfiguration.facts.some((fact) => fact.repository_id === service.repository_id && fact.preconfigured));
+      setSelectedService((current) => preconfiguredServices.some((service) => String(service.id) === current)
+        ? current : String(preconfiguredServices[0]?.id || nextConfiguration.services[0]?.id || ""));
       setSelectedRepository((current) => nextRepositories.some((repository) => String(repository.id) === current)
         ? current : String(nextRepositories[0]?.id || ""));
     } catch (requestError) {
