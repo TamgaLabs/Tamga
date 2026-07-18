@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { CloudDownload, FolderPlus, Globe2, Server, X } from "lucide-react";
+import { CloudDownload, FolderPlus, Globe2, Plus, Server, X } from "lucide-react";
 
 import { createSeal, createSealRepository } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
@@ -13,6 +13,7 @@ import { InputGroup, InputGroupAddon, InputGroupInput } from "@/components/ui/in
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 
 import { PageHeader, PageHeaderActions, PageHeaderDescription, PageHeaderTitle } from "@/components/page-header";
+import { useWorkspace } from "@/contexts/workspace-context";
 import { cn } from "@/lib/utils";
 
 type CreationMode = "empty" | "repository";
@@ -46,10 +47,22 @@ export default function NewSealPage() {
   const [createdSealID, setCreatedSealID] = useState<number | null>(null);
   const router = useRouter();
   const { user, loading: authLoading } = useAuth();
+  const { addSeal } = useWorkspace();
 
   useEffect(() => {
     if (!authLoading && !user) router.replace("/login");
   }, [user, authLoading, router]);
+
+  const resetForAnotherSeal = () => {
+    setName("");
+    setRepositoryURL("");
+    setBranch("main");
+    setDomain("");
+    setErrors({});
+    setOutcome("");
+    setError("");
+    setCreatedSealID(null);
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -62,6 +75,7 @@ export default function NewSealPage() {
     setSubmitting(true);
     try {
       const seal = await createSeal({ name: name.trim(), ...(domain.trim() ? { domain: domain.trim() } : {}) });
+      addSeal(seal);
       setCreatedSealID(seal.id);
       if (creationMode === "repository") {
         await createSealRepository(seal.id, { display_name: name.trim(), remote_url: repositoryURL.trim(), branch: branch.trim() });
@@ -134,7 +148,7 @@ export default function NewSealPage() {
 
             {error && <FieldError role="alert" className="rounded-md border border-destructive/30 bg-destructive/5 p-3 whitespace-pre-wrap">{error}</FieldError>}
             {outcome && <p role="status" className="rounded-md border border-success/30 bg-success/5 p-3 text-sm text-success">{outcome}</p>}
-            <div className="flex flex-col-reverse gap-3 border-t pt-5 sm:flex-row sm:justify-end"><Button type="button" variant="outline" onClick={() => router.back()}>Cancel</Button>{createdSealID && <Button type="button" variant="outline" onClick={() => router.push(`/seals/${createdSealID}/configure`)}>Configure Seal</Button>}<Button type="submit" disabled={submitting}>{submitting ? "Creating..." : creationMode === "repository" ? "Create Seal & add repository" : "Create Empty Seal"}</Button></div>
+            <div className="flex flex-col-reverse gap-3 border-t pt-5 sm:flex-row sm:justify-end"><Button type="button" variant="outline" onClick={() => router.back()}>Cancel</Button>{createdSealID && <><Button type="button" variant="outline" onClick={() => router.push(`/seals/${createdSealID}/configure`)}>Configure Seal</Button><Button type="button" variant="outline" onClick={resetForAnotherSeal}><Plus className="size-4" aria-hidden="true" />Add another Seal</Button></>}<Button type="submit" disabled={submitting}>{submitting ? "Creating..." : creationMode === "repository" ? "Create Seal & add repository" : "Create Empty Seal"}</Button></div>
           </form>
         </CardContent>
       </Card>

@@ -6,6 +6,7 @@ const mocks = vi.hoisted(() => ({
   replace: vi.fn(),
   createSeal: vi.fn(),
   createSealRepository: vi.fn(),
+  addSeal: vi.fn(),
   useAuth: vi.fn(),
 }));
 
@@ -19,6 +20,10 @@ vi.mock("next/navigation", () => ({
 
 vi.mock("@/lib/auth", () => ({
   useAuth: mocks.useAuth,
+}));
+
+vi.mock("@/contexts/workspace-context", () => ({
+  useWorkspace: () => ({ addSeal: mocks.addSeal }),
 }));
 
 vi.mock("@/lib/api", () => ({
@@ -37,6 +42,7 @@ describe("NewSealPage", () => {
     mocks.useAuth.mockReset();
     mocks.createSeal.mockReset();
     mocks.createSealRepository.mockReset();
+    mocks.addSeal.mockReset();
     mocks.createSeal.mockResolvedValue({ id: 42 });
     mocks.createSealRepository.mockResolvedValue({ id: 99 });
     container = document.createElement("div");
@@ -102,8 +108,14 @@ describe("NewSealPage", () => {
 
     await act(async () => container.querySelector<HTMLFormElement>("form")!.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true })));
     expect(mocks.createSeal).toHaveBeenCalledWith({ name: "web" });
+    expect(mocks.addSeal).toHaveBeenCalledWith({ id: 42 });
     expect(mocks.createSealRepository).toHaveBeenCalledWith(42, { display_name: "web", remote_url: "https://github.com/tamga/web.git", branch: "release" });
     expect(container.textContent).toContain("Next, select services");
     expect(container.textContent).toContain("Configure Seal");
+    expect(container.textContent).toContain("Add another Seal");
+
+    await act(async () => (Array.from(container.querySelectorAll("button")).find((button) => button.textContent?.includes("Add another Seal")) as HTMLButtonElement).click());
+    expect(container.querySelector<HTMLInputElement>("#name")?.value).toBe("");
+    expect(container.textContent).not.toContain("Configure Seal");
   });
 });

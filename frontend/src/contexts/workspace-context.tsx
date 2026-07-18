@@ -31,6 +31,7 @@ type WorkspaceContextValue = {
   seals: Seal[];
   loading: boolean;
   selectedSeal: Seal | null;
+  addSeal: (seal: Seal) => void;
   refetchSeals: () => void;
 };
 
@@ -71,10 +72,24 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
     if (!user) return;
     setLoading(true);
     listSeals()
-      .then(setSeals)
-      .catch(() => setSeals([]))
+      .then((nextSeals) => {
+        setSeals((currentSeals) => {
+          const sealsByID = new Map(currentSeals.map((seal) => [seal.id, seal]));
+          nextSeals.forEach((seal) => sealsByID.set(seal.id, seal));
+          return [...sealsByID.values()];
+        });
+      })
+      .catch(() => undefined)
       .finally(() => setLoading(false));
   }, [user]);
+
+  const addSeal = useCallback((seal: Seal) => {
+    setSeals((currentSeals) => {
+      const existingIndex = currentSeals.findIndex((currentSeal) => currentSeal.id === seal.id);
+      if (existingIndex === -1) return [...currentSeals, seal];
+      return currentSeals.map((currentSeal) => currentSeal.id === seal.id ? seal : currentSeal);
+    });
+  }, []);
 
   useEffect(() => {
     refetchSeals();
@@ -102,7 +117,7 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
       : null;
 
   return (
-    <WorkspaceContext.Provider value={{ view, setView, seals: allSeals, loading, selectedSeal, refetchSeals }}>
+    <WorkspaceContext.Provider value={{ view, setView, seals: allSeals, loading, selectedSeal, addSeal, refetchSeals }}>
       {children}
     </WorkspaceContext.Provider>
   );
