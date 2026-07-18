@@ -283,6 +283,7 @@ export type ContainerInfo = {
   ports: string[];
   created: string;
   labels: Record<string, string>;
+  seal_id?: number;
   project_id?: number;
   system_type?: string;
 };

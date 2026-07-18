@@ -5,12 +5,12 @@ import Link from "next/link";
 import { usePathname, useParams, useRouter } from "next/navigation";
 import {
   getContainer,
-  listProjects,
+  listSeals,
   startContainer,
   stopContainer,
   restartContainer,
   removeContainer,
-  type Project,
+  type Seal,
 } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { Button } from "@/components/ui/button";
@@ -29,16 +29,16 @@ const statusVariant: Record<string, "success" | "warning" | "error" | "info" | "
   created: "info",
 };
 
-// Derives the owning project id from the Docker container name using the
-// same project-<id> / agent-<id> convention the backend's list-endpoint
+// Derives the owning Seal id from the Docker container name using the
+// same seal-<id> / agent-<id> convention the backend's list-endpoint
 // derivation uses (client.go's Sscanf pattern-match, see TEST-008 §4).
 // The detail/Inspect endpoint returns raw Docker inspect data with no
-// project_id field, so it's re-derived client-side here rather than adding
+// seal_id field, so it's re-derived client-side here rather than adding
 // a backend field.
-function deriveProjectId(rawName?: string): number | null {
+function deriveSealId(rawName?: string): number | null {
   if (!rawName) return null;
   const name = rawName.replace(/^\//, "");
-  const match = /^(?:project|agent)-(\d+)/.exec(name);
+  const match = /^(?:seal|agent)-(\d+)/.exec(name);
   return match ? Number(match[1]) : null;
 }
 
@@ -49,7 +49,7 @@ export default function ContainerDetailLayout({ children }: { children: React.Re
   const { user, loading: authLoading } = useAuth();
   const [container, setContainer] = useState<any>(null);
   const [loading, setLoading] = useState(true);
-  const [projects, setProjects] = useState<Project[]>([]);
+  const [seals, setSeals] = useState<Seal[]>([]);
   const [loadError, setLoadError] = useState("");
   const [actionError, setActionError] = useState("");
   const [pendingAction, setPendingAction] = useState<"start" | "stop" | "restart" | "remove" | null>(null);
@@ -73,7 +73,7 @@ export default function ContainerDetailLayout({ children }: { children: React.Re
 
   useEffect(() => {
     if (!user) return;
-    listProjects().then(setProjects).catch(console.error);
+    listSeals().then(setSeals).catch(console.error);
   }, [user]);
 
   useEffect(() => {
@@ -140,8 +140,8 @@ export default function ContainerDetailLayout({ children }: { children: React.Re
 
   const name = container.Name?.replace(/^\//, "") || id.slice(0, 12);
   const status = container.State?.Status;
-  const projectId = deriveProjectId(container.Name);
-  const project = projectId ? projects.find((p) => p.id === projectId) : undefined;
+  const sealId = deriveSealId(container.Name);
+  const seal = sealId ? seals.find((candidate) => candidate.id === sealId) : undefined;
 
   const sections = [
     { href: `/containers/${id}`, label: "Inspect" },
@@ -166,12 +166,12 @@ export default function ContainerDetailLayout({ children }: { children: React.Re
               {status}
             </Badge>
           )}
-          {project ? (
+          {seal ? (
             <Link
-              href={`/projects/${project.id}`}
+              href={`/seals/${seal.id}/configure`}
               className="block mt-2 text-xs text-muted-foreground hover:text-foreground transition-colors"
             >
-              Project: {project.name}
+              Seal: {seal.name}
             </Link>
           ) : <PageHeaderDescription>Container details and live operational controls.</PageHeaderDescription>}
           </div>

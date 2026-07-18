@@ -5,13 +5,13 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
   listContainers,
-  listProjects,
+  listSeals,
   startContainer,
   stopContainer,
   restartContainer,
   removeContainer,
   type ContainerInfo,
-  type Project,
+  type Seal,
 } from "@/lib/api";
 import { useSystemMetrics } from "@/hooks/useMetrics";
 import { useAuth } from "@/lib/auth";
@@ -36,7 +36,7 @@ import {
 import { Search, Container as ContainerIcon, Plus, FolderKanban, AlertCircle, Settings } from "lucide-react";
 import { toast } from "sonner";
 
-type Group = { projectId: number; name: string; containers: ContainerInfo[] };
+type Group = { sealId: number; name: string; containers: ContainerInfo[] };
 
 const statusVariant: Record<string, "success" | "warning" | "error" | "info" | "default"> = {
   running: "success",
@@ -110,7 +110,7 @@ function formatBytes(bytes: number): string {
 
 export default function GlobalDashboardPage() {
   const [containers, setContainers] = useState<ContainerInfo[]>([]);
-  const [projects, setProjects] = useState<Project[]>([]);
+  const [seals, setSeals] = useState<Seal[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [deleteTarget, setDeleteTarget] = useState<ContainerInfo | null>(null);
@@ -130,10 +130,10 @@ export default function GlobalDashboardPage() {
     if (!user) return;
     setLoading(true);
     setError("");
-    Promise.all([listContainers(), listProjects()])
-      .then(([c, p]) => {
+    Promise.all([listContainers(), listSeals()])
+      .then(([c, s]) => {
         setContainers(c);
-        setProjects(p);
+        setSeals(s);
       })
       .catch((requestError) => {
         console.error(requestError);
@@ -194,25 +194,25 @@ export default function GlobalDashboardPage() {
     return true;
   });
 
-  const projectsById = new Map(projects.map((p) => [p.id, p]));
+  const sealsById = new Map(seals.map((seal) => [seal.id, seal]));
   const groupsById = new Map<number, ContainerInfo[]>();
   const systemContainers: ContainerInfo[] = [];
-  const nonProject: ContainerInfo[] = [];
+  const nonSeal: ContainerInfo[] = [];
   for (const c of filtered) {
-    if (c.project_id) {
-      const list = groupsById.get(c.project_id) || [];
+    if (c.seal_id) {
+      const list = groupsById.get(c.seal_id) || [];
       list.push(c);
-      groupsById.set(c.project_id, list);
+      groupsById.set(c.seal_id, list);
     } else if (c.system_type) {
       systemContainers.push(c);
     } else {
-      nonProject.push(c);
+      nonSeal.push(c);
     }
   }
   const groups: Group[] = Array.from(groupsById.entries())
-    .map(([projectId, list]) => ({
-      projectId,
-      name: projectsById.get(projectId)?.name || `Project #${projectId}`,
+    .map(([sealId, list]) => ({
+      sealId,
+      name: sealsById.get(sealId)?.name || `Seal #${sealId}`,
       containers: list,
     }))
     .sort((a, b) => a.name.localeCompare(b.name));
@@ -255,22 +255,22 @@ export default function GlobalDashboardPage() {
         </Empty>
       ) : (
         <>
-          {/* Project cards grid */}
-          {projects.length > 0 && (
+          {/* Seal cards grid */}
+          {seals.length > 0 && (
             <section>
-              <h2 className="text-sm font-semibold text-foreground mb-3">Projects</h2>
+              <h2 className="text-sm font-semibold text-foreground mb-3">Seals</h2>
               <div className="grid gap-4 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5">
-                {projects.map((p) => (
-                  <Card key={p.id} className="relative group">
+                {seals.map((seal) => (
+                  <Card key={seal.id} className="relative group">
                     <CardHeader className="pb-2">
                       <div className="flex items-start justify-between gap-2">
-                        <CardTitle className="text-sm font-medium truncate">{p.name}</CardTitle>
+                        <CardTitle className="text-sm font-medium truncate">{seal.name}</CardTitle>
                         <Button
                           variant="ghost"
                           size="sm"
                           className="size-7 p-0 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity relative z-10"
-                          onClick={(e) => { e.preventDefault(); e.stopPropagation(); router.push(`/projects/${p.id}/settings`); }}
-                          aria-label={`Edit ${p.name}`}
+                          onClick={(e) => { e.preventDefault(); e.stopPropagation(); router.push(`/seals/${seal.id}/configure`); }}
+                          aria-label={`Configure ${seal.name}`}
                         >
                           <Settings className="size-3.5" aria-hidden="true" />
                         </Button>
@@ -278,12 +278,12 @@ export default function GlobalDashboardPage() {
                     </CardHeader>
                     <CardContent className="pb-3">
                       <div className="flex items-center justify-between gap-2">
-                        <Badge variant={statusVariant[p.status] || "default"} className="text-xs">{p.status}</Badge>
-                        <span className="text-xs text-muted-foreground truncate">{p.source_type}</span>
+                        <Badge variant={statusVariant[seal.status] || "default"} className="text-xs">{seal.status}</Badge>
+                        <span className="text-xs text-muted-foreground truncate">{seal.source_type}</span>
                       </div>
                     </CardContent>
                     <Link
-                      href={`/projects/${p.id}`}
+                      href={`/seals/${seal.id}/configure`}
                       className="absolute inset-0 rounded-xl"
                       tabIndex={-1}
                       aria-hidden="true"
@@ -298,9 +298,9 @@ export default function GlobalDashboardPage() {
           {groups.length > 0 && (
             <div className="space-y-8">
               {groups.map((g) => (
-                <section key={g.projectId}>
+                <section key={g.sealId}>
                   <Link
-                    href={`/projects/${g.projectId}`}
+                    href={`/seals/${g.sealId}/configure`}
                     className="inline-block text-sm font-semibold text-foreground hover:text-accent transition-colors mb-3"
                   >
                     {g.name}
@@ -312,11 +312,11 @@ export default function GlobalDashboardPage() {
                   </div>
                 </section>
               ))}
-              {nonProject.length > 0 && (
+              {nonSeal.length > 0 && (
                 <section>
                   <h2 className="text-sm font-semibold text-foreground mb-3">Non-project</h2>
                   <div className="space-y-2">
-                    {nonProject.map((c) => (
+                    {nonSeal.map((c) => (
                       <ContainerRow key={c.id} container={c} onAction={handleAction} onDelete={(container) => { setDeleteError(""); setDeleteTarget(container); }} actionPending={pendingContainerId === c.id || (deleting && deleteTarget?.id === c.id)} />
                     ))}
                   </div>
@@ -340,7 +340,7 @@ export default function GlobalDashboardPage() {
             </div>
           )}
 
-          {projects.length === 0 && filtered.length === 0 && (
+          {seals.length === 0 && filtered.length === 0 && (
             <Empty className="min-h-56">
               <EmptyHeader>
                 <EmptyMedia><ContainerIcon className="size-5" /></EmptyMedia>
