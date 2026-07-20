@@ -19,7 +19,7 @@ type DB struct {
 }
 
 func Open(path string) (*DB, error) {
-	db, err := sql.Open("sqlite", path+"?_pragma=busy_timeout(5000)&_pragma=journal_mode(WAL)")
+	db, err := sql.Open("sqlite", path+"?_pragma=busy_timeout(5000)&_pragma=journal_mode(WAL)&_pragma=foreign_keys(1)")
 	if err != nil {
 		return nil, fmt.Errorf("open db: %w", err)
 	}
@@ -46,6 +46,10 @@ func (db *DB) Migrate() error {
 		}
 	}
 	sort.Strings(upFiles)
+	known := make(map[string]struct{}, len(upFiles))
+	for _, f := range upFiles {
+		known[f] = struct{}{}
+	}
 
 	rows, err := db.Query("SELECT filename FROM schema_migrations ORDER BY filename")
 	if err != nil {
@@ -62,21 +66,22 @@ func (db *DB) Migrate() error {
 		applied[name] = true
 	}
 	rows.Close()
+	for name := range applied {
+		if _, ok := known[name]; !ok {
+			return fmt.Errorf("existing database is unsupported by the fresh Seal-to-Project baseline")
+		}
+	}
 
 	var tableCount int
 	if err := db.QueryRow("SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name NOT IN ('schema_migrations')").Scan(&tableCount); err != nil {
 		return fmt.Errorf("count tables: %w", err)
 	}
 
-	// Legacy DB: has tables but no tracking records
+	// This schema is a destructive fresh-install baseline. Existing databases
+	// from the numbered migration history are intentionally unsupported: do
+	// not mark them as migrated, because their ownership model is incompatible.
 	if tableCount > 0 && len(applied) == 0 {
-		slog.Info("existing database without migration tracking, marking all current migrations as applied")
-		for _, f := range upFiles {
-			if _, err := db.Exec("INSERT OR IGNORE INTO schema_migrations (filename) VALUES (?)", f); err != nil {
-				return fmt.Errorf("record migration %s: %w", f, err)
-			}
-		}
-		return nil
+		return fmt.Errorf("existing database is unsupported by the fresh Seal-to-Project baseline")
 	}
 
 	for _, f := range upFiles {
