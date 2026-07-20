@@ -80,6 +80,17 @@ func (s *SealService) ListProjects(ctx context.Context, sealID int64) ([]*domain
 	return s.db.ListProjects(sealID)
 }
 
+func (s *SealService) FindProject(ctx context.Context, sealID, projectID int64) (*domain.Project, error) {
+	if _, err := s.db.FindSeal(sealID); err != nil {
+		return nil, fmt.Errorf("find seal: %w", err)
+	}
+	project, err := s.db.FindProject(sealID, projectID)
+	if err != nil {
+		return nil, fmt.Errorf("find project: %w", err)
+	}
+	return project, nil
+}
+
 func (s *SealService) ProjectCheckoutPath(sealID int64, project *domain.Project) (string, error) {
 	if project.SealID != sealID || !safeProjectName(project.Name) {
 		return "", fmt.Errorf("invalid project ownership")

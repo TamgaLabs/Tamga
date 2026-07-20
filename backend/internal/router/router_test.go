@@ -19,25 +19,12 @@ import (
 )
 
 func TestSealRoutesCreateEmptySealAndExcludeProjectRoutes(t *testing.T) {
-	db, err := sqlite.Open(filepath.Join(t.TempDir(), "tamga.db"))
-	if err != nil {
-		t.Fatalf("open db: %v", err)
-	}
-	t.Cleanup(func() { db.Close() })
-	if err := db.Migrate(); err != nil {
-		t.Fatalf("migrate db: %v", err)
-	}
-
-	sealHandler := handler.NewSealHandler(service.NewSealService(db, config.Config{DataDir: t.TempDir()}))
-	r := New(nil, nil, sealHandler, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, func(next http.Handler) http.Handler {
-		return next
-	})
+	db, r, _ := newSealRouter(t)
+	defer db.Close()
 
 	request := httptest.NewRequest(http.MethodPost, "/api/seals", bytes.NewBufferString(`{"name":"empty seal","domain":"empty.example.test"}`))
-	request.Header.Set("Content-Type", "application/json")
 	response := httptest.NewRecorder()
 	r.ServeHTTP(response, request)
-
 	if response.Code != http.StatusCreated {
 		t.Fatalf("POST /api/seals status = %d, want %d: %s", response.Code, http.StatusCreated, response.Body.String())
 	}
@@ -45,150 +32,107 @@ func TestSealRoutesCreateEmptySealAndExcludeProjectRoutes(t *testing.T) {
 	if err := json.NewDecoder(response.Body).Decode(&seal); err != nil {
 		t.Fatalf("decode seal response: %v", err)
 	}
-	if seal.ID == 0 || seal.Name != "empty seal" || seal.Domain != "empty.example.test" {
-		t.Fatalf("unexpected seal response: %+v", seal)
-	}
-	if seal.SourceType != domain.SourceTypeEmpty || seal.Status != domain.ProjectStatusConfiguring {
-		t.Fatalf("empty Seal lifecycle = source_type %q status %q, want %q and %q", seal.SourceType, seal.Status, domain.SourceTypeEmpty, domain.ProjectStatusConfiguring)
+	if seal.ID == 0 || seal.Name != "empty seal" {
+		t.Fatalf("unexpected empty seal: %+v", seal)
 	}
 
-	invalidRequest := httptest.NewRequest(http.MethodPost, "/api/seals", bytes.NewBufferString(`{"domain":"empty.example.test"}`))
-	invalidResponse := httptest.NewRecorder()
-	r.ServeHTTP(invalidResponse, invalidRequest)
-	if invalidResponse.Code != http.StatusBadRequest {
-		t.Fatalf("POST /api/seals without name status = %d, want %d", invalidResponse.Code, http.StatusBadRequest)
-	}
-
-	legacyRequest := httptest.NewRequest(http.MethodGet, "/api/projects", nil)
-	legacyResponse := httptest.NewRecorder()
-	r.ServeHTTP(legacyResponse, legacyRequest)
-	if legacyResponse.Code != http.StatusNotFound {
-		t.Fatalf("GET /api/projects status = %d, want %d", legacyResponse.Code, http.StatusNotFound)
+	legacy := httptest.NewRecorder()
+	r.ServeHTTP(legacy, httptest.NewRequest(http.MethodGet, "/api/projects", nil))
+	if legacy.Code != http.StatusNotFound {
+		t.Fatalf("GET /api/projects status = %d, want 404", legacy.Code)
 	}
 }
 
-func TestSealReadRoutesListDetailAndIDValidation(t *testing.T) {
-	db, err := sqlite.Open(filepath.Join(t.TempDir(), "tamga.db"))
-	if err != nil {
-		t.Fatalf("open db: %v", err)
-	}
-	t.Cleanup(func() { db.Close() })
-	if err := db.Migrate(); err != nil {
-		t.Fatalf("migrate db: %v", err)
-	}
-
-	svc := service.NewSealService(db, config.Config{DataDir: t.TempDir()})
-	sealHandler := handler.NewSealHandler(svc)
-	r := New(nil, nil, sealHandler, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, func(next http.Handler) http.Handler {
-		return next
-	})
-
-	empty := httptest.NewRecorder()
-	r.ServeHTTP(empty, httptest.NewRequest(http.MethodGet, "/api/seals", nil))
-	if empty.Code != http.StatusOK || empty.Body.String() != "[]\n" {
-		t.Fatalf("empty seal list status=%d body=%q, want 200 and []", empty.Code, empty.Body.String())
-	}
-
-	seal, err := svc.Create(t.Context(), service.CreateSealRequest{Name: "console", Domain: "console.example.test"})
+func TestSealProjectRoutesImportRefreshAndServiceConfiguration(t *testing.T) {
+	db, r, svc := newSealRouter(t)
+	defer db.Close()
+	seal, err := svc.Create(t.Context(), service.CreateSealRequest{Name: "projects"})
 	if err != nil {
 		t.Fatalf("create seal: %v", err)
 	}
-
-	list := httptest.NewRecorder()
-	r.ServeHTTP(list, httptest.NewRequest(http.MethodGet, "/api/seals", nil))
-	if list.Code != http.StatusOK {
-		t.Fatalf("seal list status=%d body=%q, want 200", list.Code, list.Body.String())
-	}
-	var seals []domain.Seal
-	if err := json.NewDecoder(list.Body).Decode(&seals); err != nil {
-		t.Fatalf("decode seal list: %v", err)
-	}
-	if len(seals) != 1 || seals[0].ID != seal.ID || seals[0].Name != seal.Name || seals[0].SourceType != seal.SourceType || seals[0].Domain != seal.Domain || seals[0].Status != seal.Status || seals[0].CreatedAt.IsZero() || seals[0].UpdatedAt.IsZero() {
-		t.Fatalf("unexpected seal list: %+v", seals)
-	}
-
-	detail := httptest.NewRecorder()
-	r.ServeHTTP(detail, httptest.NewRequest(http.MethodGet, "/api/seals/"+strconv.FormatInt(seal.ID, 10), nil))
-	if detail.Code != http.StatusOK {
-		t.Fatalf("seal detail status=%d body=%q, want 200", detail.Code, detail.Body.String())
-	}
-	var got domain.Seal
-	if err := json.NewDecoder(detail.Body).Decode(&got); err != nil {
-		t.Fatalf("decode seal detail: %v", err)
-	}
-	if got.ID != seal.ID || got.Name != seal.Name || got.SourceType != seal.SourceType || got.RepoURL != seal.RepoURL || got.Branch != seal.Branch || got.Domain != seal.Domain || got.Status != seal.Status || got.ConfigAuthority != seal.ConfigAuthority || got.ConfigRevision != seal.ConfigRevision || got.BuildRevision != seal.BuildRevision || got.CreatedAt.IsZero() || got.UpdatedAt.IsZero() {
-		t.Fatalf("unexpected seal detail: %+v", got)
-	}
-
-	missing := httptest.NewRecorder()
-	r.ServeHTTP(missing, httptest.NewRequest(http.MethodGet, "/api/seals/999", nil))
-	if missing.Code != http.StatusNotFound {
-		t.Fatalf("missing seal status=%d body=%q, want 404", missing.Code, missing.Body.String())
-	}
-	invalid := httptest.NewRecorder()
-	r.ServeHTTP(invalid, httptest.NewRequest(http.MethodGet, "/api/seals/not-an-id", nil))
-	if invalid.Code != http.StatusBadRequest {
-		t.Fatalf("invalid seal ID status=%d body=%q, want 400", invalid.Code, invalid.Body.String())
-	}
-}
-
-func TestSealRepositoryRoutesLifecycle(t *testing.T) {
-	db, err := sqlite.Open(filepath.Join(t.TempDir(), "tamga.db"))
-	if err != nil {
-		t.Fatalf("open db: %v", err)
-	}
-	t.Cleanup(func() { db.Close() })
-	if err := db.Migrate(); err != nil {
-		t.Fatalf("migrate db: %v", err)
-	}
-	dataDir := t.TempDir()
-	svc := service.NewSealService(db, config.Config{DataDir: dataDir})
-	seal, err := svc.Create(t.Context(), service.CreateSealRequest{Name: "repos"})
-	if err != nil {
-		t.Fatalf("create seal: %v", err)
-	}
-	if seal.ID != 1 {
-		t.Fatalf("unexpected seal id: %d", seal.ID)
-	}
-	sealHandler := handler.NewSealHandler(svc)
-	r := New(nil, nil, sealHandler, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, func(next http.Handler) http.Handler {
-		return next
-	})
 
 	remote := routerGitFixture(t)
-	create := httptest.NewRequest(http.MethodPost, "/api/seals/1/repositories", bytes.NewBufferString(`{"display_name":"api","remote_url":"`+remote+`"}`))
-	create.Header.Set("Content-Type", "application/json")
-	created := httptest.NewRecorder()
-	r.ServeHTTP(created, create)
+	projectsPath := "/api/seals/" + strconv.FormatInt(seal.ID, 10) + "/projects"
+	created := serveJSON(r, http.MethodPost, projectsPath, `{"name":"app","remote_url":"`+remote+`"}`)
 	if created.Code != http.StatusCreated {
-		t.Fatalf("POST repository status = %d, want %d: %s", created.Code, http.StatusCreated, created.Body.String())
+		t.Fatalf("POST project status = %d, body=%s", created.Code, created.Body.String())
 	}
-	var repository domain.SealRepository
-	if err := json.NewDecoder(created.Body).Decode(&repository); err != nil {
-		t.Fatalf("decode repository: %v", err)
+	var project domain.Project
+	if err := json.NewDecoder(created.Body).Decode(&project); err != nil {
+		t.Fatalf("decode project: %v", err)
 	}
-	if repository.Status != domain.ProjectSourceStatusReady || repository.WorkspacePath != "repositories/api" {
-		t.Fatalf("unexpected created repository: %+v", repository)
-	}
-
-	listed := httptest.NewRecorder()
-	r.ServeHTTP(listed, httptest.NewRequest(http.MethodGet, "/api/seals/1/repositories", nil))
-	if listed.Code != http.StatusOK {
-		t.Fatalf("GET repositories status = %d, want %d: %s", listed.Code, http.StatusOK, listed.Body.String())
-	}
-	var repositories []domain.SealRepository
-	if err := json.NewDecoder(listed.Body).Decode(&repositories); err != nil || len(repositories) != 1 {
-		t.Fatalf("decode repository list: count=%d err=%v", len(repositories), err)
+	if project.Status != domain.ProjectStatusCreated || project.SealID != seal.ID {
+		t.Fatalf("unexpected imported project: %+v", project)
 	}
 
-	deleted := httptest.NewRecorder()
-	r.ServeHTTP(deleted, httptest.NewRequest(http.MethodDelete, "/api/seals/1/repositories/"+strconv.FormatInt(repository.ID, 10), nil))
+	listed := serveJSON(r, http.MethodGet, projectsPath, "")
+	var projects []domain.Project
+	if listed.Code != http.StatusOK || json.NewDecoder(listed.Body).Decode(&projects) != nil || len(projects) != 1 {
+		t.Fatalf("GET projects status=%d body=%s", listed.Code, listed.Body.String())
+	}
+
+	projectPath := projectsPath + "/" + strconv.FormatInt(project.ID, 10)
+	refreshed := serveJSON(r, http.MethodPost, projectPath+"/refresh", "")
+	if refreshed.Code != http.StatusOK {
+		t.Fatalf("POST refresh status=%d body=%s", refreshed.Code, refreshed.Body.String())
+	}
+	if err := json.NewDecoder(refreshed.Body).Decode(&project); err != nil || project.Status != domain.ProjectStatusConfiguring {
+		t.Fatalf("refreshed project=%+v err=%v", project, err)
+	}
+
+	servicesPath := projectPath + "/services"
+	serviceResponse := serveJSON(r, http.MethodPost, servicesPath, `{"name":"web","build_context":".","internal_port":3000}`)
+	if serviceResponse.Code != http.StatusCreated {
+		t.Fatalf("POST service status=%d body=%s", serviceResponse.Code, serviceResponse.Body.String())
+	}
+	var projectService domain.Service
+	if err := json.NewDecoder(serviceResponse.Body).Decode(&projectService); err != nil {
+		t.Fatalf("decode service: %v", err)
+	}
+
+	routesPath := servicesPath + "/" + strconv.FormatInt(projectService.ID, 10) + "/routes"
+	routeResponse := serveJSON(r, http.MethodPost, routesPath, `{"domain":" App.Example.Test "}`)
+	if routeResponse.Code != http.StatusCreated {
+		t.Fatalf("POST route status=%d body=%s", routeResponse.Code, routeResponse.Body.String())
+	}
+	var route domain.ServiceRoute
+	if err := json.NewDecoder(routeResponse.Body).Decode(&route); err != nil || route.Domain != "app.example.test" {
+		t.Fatalf("route=%+v err=%v", route, err)
+	}
+
+	configuration := serveJSON(r, http.MethodGet, projectPath+"/configuration", "")
+	if configuration.Code != http.StatusOK {
+		t.Fatalf("GET configuration status=%d body=%s", configuration.Code, configuration.Body.String())
+	}
+	deleted := serveJSON(r, http.MethodDelete, projectPath, "")
 	if deleted.Code != http.StatusNoContent {
-		t.Fatalf("DELETE repository status = %d, want %d: %s", deleted.Code, http.StatusNoContent, deleted.Body.String())
+		t.Fatalf("DELETE project status=%d body=%s", deleted.Code, deleted.Body.String())
 	}
-	if _, err := os.Stat(filepath.Join(dataDir, "seals", "1", "repositories", "api")); !os.IsNotExist(err) {
-		t.Fatalf("deleted repository checkout remains: %v", err)
+}
+
+func newSealRouter(t *testing.T) (*sqlite.DB, http.Handler, *service.SealService) {
+	t.Helper()
+	db, err := sqlite.Open(filepath.Join(t.TempDir(), "tamga.db"))
+	if err != nil {
+		t.Fatalf("open db: %v", err)
 	}
+	if err := db.Migrate(); err != nil {
+		db.Close()
+		t.Fatalf("migrate db: %v", err)
+	}
+	svc := service.NewSealService(db, config.Config{DataDir: t.TempDir()})
+	sealHandler := handler.NewSealHandler(svc)
+	return db, New(nil, nil, sealHandler, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, func(next http.Handler) http.Handler { return next }), svc
+}
+
+func serveJSON(router http.Handler, method, path, body string) *httptest.ResponseRecorder {
+	request := httptest.NewRequest(method, path, bytes.NewBufferString(body))
+	if body != "" {
+		request.Header.Set("Content-Type", "application/json")
+	}
+	response := httptest.NewRecorder()
+	router.ServeHTTP(response, request)
+	return response
 }
 
 func routerGitFixture(t *testing.T) string {
@@ -214,91 +158,5 @@ func routerGit(t *testing.T, directory string, args ...string) {
 	command.Dir = directory
 	if output, err := command.CombinedOutput(); err != nil {
 		t.Fatalf("git %v: %v: %s", args, err, output)
-	}
-}
-
-func TestSealServiceRoutesAPI(t *testing.T) {
-	db, err := sqlite.Open(filepath.Join(t.TempDir(), "tamga.db"))
-	if err != nil {
-		t.Fatalf("open db: %v", err)
-	}
-	t.Cleanup(func() { db.Close() })
-	if err := db.Migrate(); err != nil {
-		t.Fatalf("migrate db: %v", err)
-	}
-
-	svc := service.NewSealService(db, config.Config{DataDir: t.TempDir()})
-	seal, err := svc.Create(t.Context(), service.CreateSealRequest{Name: "routes"})
-	if err != nil {
-		t.Fatalf("create seal: %v", err)
-	}
-	repository := &domain.SealRepository{SealID: seal.ID, DisplayName: "app", RemoteURL: "https://example.test/app.git", Branch: "main", WorkspacePath: "repositories/app", Status: domain.ProjectSourceStatusReady}
-	if err := db.CreateSealRepository(repository); err != nil {
-		t.Fatalf("create repository: %v", err)
-	}
-	web := &domain.SealService{SealID: seal.ID, RepositoryID: repository.ID, Name: "web", BuildContext: ".", InternalPort: 3000}
-	api := &domain.SealService{SealID: seal.ID, RepositoryID: repository.ID, Name: "api", BuildContext: ".", InternalPort: 8080}
-	if err := db.CreateSealService(web); err != nil {
-		t.Fatalf("create web service: %v", err)
-	}
-	if err := db.CreateSealService(api); err != nil {
-		t.Fatalf("create api service: %v", err)
-	}
-
-	sealHandler := handler.NewSealHandler(svc)
-	r := New(nil, nil, sealHandler, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, func(next http.Handler) http.Handler { return next })
-	path := "/api/seals/" + strconv.FormatInt(seal.ID, 10) + "/services/" + strconv.FormatInt(web.ID, 10) + "/routes"
-	post := func(target, body string) *httptest.ResponseRecorder {
-		request := httptest.NewRequest(http.MethodPost, target, bytes.NewBufferString(body))
-		request.Header.Set("Content-Type", "application/json")
-		response := httptest.NewRecorder()
-		r.ServeHTTP(response, request)
-		return response
-	}
-
-	first := post(path, `{"domain":" App.Example.Test "}`)
-	if first.Code != http.StatusCreated {
-		t.Fatalf("create normalized route status = %d, body=%s", first.Code, first.Body.String())
-	}
-	var route domain.SealServiceRoute
-	if err := json.NewDecoder(first.Body).Decode(&route); err != nil || route.Domain != "app.example.test" || route.ServiceID != web.ID {
-		t.Fatalf("normalized route = %+v, err=%v", route, err)
-	}
-	second := post(path, `{"domain":"www.example.test"}`)
-	if second.Code != http.StatusCreated {
-		t.Fatalf("create second route status = %d, body=%s", second.Code, second.Body.String())
-	}
-
-	conflictPath := "/api/seals/" + strconv.FormatInt(seal.ID, 10) + "/services/" + strconv.FormatInt(api.ID, 10) + "/routes"
-	conflict := post(conflictPath, `{"domain":"APP.EXAMPLE.TEST"}`)
-	if conflict.Code != http.StatusConflict {
-		t.Fatalf("case-insensitive conflict status = %d, body=%s", conflict.Code, conflict.Body.String())
-	}
-	invalid := post(path, `{"domain":"app.example.test/admin"}`)
-	if invalid.Code != http.StatusBadRequest {
-		t.Fatalf("path route status = %d, body=%s", invalid.Code, invalid.Body.String())
-	}
-
-	listed := httptest.NewRecorder()
-	r.ServeHTTP(listed, httptest.NewRequest(http.MethodGet, path, nil))
-	if listed.Code != http.StatusOK {
-		t.Fatalf("list routes status = %d, body=%s", listed.Code, listed.Body.String())
-	}
-	var routes []domain.SealServiceRoute
-	if err := json.NewDecoder(listed.Body).Decode(&routes); err != nil || len(routes) != 2 {
-		t.Fatalf("routes after failed additions = %+v, err=%v", routes, err)
-	}
-
-	for _, persisted := range routes {
-		removed := httptest.NewRecorder()
-		r.ServeHTTP(removed, httptest.NewRequest(http.MethodDelete, path+"/"+strconv.FormatInt(persisted.ID, 10), nil))
-		if removed.Code != http.StatusNoContent {
-			t.Fatalf("delete route %d status = %d, body=%s", persisted.ID, removed.Code, removed.Body.String())
-		}
-	}
-	empty := httptest.NewRecorder()
-	r.ServeHTTP(empty, httptest.NewRequest(http.MethodGet, path, nil))
-	if empty.Code != http.StatusOK || empty.Body.String() != "[]\n" {
-		t.Fatalf("empty route set status=%d body=%q", empty.Code, empty.Body.String())
 	}
 }

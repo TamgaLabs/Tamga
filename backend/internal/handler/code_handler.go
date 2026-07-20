@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -15,12 +16,12 @@ import (
 )
 
 type CodeHandler struct {
-	projectSvc *service.ProjectService
-	cfg        config.Config
+	sealSvc *service.SealService
+	cfg     config.Config
 }
 
-func NewCodeHandler(projectSvc *service.ProjectService, cfg config.Config) *CodeHandler {
-	return &CodeHandler{projectSvc: projectSvc, cfg: cfg}
+func NewCodeHandler(sealSvc *service.SealService, cfg config.Config) *CodeHandler {
+	return &CodeHandler{sealSvc: sealSvc, cfg: cfg}
 }
 
 type Codebase struct {
@@ -34,16 +35,26 @@ type Codebase struct {
 func (h *CodeHandler) ListCodebases(w http.ResponseWriter, r *http.Request) {
 	var codebases []Codebase
 
-	projects, err := h.projectSvc.List(r.Context())
+	seals, err := h.sealSvc.List(r.Context())
 	if err == nil {
-		for _, p := range projects {
-			codebases = append(codebases, Codebase{
-				ID:        p.ID,
-				Name:      p.Name,
-				Type:      "project",
-				Path:      filepath.Join(h.cfg.DataDir, "seals", fmt.Sprintf("%d", p.ID)),
-				ProjectID: p.ID,
-			})
+		for _, seal := range seals {
+			projects, err := h.sealSvc.ListProjects(r.Context(), seal.ID)
+			if err != nil {
+				continue
+			}
+			for _, p := range projects {
+				path, err := h.sealSvc.ProjectCheckoutPath(seal.ID, p)
+				if err != nil {
+					continue
+				}
+				codebases = append(codebases, Codebase{
+					ID:        p.ID,
+					Name:      p.Name,
+					Type:      "project",
+					Path:      path,
+					ProjectID: p.ID,
+				})
+			}
 		}
 	}
 
@@ -70,11 +81,21 @@ type FileEntry struct {
 	Size int64  `json:"size,omitempty"`
 }
 
-func (h *CodeHandler) getProjectDir(projectID int64) string {
+func (h *CodeHandler) getProjectDir(ctx context.Context, projectID int64) (string, error) {
 	if projectID == 0 || projectID == -1 {
-		return h.cfg.SystemCodeDir
+		return h.cfg.SystemCodeDir, nil
 	}
-	return filepath.Join(h.cfg.DataDir, "seals", fmt.Sprintf("%d", projectID))
+	seals, err := h.sealSvc.List(ctx)
+	if err != nil {
+		return "", err
+	}
+	for _, seal := range seals {
+		project, err := h.sealSvc.FindProject(ctx, seal.ID, projectID)
+		if err == nil {
+			return h.sealSvc.ProjectCheckoutPath(seal.ID, project)
+		}
+	}
+	return "", fmt.Errorf("project root not found")
 }
 
 func (h *CodeHandler) FileTree(w http.ResponseWriter, r *http.Request) {
@@ -83,8 +104,8 @@ func (h *CodeHandler) FileTree(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "invalid project id", http.StatusBadRequest)
 		return
 	}
-	root := h.getProjectDir(pid)
-	if root == "" {
+	root, err := h.getProjectDir(r.Context(), pid)
+	if err != nil || root == "" {
 		http.Error(w, "project root not found", http.StatusNotFound)
 		return
 	}
@@ -145,7 +166,11 @@ func (h *CodeHandler) ReadFile(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "path is required", http.StatusBadRequest)
 		return
 	}
-	root := h.getProjectDir(pid)
+	root, err := h.getProjectDir(r.Context(), pid)
+	if err != nil || root == "" {
+		http.Error(w, "project root not found", http.StatusNotFound)
+		return
+	}
 	fullPath := filepath.Join(root, filePath)
 
 	if !strings.HasPrefix(fullPath, root) {
@@ -182,7 +207,11 @@ func (h *CodeHandler) WriteFile(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "path is required", http.StatusBadRequest)
 		return
 	}
-	root := h.getProjectDir(pid)
+	root, err := h.getProjectDir(r.Context(), pid)
+	if err != nil || root == "" {
+		http.Error(w, "project root not found", http.StatusNotFound)
+		return
+	}
 	fullPath := filepath.Join(root, filePath)
 
 	if !strings.HasPrefix(fullPath, root) {

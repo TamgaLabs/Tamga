@@ -67,95 +67,101 @@ func (h *SealHandler) Create(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(seal)
 }
 
-func (h *SealHandler) ListRepositories(w http.ResponseWriter, r *http.Request) {
+func (h *SealHandler) ListProjects(w http.ResponseWriter, r *http.Request) {
 	sealID, ok := sealIDFromRequest(w, r)
 	if !ok {
 		return
 	}
-	repositories, err := h.svc.ListRepositories(r.Context(), sealID)
+	projects, err := h.svc.ListProjects(r.Context(), sealID)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusNotFound)
 		return
 	}
-	json.NewEncoder(w).Encode(repositories)
+	if projects == nil {
+		projects = []*domain.Project{}
+	}
+	json.NewEncoder(w).Encode(projects)
 }
 
-func (h *SealHandler) CreateRepository(w http.ResponseWriter, r *http.Request) {
+func (h *SealHandler) CreateProject(w http.ResponseWriter, r *http.Request) {
 	sealID, ok := sealIDFromRequest(w, r)
 	if !ok {
 		return
 	}
-	var req service.CreateSealRepositoryRequest
+	var req service.CreateSealProjectRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "invalid request body", http.StatusBadRequest)
 		return
 	}
-	repository, err := h.svc.CreateRepository(r.Context(), sealID, req)
+	project, err := h.svc.CreateProject(r.Context(), sealID, req)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 	w.WriteHeader(http.StatusCreated)
-	json.NewEncoder(w).Encode(repository)
+	json.NewEncoder(w).Encode(project)
 }
 
-func (h *SealHandler) RefreshRepository(w http.ResponseWriter, r *http.Request) {
+func (h *SealHandler) RefreshProject(w http.ResponseWriter, r *http.Request) {
 	sealID, ok := sealIDFromRequest(w, r)
 	if !ok {
 		return
 	}
-	repositoryID, ok := repositoryIDFromRequest(w, r)
+	projectID, ok := projectIDFromRequest(w, r)
 	if !ok {
 		return
 	}
-	repository, err := h.svc.RefreshRepository(r.Context(), sealID, repositoryID)
+	project, err := h.svc.RefreshProject(r.Context(), sealID, projectID)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusNotFound)
 		return
 	}
-	json.NewEncoder(w).Encode(repository)
+	json.NewEncoder(w).Encode(project)
 }
 
-func (h *SealHandler) DeleteRepository(w http.ResponseWriter, r *http.Request) {
+func (h *SealHandler) DeleteProject(w http.ResponseWriter, r *http.Request) {
 	sealID, ok := sealIDFromRequest(w, r)
 	if !ok {
 		return
 	}
-	repositoryID, ok := repositoryIDFromRequest(w, r)
+	projectID, ok := projectIDFromRequest(w, r)
 	if !ok {
 		return
 	}
-	if err := h.svc.DeleteRepository(r.Context(), sealID, repositoryID); err != nil {
+	if err := h.svc.DeleteProject(r.Context(), sealID, projectID); err != nil {
 		http.Error(w, err.Error(), http.StatusNotFound)
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
 }
 
-func (h *SealHandler) ListServices(w http.ResponseWriter, r *http.Request) {
-	sealID, ok := sealIDFromRequest(w, r)
+func (h *SealHandler) ListProjectServices(w http.ResponseWriter, r *http.Request) {
+	sealID, projectID, ok := sealProjectIDsFromRequest(w, r)
 	if !ok {
 		return
 	}
-	services, err := h.svc.ListServices(r.Context(), sealID)
+	services, err := h.svc.ListProjectServices(r.Context(), sealID, projectID)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusNotFound)
 		return
 	}
+	if services == nil {
+		services = []*domain.Service{}
+	}
 	json.NewEncoder(w).Encode(services)
 }
 
-func (h *SealHandler) CreateService(w http.ResponseWriter, r *http.Request) {
-	sealID, ok := sealIDFromRequest(w, r)
+func (h *SealHandler) CreateProjectService(w http.ResponseWriter, r *http.Request) {
+	sealID, projectID, ok := sealProjectIDsFromRequest(w, r)
 	if !ok {
 		return
 	}
-	var req service.CreateSealServiceRequest
+	var req service.CreateProjectServiceRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "invalid request body", http.StatusBadRequest)
 		return
 	}
-	created, err := h.svc.CreateService(r.Context(), sealID, req)
+	created, err := h.svc.CreateProjectService(r.Context(), sealID, projectID, req)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
@@ -164,38 +170,38 @@ func (h *SealHandler) CreateService(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(created)
 }
 
-func (h *SealHandler) ListServiceRoutes(w http.ResponseWriter, r *http.Request) {
-	sealID, serviceID, ok := sealServiceIDsFromRequest(w, r)
+func (h *SealHandler) ListProjectServiceRoutes(w http.ResponseWriter, r *http.Request) {
+	sealID, projectID, serviceID, ok := sealProjectServiceIDsFromRequest(w, r)
 	if !ok {
 		return
 	}
-	routes, err := h.svc.ListServiceRoutes(r.Context(), sealID, serviceID)
+	routes, err := h.svc.ListProjectServiceRoutes(r.Context(), sealID, projectID, serviceID)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusNotFound)
 		return
 	}
 	if routes == nil {
-		routes = []*domain.SealServiceRoute{}
+		routes = []*domain.ServiceRoute{}
 	}
 	json.NewEncoder(w).Encode(routes)
 }
 
-func (h *SealHandler) CreateServiceRoute(w http.ResponseWriter, r *http.Request) {
-	sealID, serviceID, ok := sealServiceIDsFromRequest(w, r)
+func (h *SealHandler) CreateProjectServiceRoute(w http.ResponseWriter, r *http.Request) {
+	sealID, projectID, serviceID, ok := sealProjectServiceIDsFromRequest(w, r)
 	if !ok {
 		return
 	}
-	var req service.CreateSealServiceRouteRequest
+	var req service.CreateProjectServiceRouteRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "invalid request body", http.StatusBadRequest)
 		return
 	}
-	route, err := h.svc.AddServiceRoute(r.Context(), sealID, serviceID, req)
+	route, err := h.svc.AddProjectServiceRoute(r.Context(), sealID, projectID, serviceID, req)
 	if err != nil {
 		switch {
-		case errors.Is(err, service.ErrInvalidSealServiceRoute):
+		case errors.Is(err, service.ErrInvalidProjectServiceRoute):
 			http.Error(w, err.Error(), http.StatusBadRequest)
-		case errors.Is(err, service.ErrSealServiceRouteConflict):
+		case errors.Is(err, service.ErrProjectServiceRouteConflict):
 			http.Error(w, err.Error(), http.StatusConflict)
 		default:
 			http.Error(w, err.Error(), http.StatusNotFound)
@@ -206,8 +212,8 @@ func (h *SealHandler) CreateServiceRoute(w http.ResponseWriter, r *http.Request)
 	json.NewEncoder(w).Encode(route)
 }
 
-func (h *SealHandler) DeleteServiceRoute(w http.ResponseWriter, r *http.Request) {
-	sealID, serviceID, ok := sealServiceIDsFromRequest(w, r)
+func (h *SealHandler) DeleteProjectServiceRoute(w http.ResponseWriter, r *http.Request) {
+	sealID, projectID, serviceID, ok := sealProjectServiceIDsFromRequest(w, r)
 	if !ok {
 		return
 	}
@@ -216,57 +222,24 @@ func (h *SealHandler) DeleteServiceRoute(w http.ResponseWriter, r *http.Request)
 		http.Error(w, "invalid route id", http.StatusBadRequest)
 		return
 	}
-	if err := h.svc.DeleteServiceRoute(r.Context(), sealID, serviceID, routeID); err != nil {
+	if err := h.svc.DeleteProjectServiceRoute(r.Context(), sealID, projectID, serviceID, routeID); err != nil {
 		http.Error(w, err.Error(), http.StatusNotFound)
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
 }
 
-func (h *SealHandler) Configuration(w http.ResponseWriter, r *http.Request) {
-	sealID, ok := sealIDFromRequest(w, r)
+func (h *SealHandler) ProjectConfiguration(w http.ResponseWriter, r *http.Request) {
+	sealID, projectID, ok := sealProjectIDsFromRequest(w, r)
 	if !ok {
 		return
 	}
-	configuration, err := h.svc.Configuration(r.Context(), sealID)
+	configuration, err := h.svc.ProjectConfiguration(r.Context(), sealID, projectID)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusNotFound)
 		return
 	}
 	json.NewEncoder(w).Encode(configuration)
-}
-
-func (h *SealHandler) SaveConfiguration(w http.ResponseWriter, r *http.Request) {
-	sealID, ok := sealIDFromRequest(w, r)
-	if !ok {
-		return
-	}
-	var req service.SaveSealConfigurationRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "invalid request body", http.StatusBadRequest)
-		return
-	}
-	configuration, err := h.svc.SaveConfiguration(r.Context(), sealID, req)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
-		return
-	}
-	json.NewEncoder(w).Encode(configuration)
-}
-
-// Deploy starts a validated direct Seal configuration. Generated
-// configurations remain fail-closed until their Seal-native build lifecycle
-// has produced images; no legacy ProjectService deployment path is used.
-func (h *SealHandler) Deploy(w http.ResponseWriter, r *http.Request) {
-	sealID, ok := sealIDFromRequest(w, r)
-	if !ok {
-		return
-	}
-	if err := h.svc.Deploy(r.Context(), sealID); err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
-		return
-	}
-	w.WriteHeader(http.StatusNoContent)
 }
 
 func sealIDFromRequest(w http.ResponseWriter, r *http.Request) (int64, bool) {
@@ -278,24 +251,36 @@ func sealIDFromRequest(w http.ResponseWriter, r *http.Request) (int64, bool) {
 	return id, true
 }
 
-func repositoryIDFromRequest(w http.ResponseWriter, r *http.Request) (int64, bool) {
-	id, err := strconv.ParseInt(chi.URLParam(r, "repositoryID"), 10, 64)
+func projectIDFromRequest(w http.ResponseWriter, r *http.Request) (int64, bool) {
+	id, err := strconv.ParseInt(chi.URLParam(r, "projectID"), 10, 64)
 	if err != nil || id <= 0 {
-		http.Error(w, "invalid repository id", http.StatusBadRequest)
+		http.Error(w, "invalid project id", http.StatusBadRequest)
 		return 0, false
 	}
 	return id, true
 }
 
-func sealServiceIDsFromRequest(w http.ResponseWriter, r *http.Request) (int64, int64, bool) {
+func sealProjectIDsFromRequest(w http.ResponseWriter, r *http.Request) (int64, int64, bool) {
 	sealID, ok := sealIDFromRequest(w, r)
 	if !ok {
 		return 0, 0, false
 	}
+	projectID, ok := projectIDFromRequest(w, r)
+	if !ok {
+		return 0, 0, false
+	}
+	return sealID, projectID, true
+}
+
+func sealProjectServiceIDsFromRequest(w http.ResponseWriter, r *http.Request) (int64, int64, int64, bool) {
+	sealID, projectID, ok := sealProjectIDsFromRequest(w, r)
+	if !ok {
+		return 0, 0, 0, false
+	}
 	serviceID, err := strconv.ParseInt(chi.URLParam(r, "serviceID"), 10, 64)
 	if err != nil || serviceID <= 0 {
 		http.Error(w, "invalid service id", http.StatusBadRequest)
-		return 0, 0, false
+		return 0, 0, 0, false
 	}
-	return sealID, serviceID, true
+	return sealID, projectID, serviceID, true
 }

@@ -59,7 +59,6 @@ func main() {
 	resourceLimitService := service.NewResourceLimitService(db)
 	idleTimeoutService := service.NewIdleTimeoutService(db)
 	gitCredentialService := service.NewGitCredentialService(db, cfg.JWTSecret)
-	projectService := service.NewProjectService(db, dockerClient, traefikClient, cfg, gitCredentialService)
 	sealService := service.NewSealService(db, cfg, dockerClient)
 	sealService.SetRoutePublisher(traefikClient)
 	agentService := service.NewAgentService(db, dockerClient, cfg, whitelistService, egressService, resourceLimitService, gitCredentialService, idleTimeoutService)
@@ -84,7 +83,6 @@ func main() {
 	// re-attaches Traefik to every reconciled project's network
 	// (FEAT-028's per-project-network reachability design), in case that
 	// attachment itself was ever lost.
-	projectService.ReconcileRoutes(context.Background())
 	// Reconcile Seal runtime identity and re-publish only its persisted exact
 	// service routes after their containers are verified running.
 	sealService.ReconcileRuntime(context.Background())
@@ -93,7 +91,7 @@ func main() {
 	authHandler := handler.NewAuthHandler(authService)
 	sealHandler := handler.NewSealHandler(sealService)
 	terminalHandler := handler.NewTerminalHandler(agentService)
-	codeHandler := handler.NewCodeHandler(projectService, cfg)
+	codeHandler := handler.NewCodeHandler(sealService, cfg)
 	whitelistHandler := handler.NewWhitelistHandler(whitelistService)
 	egressHandler := handler.NewEgressHandler(egressService)
 	resourceLimitHandler := handler.NewResourceLimitHandler(resourceLimitService)

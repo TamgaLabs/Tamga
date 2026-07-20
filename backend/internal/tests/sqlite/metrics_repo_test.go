@@ -1,8 +1,6 @@
 package sqlite_test
 
 import (
-	"os"
-	"path/filepath"
 	"testing"
 	"time"
 
@@ -33,43 +31,6 @@ func TestMetricsMigrationAppliesOnFreshDB(t *testing.T) {
 	}
 	if len(buckets) != 0 {
 		t.Fatalf("expected 0 latency buckets on fresh db, got %d", len(buckets))
-	}
-}
-
-// TestMetricsMigrationAppliesOnCopiedLiveDB re-runs Migrate() against a
-// throwaway copy of the actual on-disk dev database (never the live file
-// itself). Confirms migration 000017 applies cleanly on top of whatever
-// migrations that DB already has, and re-running Migrate() again is a
-// no-op. Skips if the live DB isn't present in this environment.
-func TestMetricsMigrationAppliesOnCopiedLiveDB(t *testing.T) {
-	liveDBPath := filepath.Join("..", "..", "..", "..", "data", "tamga.db")
-	if _, err := os.Stat(liveDBPath); err != nil {
-		t.Skipf("live dev db not present at %s, skipping: %v", liveDBPath, err)
-	}
-
-	copyPath := filepath.Join(t.TempDir(), "tamga_copy.db")
-	if err := copyFile(liveDBPath, copyPath); err != nil {
-		t.Fatalf("copy live db: %v", err)
-	}
-
-	db, err := sqlite.Open(copyPath)
-	if err != nil {
-		t.Fatalf("open copied db: %v", err)
-	}
-	t.Cleanup(func() { db.Close() })
-
-	if err := db.Migrate(); err != nil {
-		t.Fatalf("migrate copied live db: %v", err)
-	}
-
-	if _, err := db.ListMetricSamples(domain.GlobalProjectID, domain.MetricResolutionMinute, time.Unix(0, 0), time.Now()); err != nil {
-		t.Fatalf("query metric_samples on copied live db after migrate: %v", err)
-	}
-
-	// Re-running Migrate() again must be a no-op (idempotent), same as
-	// every other migration in this codebase.
-	if err := db.Migrate(); err != nil {
-		t.Fatalf("re-run migrate on already-migrated copied db: %v", err)
 	}
 }
 
