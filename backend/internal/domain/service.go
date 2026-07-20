@@ -2,12 +2,10 @@ package domain
 
 import "time"
 
-// SealService is one deployable service owned by a Seal and built from one of
-// its owned repository checkouts. Dependencies name sibling Seal services.
-type SealService struct {
+// Service is one deployable unit owned by a Project.
+type Service struct {
 	ID           int64     `json:"id"`
-	SealID       int64     `json:"seal_id"`
-	RepositoryID int64     `json:"repository_id"`
+	ProjectID    int64     `json:"project_id"`
 	Name         string    `json:"name"`
 	BuildContext string    `json:"build_context"`
 	InternalPort int       `json:"internal_port"`

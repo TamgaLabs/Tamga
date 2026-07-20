@@ -13,12 +13,7 @@ import (
 // black-box internal/tests/service test could not reach it at all.
 
 func TestSynthesizeGitBuildService(t *testing.T) {
-	envVars := []*domain.EnvVar{
-		{Key: "PORT", Value: "3000"},
-		{Key: "API_KEY", Value: "secret"},
-	}
-
-	svc := synthesizeGitBuildService("tamga-project-7", envVars)
+	svc := synthesizeGitBuildService("tamga-project-7")
 
 	if svc.Name != gitBuildServiceName {
 		t.Fatalf("expected synthesized service name %q, got %q", gitBuildServiceName, svc.Name)
@@ -26,9 +21,8 @@ func TestSynthesizeGitBuildService(t *testing.T) {
 	if svc.Image != "tamga-project-7" {
 		t.Fatalf("expected image %q, got %q", "tamga-project-7", svc.Image)
 	}
-	want := map[string]string{"PORT": "3000", "API_KEY": "secret"}
-	if !reflect.DeepEqual(svc.Environment, want) {
-		t.Fatalf("expected environment %v, got %v", want, svc.Environment)
+	if svc.Environment != nil {
+		t.Fatalf("expected no retired project-global environment, got %v", svc.Environment)
 	}
 	if len(svc.Ports) != 0 {
 		t.Fatalf("expected no declared ports on the synthesized service, got %v", svc.Ports)
@@ -44,24 +38,16 @@ func TestSynthesizeGitBuildService(t *testing.T) {
 	}
 }
 
-func TestSynthesizeGitBuildServiceNoEnvVars(t *testing.T) {
-	svc := synthesizeGitBuildService("tamga-project-1", nil)
-	if svc.Environment != nil {
-		t.Fatalf("expected nil environment for a project with no env vars, got %v", svc.Environment)
-	}
-}
-
-func TestApplyDatabaseEnvironmentUsesServiceValuesOverGlobals(t *testing.T) {
+func TestApplyDatabaseEnvironmentUsesOnlyServiceValues(t *testing.T) {
 	services := []domain.ComposeService{{Name: "web", Environment: map[string]string{"FROM_YAML": "ignored"}}, {Name: "worker"}}
-	got := applyDatabaseEnvironment(services,
-		[]*domain.EnvVar{{Key: "SHARED", Value: "global"}, {Key: "GLOBAL_ONLY", Value: "yes"}},
-		[]*domain.ServiceEnvVar{{ServiceName: "web", Key: "SHARED", Value: "web"}, {ServiceName: "web", Key: "WEB_ONLY", Value: "yes"}},
+	got := applyDatabaseEnvironment(services, map[int64]string{1: "web"},
+		[]*domain.ServiceEnvVar{{ServiceID: 1, Key: "SHARED", Value: "web"}, {ServiceID: 1, Key: "WEB_ONLY", Value: "yes"}},
 	)
-	if want := map[string]string{"SHARED": "web", "GLOBAL_ONLY": "yes", "WEB_ONLY": "yes"}; !reflect.DeepEqual(got[0].Environment, want) {
+	if want := map[string]string{"SHARED": "web", "WEB_ONLY": "yes"}; !reflect.DeepEqual(got[0].Environment, want) {
 		t.Fatalf("web environment = %v, want %v", got[0].Environment, want)
 	}
-	if want := map[string]string{"SHARED": "global", "GLOBAL_ONLY": "yes"}; !reflect.DeepEqual(got[1].Environment, want) {
-		t.Fatalf("worker environment = %v, want %v", got[1].Environment, want)
+	if got[1].Environment != nil {
+		t.Fatalf("worker environment = %v, want nil", got[1].Environment)
 	}
 }
 
@@ -159,12 +145,12 @@ func TestComposeVolumesToMounts(t *testing.T) {
 	}
 }
 
-func TestServiceContainerNameAndSealNetworkName(t *testing.T) {
-	if got := serviceContainerName(5, "web"); got != "seal-5-web" {
-		t.Fatalf("expected 'seal-5-web', got %q", got)
+func TestServiceContainerNameAndProjectNetworkName(t *testing.T) {
+	if got := serviceContainerName(5, "web"); got != "project-5-web" {
+		t.Fatalf("expected 'project-5-web', got %q", got)
 	}
-	if got := sealNetworkName(5); got != "seal-net-5" {
-		t.Fatalf("expected 'seal-net-5', got %q", got)
+	if got := projectNetworkName(5); got != "project-net-5" {
+		t.Fatalf("expected 'project-net-5', got %q", got)
 	}
 }
 

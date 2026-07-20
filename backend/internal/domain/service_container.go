@@ -8,8 +8,7 @@ import "time"
 // multi-service compose project has one per declared service.
 type ServiceContainer struct {
 	ID            int64     `json:"id"`
-	ProjectID     int64     `json:"project_id"`
-	ServiceName   string    `json:"service_name"`
+	ServiceID     int64     `json:"service_id"`
 	ContainerID   string    `json:"container_id"`
 	ContainerName string    `json:"container_name"`
 	Status        string    `json:"status"`

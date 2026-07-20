@@ -28,6 +28,10 @@ func openRollupTestDB(t *testing.T, name string) *sqlite.DB {
 	if err := db.Migrate(); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
+	if _, err := db.Exec(`INSERT INTO seals (id, name) VALUES (1, 'metrics-test');
+		INSERT INTO projects (id, seal_id, name) VALUES (1, 1, 'metrics-test');`); err != nil {
+		t.Fatalf("seed metric project ownership: %v", err)
+	}
 	return db
 }
 

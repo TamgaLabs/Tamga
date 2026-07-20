@@ -31,6 +31,12 @@ CREATE TABLE projects (
     UNIQUE(seal_id, name)
 );
 
+-- Global/core Traefik traffic is project-owned too. ID 0 is a durable
+-- system project rather than a fixture-only sentinel, so metric FKs remain
+-- valid on a freshly migrated production database.
+INSERT INTO seals (id, name) VALUES (0, 'tamga-system');
+INSERT INTO projects (id, seal_id, name) VALUES (0, 0, 'tamga-system');
+
 CREATE TABLE services (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,

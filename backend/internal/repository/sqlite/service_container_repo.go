@@ -7,10 +7,15 @@ import (
 )
 
 // ListServiceContainers returns every service/container row belonging to a
-// project, ordered by service name for a stable/deterministic result.
+// project, ordered by service ID for a stable/deterministic result.
 func (db *DB) ListServiceContainers(projectID int64) ([]*domain.ServiceContainer, error) {
 	rows, err := db.Query(
-		"SELECT id, seal_id, service_name, container_id, container_name, status, created_at FROM seal_service_containers WHERE seal_id = ? ORDER BY service_name",
+		`SELECT sc.id, sc.service_id, sc.container_id, sc.container_name, sc.status, sc.created_at
+		 FROM service_containers sc
+		 JOIN services s ON s.id=sc.service_id
+		 JOIN projects p ON p.id=s.project_id
+		 WHERE p.id = ?
+		 ORDER BY sc.service_id, sc.id`,
 		projectID,
 	)
 	if err != nil {
@@ -21,7 +26,7 @@ func (db *DB) ListServiceContainers(projectID int64) ([]*domain.ServiceContainer
 	var containers []*domain.ServiceContainer
 	for rows.Next() {
 		c := &domain.ServiceContainer{}
-		if err := rows.Scan(&c.ID, &c.ProjectID, &c.ServiceName, &c.ContainerID, &c.ContainerName, &c.Status, &c.CreatedAt); err != nil {
+		if err := rows.Scan(&c.ID, &c.ServiceID, &c.ContainerID, &c.ContainerName, &c.Status, &c.CreatedAt); err != nil {
 			return nil, fmt.Errorf("scan service container: %w", err)
 		}
 		containers = append(containers, c)
@@ -42,16 +47,23 @@ func (db *DB) ReplaceServiceContainers(projectID int64, containers []*domain.Ser
 	}
 	defer tx.Rollback()
 
-	if _, err := tx.Exec("DELETE FROM seal_service_containers WHERE seal_id = ?", projectID); err != nil {
+	if _, err := tx.Exec(`DELETE FROM service_containers
+		WHERE service_id IN (SELECT s.id FROM services s JOIN projects p ON p.id=s.project_id WHERE p.id=?)`, projectID); err != nil {
 		return fmt.Errorf("clear service containers: %w", err)
 	}
 
 	for _, c := range containers {
-		if _, err := tx.Exec(
-			"INSERT INTO seal_service_containers (seal_id, service_name, container_id, container_name, status) VALUES (?, ?, ?, ?, ?)",
-			projectID, c.ServiceName, c.ContainerID, c.ContainerName, c.Status,
-		); err != nil {
-			return fmt.Errorf("insert service container %q: %w", c.ServiceName, err)
+		result, err := tx.Exec(`INSERT INTO service_containers (service_id, container_id, container_name, status)
+			SELECT s.id, ?, ?, ? FROM services s JOIN projects p ON p.id=s.project_id WHERE p.id=? AND s.id=?`,
+			c.ContainerID, c.ContainerName, c.Status, projectID, c.ServiceID,
+		)
+		if err != nil {
+			return fmt.Errorf("insert service container %d: %w", c.ServiceID, err)
+		}
+		if affected, err := result.RowsAffected(); err != nil {
+			return fmt.Errorf("check service container %d ownership: %w", c.ServiceID, err)
+		} else if affected != 1 {
+			return fmt.Errorf("service %d is not owned by project %d", c.ServiceID, projectID)
 		}
 	}
 
@@ -62,13 +74,12 @@ func (db *DB) ReplaceServiceContainers(projectID int64, containers []*domain.Ser
 }
 
 // DeleteServiceContainersByProject removes every service/container row for
-// a project. project_service_containers already cascades on project
-// deletion (migration 000016's ON DELETE CASCADE), so this is only needed
-// when a project's stack is torn down without deleting the project itself
-// (e.g. a redeploy that fully replaces the set - see ReplaceServiceContainers
-// - or a future "stop"/`down` step that isn't part of this task's scope).
+// a project. service_containers cascades from services (and services from
+// projects), so this is only needed when a project's stack is torn down
+// without deleting the project itself.
 func (db *DB) DeleteServiceContainersByProject(projectID int64) error {
-	_, err := db.Exec("DELETE FROM seal_service_containers WHERE seal_id = ?", projectID)
+	_, err := db.Exec(`DELETE FROM service_containers
+		WHERE service_id IN (SELECT s.id FROM services s JOIN projects p ON p.id=s.project_id WHERE p.id=?)`, projectID)
 	if err != nil {
 		return fmt.Errorf("delete service containers by project: %w", err)
 	}

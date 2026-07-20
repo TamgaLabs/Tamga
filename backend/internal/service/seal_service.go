@@ -18,8 +18,8 @@ import (
 type SealService struct {
 	db      *sqlite.DB
 	cfg     config.Config
-	runtime sealRuntime
-	routes  sealRoutePublisher
+	runtime projectRuntime
+	routes  projectRoutePublisher
 }
 
 // NewSealService accepts an optional Docker client so configuration-only
@@ -28,20 +28,18 @@ type SealService struct {
 func NewSealService(db *sqlite.DB, cfg config.Config, docker ...*dockerclient.Client) *SealService {
 	svc := &SealService{db: db, cfg: cfg}
 	if len(docker) > 0 && docker[0] != nil {
-		svc.runtime = dockerSealRuntime{client: docker[0]}
+		svc.runtime = dockerProjectRuntime{client: docker[0]}
 	}
 	return svc
 }
 
-// SetRoutePublisher gives the Seal runtime ownership of its dynamic proxy
-// configuration without coupling configuration-only callers to Traefik.
+// SetRoutePublisher installs the project-scoped dynamic-route publisher.
 func (s *SealService) SetRoutePublisher(publisher *traefikrepo.Client) {
 	s.routes = publisher
 }
 
 type CreateSealRequest struct {
-	Name   string `json:"name"`
-	Domain string `json:"domain"`
+	Name string `json:"name"`
 }
 
 // List returns all persisted Seals for authenticated API consumers.
@@ -58,14 +56,7 @@ func (s *SealService) Find(_ context.Context, sealID int64) (*domain.Seal, error
 // It deliberately performs no repository, Docker, or deployment operation:
 // those begin only after a repository or configuration is explicitly added.
 func (s *SealService) Create(_ context.Context, req CreateSealRequest) (*domain.Seal, error) {
-	seal := &domain.Seal{
-		Name:            req.Name,
-		SourceType:      domain.SourceTypeEmpty,
-		Domain:          req.Domain,
-		Status:          domain.ProjectStatusConfiguring,
-		Branch:          "main",
-		ConfigAuthority: "generated",
-	}
+	seal := &domain.Seal{Name: req.Name}
 	if err := s.db.CreateSeal(seal); err != nil {
 		return nil, fmt.Errorf("create seal: %w", err)
 	}
@@ -73,9 +64,6 @@ func (s *SealService) Create(_ context.Context, req CreateSealRequest) (*domain.
 	workspace := filepath.Join(s.cfg.DataDir, "seals", fmt.Sprintf("%d", seal.ID))
 	if err := os.MkdirAll(workspace, 0755); err != nil {
 		return nil, fmt.Errorf("create seal workspace: %w", err)
-	}
-	if err := s.writeGeneratedCompose(seal.ID, "services: {}\n", false); err != nil {
-		return nil, err
 	}
 	return seal, nil
 }

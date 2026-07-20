@@ -1,45 +1,47 @@
 package sqlite
 
 import (
+	"database/sql"
+	"errors"
 	"fmt"
 
 	"github.com/TamgaLabs/Tamga/backend/internal/domain"
 )
 
-func (db *DB) CreateProject(p *domain.Project) error {
-	// container_id is set explicitly to '' (rather than left to default to
-	// NULL) so FindProject/ListProjects - which scan straight into plain
-	// string fields - never hit a NULL-into-string scan error for a project
-	// that hasn't been deployed yet. compose_yaml/exposed_service ARE bound
-	// from the request (a compose project supplies them at create time); they
-	// stay NULL-able at the column level (migration 000016) only so
-	// pre-existing rows don't need a backfill, and the SELECTs below COALESCE
-	// them to '' so a NULL legacy row and an empty new row scan identically.
-	res, err := db.Exec(
-		"INSERT INTO seals (name, source_type, repo_url, branch, domain, status, container_id, compose_yaml, exposed_service) VALUES (?, ?, ?, ?, ?, ?, '', ?, ?)",
-		p.Name, p.SourceType, p.RepoURL, p.Branch, p.Domain, p.Status, p.ComposeYAML, p.ExposedService,
-	)
+func (db *DB) CreateProject(project *domain.Project) error {
+	result, err := db.Exec(`INSERT INTO projects
+		(seal_id, name, source_type, repo_url, branch, compose_yaml, config_authority, status, config_revision, build_revision)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		project.SealID, project.Name, project.SourceType, project.RepoURL, project.Branch,
+		project.ComposeYAML, project.ConfigAuthority, project.Status, project.ConfigRevision, project.BuildRevision)
 	if err != nil {
 		return fmt.Errorf("create project: %w", err)
 	}
-	id, _ := res.LastInsertId()
-	p.ID = id
+	project.ID, _ = result.LastInsertId()
 	return nil
 }
 
-func (db *DB) FindProject(id int64) (*domain.Project, error) {
-	p := &domain.Project{}
-	err := db.QueryRow(
-		"SELECT id, name, source_type, repo_url, branch, domain, status, container_id, COALESCE(compose_yaml, ''), COALESCE(exposed_service, ''), config_revision, build_revision, created_at, updated_at FROM seals WHERE id = ?", id,
-	).Scan(&p.ID, &p.Name, &p.SourceType, &p.RepoURL, &p.Branch, &p.Domain, &p.Status, &p.ContainerID, &p.ComposeYAML, &p.ExposedService, &p.ConfigRevision, &p.BuildRevision, &p.CreatedAt, &p.UpdatedAt)
+func (db *DB) FindProject(sealID, projectID int64) (*domain.Project, error) {
+	project := &domain.Project{}
+	err := db.QueryRow(`SELECT id, seal_id, name, source_type, repo_url, branch, compose_yaml,
+		config_authority, status, config_revision, build_revision, created_at, updated_at
+		FROM projects WHERE seal_id=? AND id=?`, sealID, projectID).Scan(
+		&project.ID, &project.SealID, &project.Name, &project.SourceType, &project.RepoURL,
+		&project.Branch, &project.ComposeYAML, &project.ConfigAuthority, &project.Status,
+		&project.ConfigRevision, &project.BuildRevision, &project.CreatedAt, &project.UpdatedAt)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, domain.ErrNotFound
+	}
 	if err != nil {
 		return nil, fmt.Errorf("find project: %w", err)
 	}
-	return p, nil
+	return project, nil
 }
 
-func (db *DB) ListProjects() ([]*domain.Project, error) {
-	rows, err := db.Query("SELECT id, name, source_type, repo_url, branch, domain, status, container_id, COALESCE(compose_yaml, ''), COALESCE(exposed_service, ''), config_revision, build_revision, created_at, updated_at FROM seals ORDER BY created_at DESC")
+func (db *DB) ListProjects(sealID int64) ([]*domain.Project, error) {
+	rows, err := db.Query(`SELECT id, seal_id, name, source_type, repo_url, branch, compose_yaml,
+		config_authority, status, config_revision, build_revision, created_at, updated_at
+		FROM projects WHERE seal_id=? ORDER BY created_at DESC`, sealID)
 	if err != nil {
 		return nil, fmt.Errorf("list projects: %w", err)
 	}
@@ -47,35 +49,41 @@ func (db *DB) ListProjects() ([]*domain.Project, error) {
 
 	var projects []*domain.Project
 	for rows.Next() {
-		p := &domain.Project{}
-		if err := rows.Scan(&p.ID, &p.Name, &p.SourceType, &p.RepoURL, &p.Branch, &p.Domain, &p.Status, &p.ContainerID, &p.ComposeYAML, &p.ExposedService, &p.ConfigRevision, &p.BuildRevision, &p.CreatedAt, &p.UpdatedAt); err != nil {
+		project := &domain.Project{}
+		if err := rows.Scan(&project.ID, &project.SealID, &project.Name, &project.SourceType,
+			&project.RepoURL, &project.Branch, &project.ComposeYAML, &project.ConfigAuthority,
+			&project.Status, &project.ConfigRevision, &project.BuildRevision, &project.CreatedAt,
+			&project.UpdatedAt); err != nil {
 			return nil, fmt.Errorf("scan project: %w", err)
 		}
-		projects = append(projects, p)
+		projects = append(projects, project)
 	}
-	return projects, nil
+	return projects, rows.Err()
 }
 
-func (db *DB) UpdateProject(p *domain.Project) error {
-	_, err := db.Exec(
-		"UPDATE seals SET name=?, source_type=?, repo_url=?, branch=?, domain=?, status=?, container_id=?, compose_yaml=?, exposed_service=?, config_revision=?, build_revision=?, updated_at=CURRENT_TIMESTAMP WHERE id=?",
-		p.Name, p.SourceType, p.RepoURL, p.Branch, p.Domain, p.Status, p.ContainerID, p.ComposeYAML, p.ExposedService, p.ConfigRevision, p.BuildRevision, p.ID,
-	)
+func (db *DB) UpdateProject(project *domain.Project) error {
+	result, err := db.Exec(`UPDATE projects SET name=?, source_type=?, repo_url=?, branch=?,
+		compose_yaml=?, config_authority=?, status=?, config_revision=?, build_revision=?,
+		updated_at=CURRENT_TIMESTAMP WHERE id=? AND seal_id=?`,
+		project.Name, project.SourceType, project.RepoURL, project.Branch, project.ComposeYAML,
+		project.ConfigAuthority, project.Status, project.ConfigRevision, project.BuildRevision,
+		project.ID, project.SealID)
 	if err != nil {
 		return fmt.Errorf("update project: %w", err)
+	}
+	affected, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("count updated projects: %w", err)
+	}
+	if affected == 0 {
+		return domain.ErrNotFound
 	}
 	return nil
 }
 
-// SetBuildStateIfRevision changes only build-owned fields when the project is
-// still at the configuration revision captured by Build.  It deliberately
-// avoids writing the rest of a stale Project struct back over a concurrent
-// configuration/source update.
-func (db *DB) SetBuildStateIfRevision(id, configRevision, buildRevision int64, status domain.ProjectStatus) (bool, error) {
-	result, err := db.Exec(
-		"UPDATE seals SET status=?, build_revision=?, updated_at=CURRENT_TIMESTAMP WHERE id=? AND config_revision=?",
-		status, buildRevision, id, configRevision,
-	)
+func (db *DB) SetBuildStateIfRevision(sealID, projectID, configRevision, buildRevision int64, status domain.ProjectStatus) (bool, error) {
+	result, err := db.Exec(`UPDATE projects SET status=?, build_revision=?, updated_at=CURRENT_TIMESTAMP
+		WHERE id=? AND seal_id=? AND config_revision=?`, status, buildRevision, projectID, sealID, configRevision)
 	if err != nil {
 		return false, fmt.Errorf("set build state: %w", err)
 	}
@@ -86,10 +94,17 @@ func (db *DB) SetBuildStateIfRevision(id, configRevision, buildRevision int64, s
 	return affected == 1, nil
 }
 
-func (db *DB) DeleteProject(id int64) error {
-	_, err := db.Exec("DELETE FROM seals WHERE id = ?", id)
+func (db *DB) DeleteProject(sealID, projectID int64) error {
+	result, err := db.Exec("DELETE FROM projects WHERE id=? AND seal_id=?", projectID, sealID)
 	if err != nil {
 		return fmt.Errorf("delete project: %w", err)
+	}
+	affected, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("count deleted projects: %w", err)
+	}
+	if affected == 0 {
+		return domain.ErrNotFound
 	}
 	return nil
 }

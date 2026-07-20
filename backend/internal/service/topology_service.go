@@ -146,7 +146,7 @@ func (s *TopologyService) GetProjectTopology(ctx context.Context, projectID int6
 	var projectContainers []dockerclient.ContainerInfo
 	for _, c := range allContainers {
 		// Include containers that belong to this project or are agents for this project
-		if c.SealID == projectID {
+		if c.ProjectID == projectID {
 			projectContainers = append(projectContainers, c)
 		}
 	}
@@ -169,7 +169,7 @@ func (s *TopologyService) GetProjectTopology(ctx context.Context, projectID int6
 	nodes := s.buildNodes(projectContainers)
 
 	// Find the project's network (project-net-<id>)
-	projectNetName := fmt.Sprintf("seal-net-%d", projectID)
+	projectNetName := fmt.Sprintf("project-net-%d", projectID)
 	var projectNetContainers map[string]string // container ID -> name
 	for _, net := range networks {
 		if net.Name == projectNetName {
@@ -221,7 +221,7 @@ func (s *TopologyService) containerToNode(c dockerclient.ContainerInfo) *Topolog
 		Name:       c.Name,
 		Image:      c.Image,
 		Type:       ClassifyImage(c.Image),
-		ProjectID:  c.SealID,
+		ProjectID:  c.ProjectID,
 		SystemType: c.SystemType,
 		State:      c.State,
 		Status:     c.Status,
@@ -229,8 +229,8 @@ func (s *TopologyService) containerToNode(c dockerclient.ContainerInfo) *Topolog
 	}
 
 	// Add traffic_ref for project containers (nodes with non-zero project_id)
-	if c.SealID > 0 {
-		node.TrafficRef = fmt.Sprintf("seal-%d", c.SealID)
+	if c.ProjectID > 0 {
+		node.TrafficRef = fmt.Sprintf("project-%d", c.ProjectID)
 	}
 
 	return node

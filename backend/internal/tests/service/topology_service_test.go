@@ -70,24 +70,24 @@ func TestBuildEdgesFromFixture(t *testing.T) {
 	// Fixture: containers on tamga_tamga-network
 	containers := []docker.ContainerInfo{
 		{
-			ID:     "id-caddy",
-			Name:   "tamga-caddy-1",
-			SealID: 0,
+			ID:        "id-caddy",
+			Name:      "tamga-caddy-1",
+			ProjectID: 0,
 		},
 		{
-			ID:     "id-backend",
-			Name:   "tamga-backend-1",
-			SealID: 0,
+			ID:        "id-backend",
+			Name:      "tamga-backend-1",
+			ProjectID: 0,
 		},
 		{
-			ID:     "id-frontend",
-			Name:   "tamga-frontend-1",
-			SealID: 0,
+			ID:        "id-frontend",
+			Name:      "tamga-frontend-1",
+			ProjectID: 0,
 		},
 		{
-			ID:     "id-project1",
-			Name:   "seal-1",
-			SealID: 1,
+			ID:        "id-project1",
+			Name:      "project-1",
+			ProjectID: 1,
 		},
 	}
 
@@ -102,9 +102,9 @@ func TestBuildEdgesFromFixture(t *testing.T) {
 			},
 		},
 		{
-			Name: "seal-net-1",
+			Name: "project-net-1",
 			Containers: map[string]network.EndpointResource{
-				"id-project1": {Name: "seal-1"},
+				"id-project1": {Name: "project-1"},
 			},
 		},
 		{
@@ -200,7 +200,7 @@ func TestEdgeDeduplication(t *testing.T) {
 func TestNoiseNetworkExclusion(t *testing.T) {
 	// Test that default networks are properly identified
 	noiseNets := []string{"bridge", "host", "none"}
-	userNets := []string{"tamga_tamga-network", "seal-net-1", "custom-app-net"}
+	userNets := []string{"tamga_tamga-network", "project-net-1", "custom-app-net"}
 
 	for _, nn := range noiseNets {
 		// These should be excluded from topology

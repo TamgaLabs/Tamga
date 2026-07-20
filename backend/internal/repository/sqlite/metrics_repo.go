@@ -14,7 +14,7 @@ import (
 // scrape produces the per-interval increment since the previous scrape, and
 // when the scrape interval is finer than the bucket resolution (e.g. a 10s
 // scrape into a 1-minute bucket) several disjoint increments land on the
-// same (seal_id, resolution, bucket_start) key and must SUM into that
+// same (project_id, resolution, bucket_start) key and must SUM into that
 // bucket's total. Overwriting would keep only the last interval's delta
 // (typically 0 when traffic is idle), discarding the rest - the TEST-015
 // data-loss bug. Each interval-increment is written exactly once (a failed
@@ -34,9 +34,9 @@ func (db *DB) InsertMetricSamples(samples []*domain.MetricSample) error {
 
 	stmt, err := tx.Prepare(`
 		INSERT INTO metric_samples
-			(seal_id, resolution, bucket_start, count_2xx, count_3xx, count_4xx, count_5xx, bytes_in, bytes_out)
+			(project_id, resolution, bucket_start, count_2xx, count_3xx, count_4xx, count_5xx, bytes_in, bytes_out)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-		ON CONFLICT (seal_id, resolution, bucket_start) DO UPDATE SET
+		ON CONFLICT (project_id, resolution, bucket_start) DO UPDATE SET
 			count_2xx = metric_samples.count_2xx + excluded.count_2xx,
 			count_3xx = metric_samples.count_3xx + excluded.count_3xx,
 			count_4xx = metric_samples.count_4xx + excluded.count_4xx,
@@ -67,7 +67,7 @@ func (db *DB) InsertMetricSamples(samples []*domain.MetricSample) error {
 // InsertMetricLatencyBuckets batch-upserts histogram bucket increment rows
 // (migration 000017's metric_latency_buckets table). Same additive
 // accumulation as InsertMetricSamples: multiple sub-bucket-resolution
-// scrapes sharing a (seal_id, resolution, bucket_start, le) key SUM into
+// scrapes sharing a (project_id, resolution, bucket_start, le) key SUM into
 // that bucket rather than overwriting.
 func (db *DB) InsertMetricLatencyBuckets(buckets []*domain.MetricLatencyBucket) error {
 	if len(buckets) == 0 {
@@ -82,9 +82,9 @@ func (db *DB) InsertMetricLatencyBuckets(buckets []*domain.MetricLatencyBucket) 
 
 	stmt, err := tx.Prepare(`
 		INSERT INTO metric_latency_buckets
-			(seal_id, resolution, bucket_start, le, count)
+			(project_id, resolution, bucket_start, le, count)
 		VALUES (?, ?, ?, ?, ?)
-		ON CONFLICT (seal_id, resolution, bucket_start, le) DO UPDATE SET
+		ON CONFLICT (project_id, resolution, bucket_start, le) DO UPDATE SET
 			count = metric_latency_buckets.count + excluded.count
 	`)
 	if err != nil {
@@ -111,9 +111,9 @@ func (db *DB) InsertMetricLatencyBuckets(buckets []*domain.MetricLatencyBucket) 
 // inclusive, to exclusive), ordered by bucket_start ascending.
 func (db *DB) ListMetricSamples(projectID int64, resolution domain.MetricResolution, from, to time.Time) ([]*domain.MetricSample, error) {
 	rows, err := db.Query(`
-		SELECT id, seal_id, resolution, bucket_start, count_2xx, count_3xx, count_4xx, count_5xx, bytes_in, bytes_out
+		SELECT id, project_id, resolution, bucket_start, count_2xx, count_3xx, count_4xx, count_5xx, bytes_in, bytes_out
 		FROM metric_samples
-		WHERE seal_id = ? AND resolution = ? AND bucket_start >= ? AND bucket_start < ?
+		WHERE project_id = ? AND resolution = ? AND bucket_start >= ? AND bucket_start < ?
 		ORDER BY bucket_start ASC
 	`, projectID, string(resolution), from.UTC().Unix(), to.UTC().Unix())
 	if err != nil {
@@ -143,9 +143,9 @@ func (db *DB) ListMetricSamples(projectID int64, resolution domain.MetricResolut
 // percentiles per bucket_start).
 func (db *DB) ListMetricLatencyBuckets(projectID int64, resolution domain.MetricResolution, from, to time.Time) ([]*domain.MetricLatencyBucket, error) {
 	rows, err := db.Query(`
-		SELECT id, seal_id, resolution, bucket_start, le, count
+		SELECT id, project_id, resolution, bucket_start, le, count
 		FROM metric_latency_buckets
-		WHERE seal_id = ? AND resolution = ? AND bucket_start >= ? AND bucket_start < ?
+		WHERE project_id = ? AND resolution = ? AND bucket_start >= ? AND bucket_start < ?
 		ORDER BY bucket_start ASC, le ASC
 	`, projectID, string(resolution), from.UTC().Unix(), to.UTC().Unix())
 	if err != nil {
@@ -185,20 +185,20 @@ func (db *DB) PruneMetrics(resolution domain.MetricResolution, cutoff time.Time)
 }
 
 // DeleteMetricsByProject deletes every metric_samples/metric_latency_buckets
-// row (every resolution) for a single concrete seal_id. BUG-031: unlike
+// row (every resolution) for a single concrete project_id. Unlike
 // PruneMetrics (cutoff-based, across every project), this is
 // project-scoped, called from ProjectService.Delete's synchronous DB
 // cleanup so a deleted project's metric rows don't outlive it - day
 // resolution rows in particular have no other retention path and would
 // otherwise leak forever (day rows are exempt from PruneMetrics' rolling
 // cutoff sweep). Deliberately takes a concrete projectID rather than
-// accepting domain.GlobalProjectID's scope: callers must never be able to
-// wipe the global (seal_id 0) metrics by passing 0 here.
+// accepting a cross-project scope: callers must not be able to wipe metrics
+// belonging to another project.
 func (db *DB) DeleteMetricsByProject(projectID int64) error {
-	if _, err := db.Exec("DELETE FROM metric_samples WHERE seal_id = ?", projectID); err != nil {
+	if _, err := db.Exec("DELETE FROM metric_samples WHERE project_id = ?", projectID); err != nil {
 		return fmt.Errorf("delete metric samples by project: %w", err)
 	}
-	if _, err := db.Exec("DELETE FROM metric_latency_buckets WHERE seal_id = ?", projectID); err != nil {
+	if _, err := db.Exec("DELETE FROM metric_latency_buckets WHERE project_id = ?", projectID); err != nil {
 		return fmt.Errorf("delete metric latency buckets by project: %w", err)
 	}
 	return nil
@@ -288,8 +288,8 @@ func ResolutionWindow(res domain.MetricResolution) (time.Duration, error) {
 // AggregateMetrics is the minute->hour / hour->day rollup primitive:
 // it sums every srcResolution row (across both tables) whose bucket_start
 // falls inside [dstBucketStart, dstBucketStart+dstResolution's window) into
-// a single dstResolution row per seal_id (and, for latency, per
-// seal_id + le), upserting the result. Idempotent - safe for FEAT-032's
+// a single dstResolution row per project_id (and, for latency, per
+// project_id + le), upserting the result. Idempotent - safe for FEAT-032's
 // rollup sweep to re-run for the same dstBucketStart (e.g. after a retry or
 // a late-arriving scrape).
 //
@@ -311,12 +311,12 @@ func (db *DB) AggregateMetrics(srcResolution, dstResolution domain.MetricResolut
 	defer tx.Rollback()
 
 	if _, err := tx.Exec(`
-		INSERT INTO metric_samples (seal_id, resolution, bucket_start, count_2xx, count_3xx, count_4xx, count_5xx, bytes_in, bytes_out)
-		SELECT seal_id, ?, ?, SUM(count_2xx), SUM(count_3xx), SUM(count_4xx), SUM(count_5xx), SUM(bytes_in), SUM(bytes_out)
+		INSERT INTO metric_samples (project_id, resolution, bucket_start, count_2xx, count_3xx, count_4xx, count_5xx, bytes_in, bytes_out)
+		SELECT project_id, ?, ?, SUM(count_2xx), SUM(count_3xx), SUM(count_4xx), SUM(count_5xx), SUM(bytes_in), SUM(bytes_out)
 		FROM metric_samples
 		WHERE resolution = ? AND bucket_start >= ? AND bucket_start < ?
-		GROUP BY seal_id
-		ON CONFLICT (seal_id, resolution, bucket_start) DO UPDATE SET
+		GROUP BY project_id
+		ON CONFLICT (project_id, resolution, bucket_start) DO UPDATE SET
 			count_2xx = excluded.count_2xx,
 			count_3xx = excluded.count_3xx,
 			count_4xx = excluded.count_4xx,
@@ -328,12 +328,12 @@ func (db *DB) AggregateMetrics(srcResolution, dstResolution domain.MetricResolut
 	}
 
 	if _, err := tx.Exec(`
-		INSERT INTO metric_latency_buckets (seal_id, resolution, bucket_start, le, count)
-		SELECT seal_id, ?, ?, le, SUM(count)
+		INSERT INTO metric_latency_buckets (project_id, resolution, bucket_start, le, count)
+		SELECT project_id, ?, ?, le, SUM(count)
 		FROM metric_latency_buckets
 		WHERE resolution = ? AND bucket_start >= ? AND bucket_start < ?
-		GROUP BY seal_id, le
-		ON CONFLICT (seal_id, resolution, bucket_start, le) DO UPDATE SET
+		GROUP BY project_id, le
+		ON CONFLICT (project_id, resolution, bucket_start, le) DO UPDATE SET
 			count = excluded.count
 	`, string(dstResolution), from, string(srcResolution), from, to); err != nil {
 		return fmt.Errorf("aggregate metric latency buckets: %w", err)

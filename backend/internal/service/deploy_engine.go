@@ -20,13 +20,13 @@ import (
 // for these projects - it just needs to be stable and non-empty.
 const gitBuildServiceName = "app"
 
-// sealNetworkName returns the per-Seal Docker network name a Seal's whole
-// compose stack joins (closes BUG-029 - see
+// projectNetworkName returns the per-project Docker network name a project's
+// whole compose stack joins (closes BUG-029 - see
 // project_service.go's deployStack doc comment for the full design).
 // Mirrors agent_service.go's agentNetworkName(id) ("agent-net-<id>")
 // one-for-one, just for project stacks instead of agent sandboxes.
-func sealNetworkName(sealID int64) string {
-	return fmt.Sprintf("seal-net-%d", sealID)
+func projectNetworkName(projectID int64) string {
+	return fmt.Sprintf("project-net-%d", projectID)
 }
 
 // serviceContainerName returns the container name FEAT-028's deploy engine
@@ -37,8 +37,8 @@ func sealNetworkName(sealID int64) string {
 // (repository/traefik.Client.AddRoute always names its router/service
 // "project-<id>" regardless of what upstream host:port it's given), so
 // there is no need to special-case the exposed container's own name.
-func serviceContainerName(sealID int64, serviceName string) string {
-	return fmt.Sprintf("seal-%d-%s", sealID, serviceName)
+func serviceContainerName(projectID int64, serviceName string) string {
+	return fmt.Sprintf("project-%d-%s", projectID, serviceName)
 }
 
 // synthesizeGitBuildService folds a legacy git-build project's
@@ -46,11 +46,7 @@ func serviceContainerName(sealID int64, serviceName string) string {
 // ProjectService.deployStack has exactly ONE deploy path for both real
 // compose projects and folded-git-build projects (TEST-011 §2a). tag is
 // the already-built image (project_service.go's "tamga-project-<id>"
-// convention, unchanged); envVars is the project's env_vars table rows,
-// converted to the same map shape a real compose service's `environment:`
-// normalizes to (domain.ComposeService.Environment) so downstream env
-// handling (envMapToSlice) never needs to special-case this synthesized
-// case either.
+// convention, unchanged).
 //
 // No Ports are set - the synthesized service never declares one, since a
 // legacy git-build project's exposed port has always come from
@@ -59,45 +55,31 @@ func serviceContainerName(sealID int64, serviceName string) string {
 // service list passed to detectExposedService, whose single-service rule
 // picks it as the exposed service unconditionally, with no port needed to
 // disambiguate against anything else.
-func synthesizeGitBuildService(tag string, envVars []*domain.EnvVar) domain.ComposeService {
+func synthesizeGitBuildService(tag string) domain.ComposeService {
 	return domain.ComposeService{
-		Name:        gitBuildServiceName,
-		Image:       tag,
-		Environment: envVarsToMap(envVars),
+		Name:  gitBuildServiceName,
+		Image: tag,
 	}
-}
-
-// envVarsToMap converts a project's stored env vars into the plain
-// map[string]string shape domain.ComposeService.Environment uses.
-func envVarsToMap(vars []*domain.EnvVar) map[string]string {
-	if len(vars) == 0 {
-		return nil
-	}
-	m := make(map[string]string, len(vars))
-	for _, v := range vars {
-		m[v.Key] = v.Value
-	}
-	return m
 }
 
 // applyDatabaseEnvironment makes the database the only deployment-time
 // environment source. Compose values are imported once when configuration is
 // first accepted, then deliberately ignored here so later YAML edits cannot
 // override DB-owned values.
-func applyDatabaseEnvironment(services []domain.ComposeService, globals []*domain.EnvVar, scoped []*domain.ServiceEnvVar) []domain.ComposeService {
-	global := envVarsToMap(globals)
+func applyDatabaseEnvironment(services []domain.ComposeService, serviceNames map[int64]string, scoped []*domain.ServiceEnvVar) []domain.ComposeService {
 	byService := make(map[string]map[string]string)
 	for _, value := range scoped {
-		if byService[value.ServiceName] == nil {
-			byService[value.ServiceName] = make(map[string]string)
+		name, ok := serviceNames[value.ServiceID]
+		if !ok {
+			continue
 		}
-		byService[value.ServiceName][value.Key] = value.Value
+		if byService[name] == nil {
+			byService[name] = make(map[string]string)
+		}
+		byService[name][value.Key] = value.Value
 	}
 	for i := range services {
-		env := make(map[string]string, len(global)+len(byService[services[i].Name]))
-		for key, value := range global {
-			env[key] = value
-		}
+		env := make(map[string]string, len(byService[services[i].Name]))
 		for key, value := range byService[services[i].Name] {
 			env[key] = value
 		}

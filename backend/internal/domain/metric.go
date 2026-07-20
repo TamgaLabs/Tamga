@@ -12,8 +12,8 @@ const (
 	MetricResolutionDay    MetricResolution = "day"
 )
 
-// GlobalProjectID is the project_id used for Tamga's own core/global
-// traffic scope (not a real project row) rather than one specific project.
+// GlobalProjectID is the durable system project's ID used for Tamga's own
+// core/global traffic scope rather than one user-managed project.
 const GlobalProjectID int64 = 0
 
 // MetricSample is one (project_id, resolution, bucket_start) row of Traefik
