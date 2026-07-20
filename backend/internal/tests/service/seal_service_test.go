@@ -25,6 +25,13 @@ func TestSealServiceCreateEstablishesEmptyOwnedWorkspace(t *testing.T) {
 	}
 
 	dataDir := t.TempDir()
+	gitInvocation := filepath.Join(t.TempDir(), "git-invoked")
+	gitBin := t.TempDir()
+	if err := os.WriteFile(filepath.Join(gitBin, "git"), []byte("#!/bin/sh\ntouch \"$TAMGA_TEST_GIT_INVOCATION\"\nexit 99\n"), 0755); err != nil {
+		t.Fatalf("write git sentinel: %v", err)
+	}
+	t.Setenv("TAMGA_TEST_GIT_INVOCATION", gitInvocation)
+	t.Setenv("PATH", gitBin+string(filepath.ListSeparator)+os.Getenv("PATH"))
 	svc := service.NewSealService(db, config.Config{DataDir: dataDir})
 	seal, err := svc.Create(context.Background(), service.CreateSealRequest{Name: "empty seal", Domain: "empty.example.test"})
 	if err != nil {
@@ -49,6 +56,12 @@ func TestSealServiceCreateEstablishesEmptyOwnedWorkspace(t *testing.T) {
 	}
 
 	workspace := filepath.Join(dataDir, "seals", "1")
+	if info, err := os.Stat(workspace); err != nil || !info.IsDir() {
+		t.Fatalf("expected Seal workspace directory: info=%v err=%v", info, err)
+	}
+	if _, err := os.Stat(gitInvocation); !os.IsNotExist(err) {
+		t.Fatalf("Seal creation must not invoke git: stat error=%v", err)
+	}
 	compose, err := os.ReadFile(filepath.Join(workspace, ".tamga", "generated", "compose.yaml"))
 	if err != nil {
 		t.Fatalf("read Tamga-owned empty Seal compose file: %v", err)
